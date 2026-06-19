@@ -1,1 +1,310 @@
+{
+  "_comment": "Tile data for TI4 (Base + PoK). Cada tile tiene 0-2 planetas, cada uno con sus propios resources/influence/traits/tech. Fuente: Twilight Imperium Wiki - Planets page.",
+  "tiles": [
+    {
+      "id": 18, "name": "Mecatol Rex", "expansion": 0, "isMecatolRex": true,
+      "planets": [
+        { "name": "Mecatol Rex", "resources": 1, "influence": 6, "traits": [], "tech": [] }
+      ]
+    },
+    {
+      "id": 19, "name": "Wellon", "expansion": 0,
+      "planets": [
+        { "name": "Wellon", "resources": 1, "influence": 2, "traits": ["industrial"], "tech": ["yellow"] }
+      ]
+    },
+    {
+      "id": 20, "name": "Vefut II", "expansion": 0,
+      "planets": [
+        { "name": "Vefut II", "resources": 2, "influence": 2, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 21, "name": "Thibah", "expansion": 0,
+      "planets": [
+        { "name": "Thibah", "resources": 1, "influence": 1, "traits": ["industrial"], "tech": ["blue"] }
+      ]
+    },
+    {
+      "id": 22, "name": "Tar'Mann", "expansion": 0,
+      "planets": [
+        { "name": "Tar'Mann", "resources": 1, "influence": 1, "traits": ["industrial"], "tech": ["green"] }
+      ]
+    },
+    {
+      "id": 23, "name": "Saudor", "expansion": 0,
+      "planets": [
+        { "name": "Saudor", "resources": 2, "influence": 2, "traits": ["industrial"], "tech": [] }
+      ]
+    },
+    {
+      "id": 24, "name": "Mehar Xull", "expansion": 0,
+      "planets": [
+        { "name": "Mehar Xull", "resources": 1, "influence": 3, "traits": ["hazardous"], "tech": ["red"] }
+      ]
+    },
+    {
+      "id": 25, "name": "Quann", "expansion": 0,
+      "isWormhole": true, "wormholeType": "beta",
+      "planets": [
+        { "name": "Quann", "resources": 2, "influence": 1, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 26, "name": "Lodor", "expansion": 0,
+      "isWormhole": true, "wormholeType": "alpha",
+      "planets": [
+        { "name": "Lodor", "resources": 3, "influence": 1, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 27, "name": "New Albion / Starpoint", "expansion": 0,
+      "planets": [
+        { "name": "New Albion", "resources": 1, "influence": 1, "traits": ["industrial"], "tech": ["green"] },
+        { "name": "Starpoint", "resources": 3, "influence": 1, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 28, "name": "Tequ'ran / Torkan", "expansion": 0,
+      "planets": [
+        { "name": "Tequ'ran", "resources": 2, "influence": 0, "traits": ["hazardous"], "tech": [] },
+        { "name": "Torkan", "resources": 0, "influence": 3, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 29, "name": "Qucen'n / Rarron", "expansion": 0,
+      "planets": [
+        { "name": "Qucen'n", "resources": 1, "influence": 2, "traits": ["industrial"], "tech": [] },
+        { "name": "Rarron", "resources": 0, "influence": 3, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 30, "name": "Mellon / Zohbat", "expansion": 0,
+      "planets": [
+        { "name": "Mellon", "resources": 0, "influence": 2, "traits": ["cultural"], "tech": [] },
+        { "name": "Zohbat", "resources": 3, "influence": 1, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 31, "name": "Lazar / Sakulag", "expansion": 0,
+      "planets": [
+        { "name": "Lazar", "resources": 1, "influence": 0, "traits": ["industrial"], "tech": ["yellow"] },
+        { "name": "Sakulag", "resources": 2, "influence": 1, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 32, "name": "Dal Bootha / Xxehan", "expansion": 0,
+      "planets": [
+        { "name": "Dal Bootha", "resources": 0, "influence": 2, "traits": ["cultural"], "tech": [] },
+        { "name": "Xxehan", "resources": 1, "influence": 1, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 33, "name": "Corneeq / Resculon", "expansion": 0,
+      "planets": [
+        { "name": "Corneeq", "resources": 1, "influence": 2, "traits": ["cultural"], "tech": [] },
+        { "name": "Resculon", "resources": 2, "influence": 0, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 34, "name": "Centauri / Gral", "expansion": 0,
+      "planets": [
+        { "name": "Centauri", "resources": 1, "influence": 3, "traits": ["cultural"], "tech": [] },
+        { "name": "Gral", "resources": 1, "influence": 1, "traits": ["industrial"], "tech": ["blue"] }
+      ]
+    },
+    {
+      "id": 35, "name": "Bereg / Lirta IV", "expansion": 0,
+      "planets": [
+        { "name": "Bereg", "resources": 3, "influence": 1, "traits": ["hazardous"], "tech": [] },
+        { "name": "Lirta IV", "resources": 2, "influence": 3, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 36, "name": "Arnor / Lor", "expansion": 0,
+      "planets": [
+        { "name": "Arnor", "resources": 2, "influence": 1, "traits": ["industrial"], "tech": [] },
+        { "name": "Lor", "resources": 1, "influence": 2, "traits": ["industrial"], "tech": [] }
+      ]
+    },
+    {
+      "id": 37, "name": "Arinam / Meer", "expansion": 0,
+      "planets": [
+        { "name": "Arinam", "resources": 1, "influence": 2, "traits": ["industrial"], "tech": [] },
+        { "name": "Meer", "resources": 0, "influence": 4, "traits": ["hazardous"], "tech": ["red"] }
+      ]
+    },
+    {
+      "id": 38, "name": "Abyz / Fria", "expansion": 0,
+      "planets": [
+        { "name": "Abyz", "resources": 3, "influence": 0, "traits": ["hazardous"], "tech": [] },
+        { "name": "Fria", "resources": 2, "influence": 0, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    { "id": 39, "name": "Alpha Wormhole", "expansion": 0, "isWormhole": true, "wormholeType": "alpha", "noPlanet": true, "planets": [] },
+    { "id": 40, "name": "Beta Wormhole", "expansion": 0, "isWormhole": true, "wormholeType": "beta", "noPlanet": true, "planets": [] },
+    { "id": 41, "name": "Gravity Rift", "expansion": 0, "isAnomaly": true, "anomalyType": "gravityRift", "noPlanet": true, "planets": [] },
+    { "id": 42, "name": "Nebula", "expansion": 0, "isAnomaly": true, "anomalyType": "nebula", "noPlanet": true, "planets": [] },
+    { "id": 43, "name": "Supernova", "expansion": 0, "isAnomaly": true, "anomalyType": "supernova", "noPlanet": true, "planets": [] },
+    { "id": 44, "name": "Asteroid Field", "expansion": 0, "isAnomaly": true, "anomalyType": "asteroidField", "noPlanet": true, "planets": [] },
+    { "id": 45, "name": "Asteroid Field", "expansion": 0, "isAnomaly": true, "anomalyType": "asteroidField", "noPlanet": true, "planets": [] },
+    { "id": 46, "name": "Empty Tile", "expansion": 0, "isBlank": true, "noPlanet": true, "planets": [] },
+    { "id": 47, "name": "Empty Tile", "expansion": 0, "isBlank": true, "noPlanet": true, "planets": [] },
+    { "id": 48, "name": "Empty Tile", "expansion": 0, "isBlank": true, "noPlanet": true, "planets": [] },
+    { "id": 49, "name": "Empty Tile", "expansion": 0, "isBlank": true, "noPlanet": true, "planets": [] },
+    { "id": 50, "name": "Empty Tile", "expansion": 0, "isBlank": true, "noPlanet": true, "planets": [] },
 
+    {
+      "id": 59, "name": "Archon Vail", "expansion": 1,
+      "planets": [
+        { "name": "Archon Vail", "resources": 1, "influence": 3, "traits": ["hazardous"], "tech": ["blue"] }
+      ]
+    },
+    {
+      "id": 60, "name": "Perimeter", "expansion": 1,
+      "planets": [
+        { "name": "Perimeter", "resources": 2, "influence": 1, "traits": ["industrial"], "tech": [] }
+      ]
+    },
+    {
+      "id": 61, "name": "Ang", "expansion": 1,
+      "planets": [
+        { "name": "Ang", "resources": 2, "influence": 0, "traits": ["industrial"], "tech": ["red"] }
+      ]
+    },
+    {
+      "id": 62, "name": "Sem-Lore", "expansion": 1,
+      "planets": [
+        { "name": "Sem-Lore", "resources": 3, "influence": 2, "traits": ["cultural"], "tech": ["yellow"] }
+      ]
+    },
+    {
+      "id": 63, "name": "Vorhal", "expansion": 1,
+      "planets": [
+        { "name": "Vorhal", "resources": 0, "influence": 2, "traits": ["cultural"], "tech": ["green"] }
+      ]
+    },
+    {
+      "id": 64, "name": "Atlas", "expansion": 1,
+      "isWormhole": true, "wormholeType": "beta",
+      "planets": [
+        { "name": "Atlas", "resources": 3, "influence": 1, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 65, "name": "Primor", "expansion": 1,
+      "planets": [
+        { "name": "Primor", "resources": 2, "influence": 1, "traits": ["cultural"], "tech": [], "isLegendary": true,
+          "legendaryAbility": {
+            "name": "The Atrament",
+            "text": "Podés agotar esta carta al final de tu turno para colocar hasta 2 infantería de tus reservas en cualquier planeta que controles."
+          }
+        }
+      ]
+    },
+    {
+      "id": 66, "name": "Hope's End", "expansion": 1,
+      "planets": [
+        { "name": "Hope's End", "resources": 3, "influence": 0, "traits": ["hazardous"], "tech": [], "isLegendary": true,
+          "legendaryAbility": {
+            "name": "Imperial Arms Vault",
+            "text": "Podés agotar esta carta al final de tu turno para colocar 1 mech de tus reservas en cualquier planeta que controles, o robar 1 carta de acción."
+          }
+        }
+      ]
+    },
+    {
+      "id": 67, "name": "Cormund", "expansion": 1,
+      "isAnomaly": true, "anomalyType": "gravityRift",
+      "planets": [
+        { "name": "Cormund", "resources": 2, "influence": 0, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 68, "name": "Everra", "expansion": 1,
+      "isAnomaly": true, "anomalyType": "nebula",
+      "planets": [
+        { "name": "Everra", "resources": 3, "influence": 1, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 69, "name": "Jeol Ir / Accoen", "expansion": 1,
+      "planets": [
+        { "name": "Jeol Ir", "resources": 2, "influence": 3, "traits": ["industrial"], "tech": [] },
+        { "name": "Accoen", "resources": 2, "influence": 3, "traits": ["industrial"], "tech": [] }
+      ]
+    },
+    {
+      "id": 70, "name": "Kraag / Siig", "expansion": 1,
+      "planets": [
+        { "name": "Kraag", "resources": 2, "influence": 1, "traits": ["hazardous"], "tech": [] },
+        { "name": "Siig", "resources": 0, "influence": 2, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 71, "name": "Ba'kal / Alio Prima", "expansion": 1,
+      "planets": [
+        { "name": "Ba'kal", "resources": 3, "influence": 2, "traits": ["industrial"], "tech": [] },
+        { "name": "Alio Prima", "resources": 1, "influence": 1, "traits": ["cultural"], "tech": [] }
+      ]
+    },
+    {
+      "id": 72, "name": "Lisis / Velnor", "expansion": 1,
+      "planets": [
+        { "name": "Lisis", "resources": 2, "influence": 2, "traits": ["industrial"], "tech": [] },
+        { "name": "Velnor", "resources": 2, "influence": 1, "traits": ["industrial"], "tech": ["red"] }
+      ]
+    },
+    {
+      "id": 73, "name": "Cealdri / Xanhact", "expansion": 1,
+      "planets": [
+        { "name": "Cealdri", "resources": 0, "influence": 2, "traits": ["cultural"], "tech": ["yellow"] },
+        { "name": "Xanhact", "resources": 0, "influence": 1, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 74, "name": "Vega Major / Vega Minor", "expansion": 1,
+      "planets": [
+        { "name": "Vega Major", "resources": 2, "influence": 1, "traits": ["cultural"], "tech": [] },
+        { "name": "Vega Minor", "resources": 1, "influence": 2, "traits": ["cultural"], "tech": ["blue"] }
+      ]
+    },
+    {
+      "id": 75, "name": "Abaddon / Loki / Ashtroth", "expansion": 1,
+      "planets": [
+        { "name": "Abaddon", "resources": 1, "influence": 0, "traits": ["cultural"], "tech": [] },
+        { "name": "Loki", "resources": 1, "influence": 2, "traits": ["cultural"], "tech": [] },
+        { "name": "Ashtroth", "resources": 2, "influence": 0, "traits": ["hazardous"], "tech": [] }
+      ]
+    },
+    {
+      "id": 76, "name": "Rigel I / Rigel II / Rigel III", "expansion": 1,
+      "planets": [
+        { "name": "Rigel I", "resources": 0, "influence": 1, "traits": ["hazardous"], "tech": [] },
+        { "name": "Rigel II", "resources": 1, "influence": 2, "traits": ["industrial"], "tech": [] },
+        { "name": "Rigel III", "resources": 1, "influence": 1, "traits": ["industrial"], "tech": ["green"] }
+      ]
+    },
+    { "id": 77, "name": "Empty Tile", "expansion": 1, "isBlank": true, "noPlanet": true, "planets": [] },
+    { "id": 78, "name": "Empty Tile", "expansion": 1, "isBlank": true, "noPlanet": true, "planets": [] },
+    {
+      "id": 79, "name": "Wormhole Nexus", "expansion": 1,
+      "isOffMap": true,
+      "wormholeState": "inactive",
+      "wormholesInactive": ["gamma"],
+      "wormholesActive": ["alpha", "beta", "gamma"],
+      "planets": [
+        {
+          "name": "Mallice", "resources": 0, "influence": 3, "traits": ["cultural"], "tech": [],
+          "isLegendary": true, "isMallice": true,
+          "legendaryAbility": {
+            "name": "Exterrix Headquarters",
+            "text": "Podés agotar esta carta al final de tu turno para ganar 2 bienes comerciales (trade goods), o convertir todas tus comodities en bienes comerciales."
+          }
+        }
+      ],
+      "_note": "El Wormhole Nexus se coloca FUERA del tablero principal (similar al home system de Creuss). Empieza en su lado INACTIVO con solo un wormhole Gamma y el planeta legendario Mallice. La primera vez que un jugador mueve/coloca una unidad en el Nexus, o gana control de Mallice, se gira a su lado ACTIVO, que tiene wormholes Alpha, Beta y Gamma simultáneamente (por lo que queda adyacente a cualquier sistema con wormhole alpha, beta o gamma). No es una anomalía."
+    },
+    { "id": 80, "name": "Supernova", "expansion": 1, "isAnomaly": true, "anomalyType": "supernova", "noPlanet": true, "planets": [] }
+  ]
+}
