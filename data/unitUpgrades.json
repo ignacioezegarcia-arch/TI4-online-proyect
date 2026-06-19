@@ -1,0 +1,145 @@
+{
+  "_comment": "Tecnologías de mejora de unidad (Unit Upgrades) GENÉRICAS de TI4 (Base + PoK). Las unit upgrades de FACCIÓN (ej: Sol's Spec Ops II) van en el archivo de cada facción, no acá.",
+  "_schema": {
+    "id": "identificador único en snake_case",
+    "name": "nombre oficial en inglés",
+    "color": "color de la tecnología requerida",
+    "prerequisites": "array de colores requeridos",
+    "level": "cantidad de prerrequisitos",
+    "expansion": "0 = Base Game, 1 = Prophecy of Kings",
+    "unitType": "tipo de unidad que mejora: infantry | destroyer | cruiser | pds | carrier | dreadnought | fighter | spaceDock",
+    "effect": "stats completos de la unidad mejorada + texto del efecto"
+  },
+  "unitUpgrades": [
+    {
+      "id": "infantry_2",
+      "name": "Infantry II",
+      "color": "green",
+      "prerequisites": [
+        "green",
+        "green"
+      ],
+      "level": 2,
+      "expansion": 0,
+      "unitType": "infantry",
+      "exhaustable": false,
+      "effect": "Upgrades all your Infantry. Cost: 1(x2) | Combat: 7 | After this unit is destroyed, roll 1 die. On a 6, place this unit in your reinforcements instead of removing it from the board."
+    },
+    {
+      "id": "destroyer_2",
+      "name": "Destroyer II",
+      "color": "red",
+      "prerequisites": [
+        "red"
+      ],
+      "level": 1,
+      "expansion": 0,
+      "unitType": "destroyer",
+      "exhaustable": false,
+      "effect": "Upgrades all your Destroyers. Cost: 1 | Combat: 9 | Move: 2 | Capacity: 1 | ANTI-FIGHTER BARRAGE x3 | SUSTAIN DAMAGE."
+    },
+    {
+      "id": "cruiser_2",
+      "name": "Cruiser II",
+      "color": "red",
+      "prerequisites": [
+        "blue",
+        "green",
+        "red"
+      ],
+      "level": 3,
+      "expansion": 0,
+      "unitType": "cruiser",
+      "exhaustable": false,
+      "effect": "Upgrades all your Cruisers. Cost: 2 | Combat: 6 | Move: 3 | Capacity: 3."
+    },
+    {
+      "id": "pds_2",
+      "name": "PDS II",
+      "color": "red",
+      "prerequisites": [
+        "yellow",
+        "red"
+      ],
+      "level": 2,
+      "expansion": 0,
+      "unitType": "pds",
+      "exhaustable": false,
+      "effect": "Upgrades all your PDS. SPACE CANNON 5 | Your SPACE CANNON weapons may now be used against ships in adjacent systems."
+    },
+    {
+      "id": "carrier_2",
+      "name": "Carrier II",
+      "color": "blue",
+      "prerequisites": [
+        "blue",
+        "blue"
+      ],
+      "level": 2,
+      "expansion": 0,
+      "unitType": "carrier",
+      "exhaustable": false,
+      "effect": "Upgrades all your Carriers. Cost: 3 | Combat: 9 | Move: 2 | Capacity: 6 | SUSTAIN DAMAGE."
+    },
+    {
+      "id": "dreadnought_2",
+      "name": "Dreadnought II",
+      "color": "blue",
+      "prerequisites": [
+        "blue",
+        "blue",
+        "green"
+      ],
+      "level": 3,
+      "expansion": 0,
+      "unitType": "dreadnought",
+      "exhaustable": false,
+      "effect": "Upgrades all your Dreadnoughts. Cost: 4 | Combat: 5 | Move: 2 | Capacity: 1 | SUSTAIN DAMAGE | BOMBARDMENT 4 | After this unit moves, it may use BOMBARDMENT against each planet in the system it moved into."
+    },
+    {
+      "id": "fighter_2",
+      "name": "Fighter II",
+      "color": "blue",
+      "prerequisites": [
+        "blue",
+        "green"
+      ],
+      "level": 2,
+      "expansion": 0,
+      "unitType": "fighter",
+      "exhaustable": false,
+      "effect": "Upgrades all your Fighters. Cost: 1(x3) | Combat: 8 | Move: 2 | Capacity: 1."
+    },
+    {
+      "id": "space_dock_2",
+      "name": "Space Dock II",
+      "color": "yellow",
+      "prerequisites": [
+        "yellow",
+        "yellow"
+      ],
+      "level": 2,
+      "expansion": 0,
+      "unitType": "spaceDock",
+      "exhaustable": false,
+      "effect": "Upgrades all your Space Docks. PRODUCTION: (Planet resource value + 3) | Your PRODUCTION ability does not produce excess units."
+    },
+    {
+      "id": "war_sun",
+      "name": "War Sun",
+      "color": "yellow",
+      "prerequisites": [
+        "yellow",
+        "red",
+        "red",
+        "red"
+      ],
+      "level": 4,
+      "expansion": 0,
+      "exhaustable": false,
+      "effect": "Unlocks the War Sun unit. Cost: 12 | Combat: 3(x3) | Move: 2 | Capacity: 6 | SUSTAIN DAMAGE | BOMBARDMENT 3(x3) | Your War Suns do not require PRODUCTION to be placed; instead, place them from your reinforcements.",
+      "unitType": "warSun",
+      "_note": "A diferencia de las demás unit upgrades, War Sun no mejora una unidad I existente: desbloquea la unidad War Sun desde cero (ninguna facción excepto Embers of Muaat la tiene impresa en su hoja inicial)."
+    }
+  ]
+}
