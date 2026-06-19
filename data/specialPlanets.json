@@ -1,0 +1,20 @@
+{
+  "_comment": "Planetas legendarios que NO corresponden a un tile fijo del tablero, sino que aparecen mediante mecánicas especiales (exploración, etc.)",
+  "specialPlanets": [
+    {
+      "id": "mirage",
+      "name": "Mirage",
+      "resources": 1,
+      "influence": 2,
+      "traits": ["hazardous"],
+      "tech": [],
+      "isLegendary": true,
+      "source": "exploration",
+      "_note": "Mirage aparece al resolver una carta de exploración de tipo 'Frontier'/espacio vacío que indica colocar el planeta Mirage en ese sistema (sistema sin planetas previos). No ocupa un tile propio del pool base.",
+      "legendaryAbility": {
+        "name": "Mirage Flight Academy",
+        "text": "Podés agotar esta carta al final de tu turno para colocar hasta 2 fighters de tus reservas en cualquier sistema que contenga 1 o más de tus naves."
+      }
+    }
+  ]
+}
