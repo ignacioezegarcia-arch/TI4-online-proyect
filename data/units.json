@@ -1,0 +1,187 @@
+{
+  "_comment": "Unidades base (versión I / sin upgrade) de TI4. Datos confirmados por el usuario contra material físico. Las unit upgrades (versión II) están en unitUpgrades.json. Los mechs son específicos de cada facción (stats genéricos acá; habilidades de facción se agregan en factions.json más adelante). NOTA: War Sun NO está en este archivo — no existe como unidad construible hasta investigar la tecnología 'war_sun'; sus stats viven únicamente en unitUpgrades.json.",
+  "_schema": {
+    "id": "identificador único en snake_case",
+    "name": "nombre oficial en inglés",
+    "category": "ship | groundForce | structure",
+    "cost": "costo en recursos. Si es 'x2' o 'x3', significa que ese costo produce esa cantidad de unidades (ej: fighter cost 1 produce 2 unidades)",
+    "producesQuantity": "cuántas unidades se obtienen al pagar 'cost' (relevante para fighter e infantry)",
+    "combat": "valor de combate. null = no tiene rol de combate ofensivo estándar (no aplica)",
+    "combatDiceCount": "cantidad de dados que tira en combate (por defecto 1, salvo que se indique otro)",
+    "move": "valor de movimiento. null = no puede moverse por sí misma (debe ser transportada)",
+    "capacity": "cantidad combinada de fighters + ground forces que puede transportar. 0 = no transporta",
+    "abilities": "array de habilidades especiales con su texto",
+    "requiresTech": "id de la tecnología requerida para poder construir esta unidad (null si no requiere ninguna)",
+    "expansion": "0 = Base Game"
+  },
+  "units": [
+    {
+      "id": "fighter",
+      "name": "Fighter",
+      "category": "ship",
+      "cost": 1,
+      "producesQuantity": 2,
+      "combat": 9,
+      "combatDiceCount": 1,
+      "move": null,
+      "capacity": 0,
+      "abilities": [],
+      "requiresTech": null,
+      "expansion": 0,
+      "notes": "No tiene valor de movimiento propio: debe ser transportado por una nave con capacity, o estar en un sistema que se active directamente."
+    },
+    {
+      "id": "destroyer",
+      "name": "Destroyer",
+      "category": "ship",
+      "cost": 1,
+      "producesQuantity": 1,
+      "combat": 9,
+      "combatDiceCount": 1,
+      "move": 2,
+      "capacity": 0,
+      "abilities": [
+        {
+          "name": "Anti-Fighter Barrage",
+          "value": 9,
+          "diceCount": 2,
+          "text": "ANTI-FIGHTER BARRAGE 9 (x2): Al inicio de un combate espacial, antes de la ronda de combate normal, este destroyer tira 2 dados contra fighters enemigos únicamente."
+        }
+      ],
+      "requiresTech": null,
+      "expansion": 0
+    },
+    {
+      "id": "cruiser",
+      "name": "Cruiser",
+      "category": "ship",
+      "cost": 2,
+      "producesQuantity": 1,
+      "combat": 7,
+      "combatDiceCount": 1,
+      "move": 2,
+      "capacity": 0,
+      "abilities": [],
+      "requiresTech": null,
+      "expansion": 0
+    },
+    {
+      "id": "carrier",
+      "name": "Carrier",
+      "category": "ship",
+      "cost": 3,
+      "producesQuantity": 1,
+      "combat": 9,
+      "combatDiceCount": 1,
+      "move": 1,
+      "capacity": 4,
+      "abilities": [],
+      "requiresTech": null,
+      "expansion": 0
+    },
+    {
+      "id": "dreadnought",
+      "name": "Dreadnought",
+      "category": "ship",
+      "cost": 4,
+      "producesQuantity": 1,
+      "combat": 5,
+      "combatDiceCount": 1,
+      "move": 1,
+      "capacity": 1,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "text": "SUSTAIN DAMAGE: Cuando esta unidad recibiría daño en combate, podés agotarla en su lugar (capturando el hit) en vez de destruirla, una vez por combate."
+        },
+        {
+          "name": "Bombardment",
+          "value": 5,
+          "diceCount": 1,
+          "text": "BOMBARDMENT 5 (x1): Durante el paso de Bombardeo, esta unidad puede tirar 1 dado contra cada infantería enemiga en un planeta del sistema. No puede usarse si el planeta tiene Planetary Shield."
+        }
+      ],
+      "requiresTech": null,
+      "expansion": 0
+    },
+    {
+      "id": "infantry",
+      "name": "Infantry",
+      "category": "groundForce",
+      "cost": 1,
+      "producesQuantity": 2,
+      "combat": 8,
+      "combatDiceCount": 1,
+      "move": null,
+      "capacity": 0,
+      "abilities": [],
+      "requiresTech": null,
+      "expansion": 0,
+      "notes": "Se mueve únicamente siendo transportada por una nave con capacity, o vía invasión desde un sistema activo."
+    },
+    {
+      "id": "mech",
+      "name": "Mech",
+      "category": "groundForce",
+      "cost": 2,
+      "producesQuantity": 1,
+      "combat": 6,
+      "combatDiceCount": 1,
+      "move": null,
+      "capacity": 0,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "text": "SUSTAIN DAMAGE."
+        }
+      ],
+      "requiresTech": null,
+      "expansion": 1,
+      "notes": "Stats genéricos válidos para todas las facciones (cost 2, combat 6, sustain damage). Cada facción tiene su propio mech con nombre, arte y una habilidad ADICIONAL única — esas habilidades de facción se agregan en factions.json."
+    },
+    {
+      "id": "space_dock",
+      "name": "Space Dock",
+      "category": "structure",
+      "cost": null,
+      "producesQuantity": 1,
+      "combat": null,
+      "move": null,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Production",
+          "text": "PRODUCTION (planet resources + 2): Durante tu turno en la fase de acción, podés gastar recursos para producir unidades en este sistema, hasta un total combinado de costo igual al valor de Production. X = recursos del planeta donde está el space dock."
+        }
+      ],
+      "requiresTech": null,
+      "expansion": 0,
+      "notes": "No tiene costo de producción: se coloca mediante la carta de estrategia Construction (o efectos equivalentes), no se 'produce' con recursos. Capacity 3: el space dock otorga su propia capacidad de hasta 3 fighters en el espacio de su sistema, INDEPENDIENTE de la capacity de las naves presentes — es decir, pueden 'flotar' hasta 3 fighters en ese sistema aunque no haya naves, o aunque la capacity de las naves ya esté completa. Máximo 1 space dock por planeta."
+    },
+    {
+      "id": "pds",
+      "name": "PDS",
+      "category": "structure",
+      "cost": null,
+      "producesQuantity": 1,
+      "combat": null,
+      "move": null,
+      "capacity": 0,
+      "abilities": [
+        {
+          "name": "Space Cannon",
+          "value": 6,
+          "diceCount": 1,
+          "text": "SPACE CANNON 6 (x1): Al final del paso de Movimiento de una acción táctica en un sistema adyacente que contenga este PDS, este PDS puede tirar 1 dado contra naves enemigas en ese sistema."
+        },
+        {
+          "name": "Planetary Shield",
+          "text": "PLANETARY SHIELD: Las unidades enemigas no pueden usar BOMBARDMENT contra este planeta, a menos que tengan una habilidad o carta de acción que lo permita explícitamente."
+        }
+      ],
+      "requiresTech": null,
+      "expansion": 0,
+      "notes": "No tiene costo de producción: se coloca mediante la carta de estrategia Construction (o efectos equivalentes). Máximo 2 por planeta."
+    }
+  ]
+}
