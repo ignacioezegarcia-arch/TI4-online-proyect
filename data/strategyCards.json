@@ -1,0 +1,120 @@
+{
+  "_comment": "Strategy Cards de TI4. Texto exacto confirmado por el usuario desde material físico. Hay 8 cartas, cada una con Primary y Secondary ability. Construction y Warfare tienen versiones actualizadas (PoK y Thunder's Edge).",
+  "rules": {
+    "choosing": "El speaker elige primero, luego cada jugador en sentido horario. En partidas de 3-4 jugadores, cada jugador elige 2 cartas.",
+    "tradeGoods": "Las cartas no elegidas al final de la ronda de selección reciben 1 trade good de la reserva. El jugador que la elija en una ronda futura añade esos trade goods a su reserva.",
+    "initiative": "El número de la carta determina el orden de iniciativa: el jugador con la carta de menor número actúa primero en la fase de acción."
+  },
+  "cards": [
+    {
+      "number": 1,
+      "id": "leadership",
+      "name": "Leadership",
+      "set": "base",
+      "primary": "Gain 3 command tokens. Spend any amount of influence to gain 1 command token for every 3 influence spent.",
+      "secondary": "Spend any amount of influence to gain 1 command token for every 3 influence spent.",
+      "additionalRules": [
+        "A player does not spend a command token to resolve the secondary ability of the Leadership strategy card.",
+        "The tokens received from Leadership may be placed in any of the 3 pools on a player's Command Sheet."
+      ]
+    },
+    {
+      "number": 2,
+      "id": "diplomacy",
+      "name": "Diplomacy",
+      "set": "base",
+      "primary": "Choose 1 system other than the Mecatol Rex system that contains a planet you control; each other player places a command token from their reinforcements in the chosen system. Then, ready up to 2 exhausted planets you control.",
+      "secondary": "Spend 1 token from your strategy pool to ready up to 2 exhausted planets you control.",
+      "additionalRules": [
+        "If a player has no command tokens in their reinforcements, they place one of their choice from their command sheet.",
+        "If a player already has a command token in the chosen system, they do not place a command token there."
+      ]
+    },
+    {
+      "number": 3,
+      "id": "politics",
+      "name": "Politics",
+      "set": "base",
+      "primary": "Choose a player other than the speaker. That player gains the speaker token. Draw 2 action cards. Look at the top 2 cards of the agenda deck. Place each card on the top or bottom of the deck in any order.",
+      "secondary": "Spend 1 token from your strategy pool to draw 2 action cards."
+    },
+    {
+      "number": 4,
+      "id": "construction",
+      "name": "Construction",
+      "set": "base",
+      "versions": [
+        {
+          "version": "original",
+          "source": "Base Game",
+          "primary": "Place 1 PDS or 1 Space Dock on a planet you control. Place 1 PDS on a planet you control.",
+          "secondary": "Place 1 token from your strategy pool in any system; you may place either 1 space dock or 1 PDS on a planet you control in that system."
+        },
+        {
+          "version": "Ω",
+          "source": "Prophecy of Kings",
+          "primary": "Place 1 PDS or 1 Space Dock on a planet you control. Place 1 PDS on a planet you control.",
+          "secondary": "Spend 1 token from your strategy pool and place it in any system; you may place either 1 space dock or 1 PDS on a planet you control in that system.",
+          "_note": "Same effect as original but wording changed to make interactions with game components clearer (e.g. abilities that trigger upon spending a strategy token)."
+        },
+        {
+          "version": "ΩΩ",
+          "source": "Thunder's Edge",
+          "primary": "Either place 1 structure on a planet you control, or use the PRODUCTION ability of 1 of your space docks. Place 1 structure on a planet you control.",
+          "secondary": "Spend 1 token from your strategy pool to place 1 structure on a planet you control.",
+          "_note": "Functionally different from the other two versions."
+        }
+      ],
+      "additionalRules": [
+        "When using the Secondary ability, if a player already has a Command Token in the chosen system, the spent token is returned to their reinforcements instead. Then, they place either one PDS or one Space Dock on a planet they control in that system.",
+        "If a player does not have enough units in their reinforcements (e.g. all 3 Space Docks are on the board), they may remove units from any systems that do not contain one of their command tokens and place them in their reinforcements. Then, they must place this unit on the game board as instructed."
+      ]
+    },
+    {
+      "number": 5,
+      "id": "trade",
+      "name": "Trade",
+      "set": "base",
+      "primary": "Gain 3 trade goods. Replenish commodities. Choose any number of other players. Those players use the secondary ability of this strategy card without spending a command token.",
+      "secondary": "Spend 1 token from your strategy pool to replenish commodities."
+    },
+    {
+      "number": 6,
+      "id": "warfare",
+      "name": "Warfare",
+      "set": "base",
+      "versions": [
+        {
+          "version": "original",
+          "source": "Base Game",
+          "primary": "Remove 1 of your command tokens from the game board; then, gain 1 command token. Redistribute any number of the command tokens on your command sheet.",
+          "secondary": "Spend 1 token from your strategy pool to use the Production ability of 1 of your space docks in your home system.",
+          "_note": "The spent token is not placed in the player's home system, but back into their reinforcements."
+        },
+        {
+          "version": "Ω",
+          "source": "Thunder's Edge",
+          "primary": "Perform a tactical action in any system without placing a command token, even if the system already has your command token in it; that system still counts as being activated. You may redistribute your command tokens before and after this action.",
+          "secondary": "Spend 1 token from your Strategy Pool to use the PRODUCTION abilities of units in your home system.",
+          "_note": "The spent token is not placed in the player's home system, but back into their reinforcements. The updated card allows all units to use their PRODUCTION ability, not just space docks."
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "id": "technology",
+      "name": "Technology",
+      "set": "base",
+      "primary": "Research 1 technology. Spend 6 resources to research 1 technology.",
+      "secondary": "Spend 1 token from your strategy pool and 4 resources to research 1 technology."
+    },
+    {
+      "number": 8,
+      "id": "imperial",
+      "name": "Imperial",
+      "set": "base",
+      "primary": "Immediately score 1 public objective if you fulfill its requirements. Gain 1 victory point if you control Mecatol Rex; otherwise, draw 1 secret objective.",
+      "secondary": "Spend 1 token from your strategy pool to draw 1 secret objective."
+    }
+  ]
+}

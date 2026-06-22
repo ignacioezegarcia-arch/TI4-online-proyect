@@ -1,0 +1,160 @@
+{
+  "_comment": "Cartas de Reliquia de TI4. Fuente: PDF Player Components (oficial). Las reliquias NO pueden ser comerciadas entre jugadores. Se obtienen purgando 3 relic fragments del mismo tipo, o por efectos específicos.",
+  "rules": {
+    "obtaining": "Se obtienen purgando 3 relic fragments que sean del mismo tipo, o combinando fragments de color con Unknown Relic Fragments (grises), ya que estos últimos cuentan como cualquier tipo. Ejemplo: 2 cultural + 1 unknown = válido para obtener una reliquia. También se pueden obtener mediante cartas o habilidades específicas.",
+    "trading": "Las reliquias NO pueden ser comerciadas."
+  },
+  "relics": [
+    {
+      "id": "dominus_orb",
+      "name": "Dominus Orb",
+      "set": "pok",
+      "effect": "Before you move units during a tactical action, you may purge this card to move and transport units that are in systems that contain 1 of your command tokens."
+    },
+    {
+      "id": "maw_of_worlds",
+      "name": "Maw of Worlds",
+      "set": "pok",
+      "effect": "At the start of the agenda phase, you may purge this card and exhaust all of your planets to gain any 1 technology."
+    },
+    {
+      "id": "scepter_of_emelpar",
+      "name": "Scepter of Emelpar",
+      "set": "pok",
+      "effect": "When you would spend a token from your strategy pool, you may exhaust this card to spend a token from your reinforcements instead."
+    },
+    {
+      "id": "shard_of_the_throne",
+      "name": "Shard of the Throne",
+      "set": "pok",
+      "effect": "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point. When a player gains control of a legendary planet you control, or a planet you control in your home system, that player gains this card."
+    },
+    {
+      "id": "stellar_converter",
+      "name": "Stellar Converter",
+      "set": "pok",
+      "effect": "ACTION: Choose 1 non-home, non-legendary planet other than Mecatol Rex in a system that is adjacent to 1 or more of your units that have BOMBARDMENT; destroy all units on that planet and purge its attachments and its planet card. Then, place the destroyed planet token on that planet and purge this card."
+    },
+    {
+      "id": "the_codex",
+      "name": "The Codex",
+      "set": "pok",
+      "effect": "ACTION: Purge this card to take up to 3 action cards of your choice from the action card discard pile."
+    },
+    {
+      "id": "the_crown_of_emphidia",
+      "name": "The Crown of Emphidia",
+      "set": "pok",
+      "effect": "After you perform a tactical action, you may exhaust this card to explore 1 planet you control. At the end of the status phase, if you control the 'Tomb of Emphidia' attachment, you may purge this card to gain 1 Victory Point."
+    },
+    {
+      "id": "the_crown_of_thalnos",
+      "name": "The Crown of Thalnos",
+      "set": "pok",
+      "effect": "During each combat round, this card's owner may reroll any number of their dice, applying +1 to the results; any units that reroll dice but do not produce at least 1 hit are destroyed."
+    },
+    {
+      "id": "the_obsidian",
+      "name": "The Obsidian",
+      "set": "pok",
+      "effect": "When you gain this card, draw 1 secret objective. You can have 1 additional scored or unscored secret objective."
+    },
+    {
+      "id": "the_prophets_tears",
+      "name": "The Prophet's Tears",
+      "set": "pok",
+      "effect": "When you research a technology, you may exhaust this card to ignore 1 prerequisite or draw 1 action card."
+    },
+    {
+      "id": "dynamo_core_exhaust",
+      "name": "Dynamo Core (exhaust)",
+      "set": "codex",
+      "effect": "While this card is in your play area, your commodity value is increased by 2. ACTION: Purge this card to gain trade goods equal to your printed commodity value +2.",
+      "_note": "Hay dos versiones de Dynamo Core en el PDF (dos entradas distintas con efectos similares pero diferentes en el timing de purga). Ambas están incluidas."
+    },
+    {
+      "id": "dynamo_core_gain",
+      "name": "Dynamo Core (gain)",
+      "set": "codex",
+      "effect": "While this card is in your play area, your commodity value is increased by 2. ACTION: Gain trade goods equal to your commodity value then purge this card."
+    },
+    {
+      "id": "jr_xs4_55_0",
+      "name": "JR-XS4 55-0",
+      "set": "codex",
+      "effect": "ACTION: Exhaust this agent and choose a player; that player may spend 3 resources to place a structure on a planet they control. If they do not, they gain 1 trade good."
+    },
+    {
+      "id": "nano_forge_attach",
+      "name": "Nano-Forge (attach)",
+      "set": "codex",
+      "effect": "ACTION: Attach this card to a non-legendary, non-home planet you control; its resource and influence values are increased by 2 and it is a legendary planet."
+    },
+    {
+      "id": "nano_forge_no_repeat",
+      "name": "Nano-Forge (no repeat)",
+      "set": "codex",
+      "effect": "ACTION: Attach this card to a non-legendary, non-home planet you control; its resource and influence values are increased by 2 and it is a legendary planet. This action cannot be performed once attached."
+    },
+    {
+      "id": "circlet_of_the_void",
+      "name": "Circlet of the Void",
+      "set": "codex",
+      "effect": "Your units do not roll for gravity rifts, and you ignore the movement effects of other anomalies. ACTION: Exhaust this card to explore a frontier token in a system that does not contain any other players' ships."
+    },
+    {
+      "id": "book_of_latvinia",
+      "name": "Book of Latvinia",
+      "set": "codex",
+      "effect": "When you gain this card, research up to 2 technologies that have no prerequisites. ACTION: Purge this card; if you control planets that have all 4 types of technology specialties, gain 1 victory point. Otherwise, gain the speaker token."
+    },
+    {
+      "id": "neuraloop",
+      "name": "Neuraloop",
+      "set": "codex",
+      "effect": "When a public objective is revealed, you may purge one of your relics to discard that objective and replace it with a random objective from any objective deck; that objective is a public objective, even if it is a secret objective."
+    },
+    {
+      "id": "metali_void_armaments",
+      "name": "Metali Void Armaments",
+      "set": "thundersEdge",
+      "effect": "During the 'Anti Fighter Barrage' step of space combat, you may resolve ANTI-FIGHTER BARRAGE 6 (X3) against your opponent's units."
+    },
+    {
+      "id": "the_quantumcore",
+      "name": "The Quantumcore",
+      "set": "thundersEdge",
+      "effect": "When you gain this card, gain your breakthrough. You have SYNERGY for all technology types."
+    },
+    {
+      "id": "the_silver_flame",
+      "name": "The Silver Flame",
+      "set": "thundersEdge",
+      "effect": "The Silver Flame may be exchanged as part of a transaction. ACTION: Roll 1 die and purge this card; if the result is a 10, gain 1 victory point. Otherwise, purge your home system and all units in it; you cannot score public objectives. Put the Fracture into play if it is not already."
+    },
+    {
+      "id": "lightrail_ordnance",
+      "name": "Lightrail Ordnance",
+      "set": "thundersEdge",
+      "effect": "Your space docks gain SPACE CANNON 5 (X2). You may use your space dock's SPACE CANNON against ships that are adjacent to their system."
+    },
+    {
+      "id": "metali_void_shielding",
+      "name": "Metali Void Shielding",
+      "set": "thundersEdge",
+      "effect": "Each time hits are produced against 1 of your non-fighter ships, 1 of those ships may use SUSTAIN DAMAGE as if it had that ability."
+    },
+    {
+      "id": "the_triad",
+      "name": "The Triad",
+      "set": "thundersEdge",
+      "effect": "This card can be readied and spent as if it were a planet card. Its resource and influence values are equal to 3 plus the number of different types of relic fragments you own."
+    },
+    {
+      "id": "heart_of_ixth",
+      "name": "Heart of Ixth",
+      "set": "thundersEdge",
+      "effect": "After any die is rolled, you may exhaust this card to add or subtract 1 from its results."
+    }
+  ]
+}

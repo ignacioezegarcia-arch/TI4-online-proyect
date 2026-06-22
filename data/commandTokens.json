@@ -1,0 +1,57 @@
+{
+  "_comment": "Fichas de mando de TI4. Fuente: PDF Player Components (oficial). Son el recurso central del juego: permiten realizar acciones tácticas, limitan el tamaño de la flota en cada sistema, y limitan la cantidad de habilidades secundarias de estrategia que se pueden usar.",
+  "startingDistribution": {
+    "tacticPool": 3,
+    "fleetPool": 3,
+    "strategyPool": 2,
+    "total": 8
+  },
+  "pools": {
+    "tactic": {
+      "id": "tactic",
+      "label": "Tactic Pool",
+      "role": "Permite realizar acciones tácticas. Es el pool más activo del juego — cada acción táctica consume 1 ficha, que se coloca boca arriba en el sistema activado.",
+      "use": "Durante la fase de acción, un jugador gasta 1 ficha de su tactic pool para activar un sistema (colocando el token en ese sistema). Eso le permite mover naves hacia ese sistema, realizar combate, e invadir planetas.",
+      "restrictions": [
+        "Un jugador no puede activar un sistema que ya contiene uno de sus command tokens (salvo efectos específicos como Warfare Ω).",
+        "Un jugador no puede mover naves a través de un sistema que contenga uno de sus command tokens (sí puede moverse a través de sistemas con tokens propios con Light/Wave Deflector u otros efectos)."
+      ]
+    },
+    "fleet": {
+      "id": "fleet",
+      "label": "Fleet Pool",
+      "role": "Limita cuántas naves no-fighter puede tener un jugador en un mismo sistema. Es el techo de tamaño de flota por sistema.",
+      "use": "La cantidad de fichas en el fleet pool de un jugador es el máximo de naves no-fighter que puede tener en cualquier sistema individual. Los fighters NO cuentan contra el fleet pool.",
+      "restrictions": [
+        "Un jugador no puede mover naves a un sistema si hacerlo causaría que el número de sus naves no-fighter en ese sistema exceda su fleet pool.",
+        "Los fighters no cuentan contra el fleet pool, pero sí cuentan contra la capacity de las naves o de un space dock.",
+        "Un space dock otorga capacity 3 para fighters en su sistema, independiente de la capacity de las naves presentes."
+      ]
+    },
+    "strategy": {
+      "id": "strategy",
+      "label": "Strategy Pool",
+      "role": "Permite resolver habilidades secundarias de cartas de estrategia, y algunas habilidades de tecnologías y facciones. Limita cuántas secundarias puede usar un jugador por ronda.",
+      "use": "Cuando otro jugador activa una carta de estrategia, cada demás jugador puede gastar 1 ficha de su strategy pool para resolver la habilidad secundaria de esa carta. Excepción: Leadership no requiere gastar ficha para su secundaria.",
+      "restrictions": [
+        "Un jugador solo puede resolver la secundaria de cada carta de estrategia una vez por ronda (limitado por la cantidad de fichas disponibles en su strategy pool).",
+        "Algunas tecnologías (como Gravity Drive, Predictive Intelligence) y habilidades de facción también gastan fichas del strategy pool."
+      ]
+    }
+  },
+  "sides": {
+    "faction": "Lado con el símbolo de la facción. Se usa como identificador visual.",
+    "fleet": "Lado con el símbolo de flota. Se coloca boca arriba en el tablero al activar un sistema (acción táctica)."
+  },
+  "gaining": {
+    "statusPhase": "Durante la fase de estado, cada jugador gana normalmente 2 command tokens (o 3 con la tecnología Hyper Metabolism). El jugador elige en qué pool colocar cada ficha ganada.",
+    "leadership": "La carta de estrategia Leadership permite ganar fichas adicionales gastando influencia (1 ficha por cada 3 influencia). Su secundaria también permite esto sin gastar una ficha de strategy pool.",
+    "other": "Algunas cartas de acción, habilidades de facción, y agendas también otorgan command tokens."
+  },
+  "rules": [
+    "Cuando un token sería colocado en un sistema que ya contiene uno del mismo jugador, va a sus reinforcements en cambio. Los efectos que usaron ese token se resuelven normalmente.",
+    "Si no hay tokens disponibles en reinforcements al intentar colocar uno, el jugador debe tomar uno de cualquier pool de su command sheet (excepto cuando el token iría a un sistema que ya tiene uno suyo).",
+    "Un jugador puede redistribuir sus tokens entre pools solo cuando una regla lo permita explícitamente (ej: Warfare primaria, Armed Forces Standardization agenda).",
+    "Los tokens en el tablero (en sistemas activados) no vuelven al jugador hasta la fase de estado o por efectos específicos (ej: Unexpected Action, Counterstroke)."
+  ]
+}
