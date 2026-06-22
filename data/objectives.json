@@ -1,0 +1,634 @@
+{
+  "_comment": "Objetivos de TI4 (Públicos y Secretos). Fuente: PDF Player Components (oficial). Los Stage I valen 1 VP, Stage II valen 2 VP. Los Secret Objectives siempre valen 1 VP.",
+  "rules": {
+    "publicObjectives": "Scored during the Scoring step of the Status Phase (except via Imperial strategy card). Max 1 public objective per player per Status Phase. 'Spend' objectives refer to spending during the Status Phase, not during Action Phase. A player cannot score public objectives if they don't control each planet in their home system.",
+    "secretObjectives": "Worth 1 VP each. Setup: each player is dealt 2, keeps 1. Max 3 total (scored or unscored) in play area. May be scored during Action, Status, or Agenda phase as specified. No home system control required (unlike public objectives).",
+    "notes": "The Wormhole Nexus and the Ghosts of Creuss' home system are on the edge of the game board for the purpose of scoring objectives."
+  },
+  "publicObjectives": {
+    "stageI": [
+      {
+        "id": "corner_the_market",
+        "name": "Corner the Market",
+        "set": "base",
+        "condition": "Control 4 planets that each have the same planet trait.",
+        "points": 1
+      },
+      {
+        "id": "develop_weaponry",
+        "name": "Develop Weaponry",
+        "set": "base",
+        "condition": "Own 2 unit upgrade technologies.",
+        "points": 1
+      },
+      {
+        "id": "diversify_research",
+        "name": "Diversify Research",
+        "set": "base",
+        "condition": "Own 2 technologies in each of 2 colors.",
+        "points": 1
+      },
+      {
+        "id": "erect_a_monument",
+        "name": "Erect a Monument",
+        "set": "base",
+        "condition": "Spend 8 resources.",
+        "points": 1
+      },
+      {
+        "id": "expand_borders",
+        "name": "Expand Borders",
+        "set": "base",
+        "condition": "Control 6 planets in non-home systems.",
+        "points": 1
+      },
+      {
+        "id": "found_research_outposts",
+        "name": "Found Research Outposts",
+        "set": "base",
+        "condition": "Control 3 planets that have technology specialties.",
+        "points": 1
+      },
+      {
+        "id": "intimidate_council",
+        "name": "Intimidate Council",
+        "set": "base",
+        "condition": "Have 1 or more ships in 2 systems that are adjacent to Mecatol Rex's System.",
+        "points": 1
+      },
+      {
+        "id": "lead_from_the_front",
+        "name": "Lead from the Front",
+        "set": "base",
+        "condition": "Spend a total of 3 tokens from your tactic and/or strategy pools.",
+        "points": 1
+      },
+      {
+        "id": "negotiate_trade_routes",
+        "name": "Negotiate Trade Routes",
+        "set": "base",
+        "condition": "Spend 5 trade goods.",
+        "points": 1
+      },
+      {
+        "id": "sway_the_council",
+        "name": "Sway the Council",
+        "set": "base",
+        "condition": "Spend 8 influence.",
+        "points": 1
+      },
+      {
+        "id": "amass_wealth",
+        "name": "Amass Wealth",
+        "set": "pok",
+        "condition": "Spend 3 influence, 3 resources, and 3 trade goods.",
+        "points": 1
+      },
+      {
+        "id": "build_defenses",
+        "name": "Build Defenses",
+        "set": "pok",
+        "condition": "Have 4 or more structures.",
+        "points": 1
+      },
+      {
+        "id": "discover_lost_outposts",
+        "name": "Discover Lost Outposts",
+        "set": "pok",
+        "condition": "Control 2 planets that have attachments.",
+        "points": 1
+      },
+      {
+        "id": "engineer_a_marvel",
+        "name": "Engineer a Marvel",
+        "set": "pok",
+        "condition": "Have your flagship or a war sun on the game board.",
+        "points": 1
+      },
+      {
+        "id": "explore_deep_space",
+        "name": "Explore Deep Space",
+        "set": "pok",
+        "condition": "Have units in 3 systems that do not contain planets.",
+        "points": 1
+      },
+      {
+        "id": "improve_infrastructure",
+        "name": "Improve Infrastructure",
+        "set": "pok",
+        "condition": "Have structures on 3 planets outside of your home system.",
+        "points": 1
+      },
+      {
+        "id": "make_history",
+        "name": "Make History",
+        "set": "pok",
+        "condition": "Have units in 2 systems that contain legendary planets, Mecatol Rex, or anomalies.",
+        "points": 1
+      },
+      {
+        "id": "populate_the_outer_rim",
+        "name": "Populate the Outer Rim",
+        "set": "pok",
+        "condition": "Have units in 3 systems on the edge of the game board other than your home system.",
+        "points": 1
+      },
+      {
+        "id": "push_boundaries",
+        "name": "Push Boundaries",
+        "set": "pok",
+        "condition": "Control more planets than each of 2 of your neighbors.",
+        "points": 1
+      },
+      {
+        "id": "raise_a_fleet",
+        "name": "Raise a Fleet",
+        "set": "pok",
+        "condition": "Have 5 or more non-fighter ships in 1 system.",
+        "points": 1
+      }
+    ],
+    "stageII": [
+      {
+        "id": "centralize_galactic_trade",
+        "name": "Centralize Galactic Trade",
+        "set": "base",
+        "condition": "Spend 10 trade goods.",
+        "points": 2
+      },
+      {
+        "id": "conquer_the_weak",
+        "name": "Conquer the Weak",
+        "set": "base",
+        "condition": "Control 1 planet that is in another player's home system.",
+        "points": 2
+      },
+      {
+        "id": "form_galactic_brain_trust",
+        "name": "Form Galactic Brain Trust",
+        "set": "base",
+        "condition": "Control 5 planets that have technology specialties.",
+        "points": 2
+      },
+      {
+        "id": "found_a_golden_age",
+        "name": "Found a Golden Age",
+        "set": "base",
+        "condition": "Spend 16 resources.",
+        "points": 2
+      },
+      {
+        "id": "galvanize_the_people",
+        "name": "Galvanize the People",
+        "set": "base",
+        "condition": "Spend a total of 6 tokens from your tactic and/or strategy pools.",
+        "points": 2
+      },
+      {
+        "id": "manipulate_galactic_law",
+        "name": "Manipulate Galactic Law",
+        "set": "base",
+        "condition": "Spend 16 influence.",
+        "points": 2
+      },
+      {
+        "id": "master_the_sciences",
+        "name": "Master the Sciences",
+        "set": "base",
+        "condition": "Own 2 technologies in each of 4 colors.",
+        "points": 2
+      },
+      {
+        "id": "revolutionize_warfare",
+        "name": "Revolutionize Warfare",
+        "set": "base",
+        "condition": "Own 3 unit upgrade technologies.",
+        "points": 2
+      },
+      {
+        "id": "subdue_the_galaxy",
+        "name": "Subdue the Galaxy",
+        "set": "base",
+        "condition": "Control 11 planets in non-home systems.",
+        "points": 2
+      },
+      {
+        "id": "unify_the_colonies",
+        "name": "Unify the Colonies",
+        "set": "base",
+        "condition": "Control 6 planets that each have the same planet trait.",
+        "points": 2
+      },
+      {
+        "id": "achieve_supremacy",
+        "name": "Achieve Supremacy",
+        "set": "pok",
+        "condition": "Have your flagship or a war sun in another player's home system or the Mecatol Rex system.",
+        "points": 2
+      },
+      {
+        "id": "become_a_legend",
+        "name": "Become a Legend",
+        "set": "pok",
+        "condition": "Have units in 4 systems that contain legendary planets, Mecatol Rex, or anomalies.",
+        "points": 2
+      },
+      {
+        "id": "command_an_armada",
+        "name": "Command an Armada",
+        "set": "pok",
+        "condition": "Have 8 or more non-fighter ships in 1 system.",
+        "points": 2
+      },
+      {
+        "id": "construct_massive_cities",
+        "name": "Construct Massive Cities",
+        "set": "pok",
+        "condition": "Have 7 or more structures.",
+        "points": 2
+      },
+      {
+        "id": "control_the_borderlands",
+        "name": "Control the Borderlands",
+        "set": "pok",
+        "condition": "Have units in 5 systems on the edge of the game board other than your home system.",
+        "points": 2
+      },
+      {
+        "id": "hold_vast_reserves",
+        "name": "Hold Vast Reserves",
+        "set": "pok",
+        "condition": "Spend 6 influence, 6 resources, and 6 trade goods.",
+        "points": 2
+      },
+      {
+        "id": "patrol_vast_territories",
+        "name": "Patrol Vast Territories",
+        "set": "pok",
+        "condition": "Have units in 5 systems that do not contain planets.",
+        "points": 2
+      },
+      {
+        "id": "protect_the_border",
+        "name": "Protect the Border",
+        "set": "pok",
+        "condition": "Have structures on 5 planets outside of your home system.",
+        "points": 2
+      },
+      {
+        "id": "reclaim_ancient_monuments",
+        "name": "Reclaim Ancient Monuments",
+        "set": "pok",
+        "condition": "Control 3 planets that have attachments.",
+        "points": 2
+      },
+      {
+        "id": "rule_distant_lands",
+        "name": "Rule Distant Lands",
+        "set": "pok",
+        "condition": "Control 2 planets that are each in or adjacent to a different, other player's home system.",
+        "points": 2
+      }
+    ]
+  },
+  "secretObjectives": {
+    "actionPhase": [
+      {
+        "id": "destroy_their_greatest_ship",
+        "name": "Destroy Their Greatest Ship",
+        "set": "base",
+        "timing": "action",
+        "condition": "Destroy another player's war sun or flagship.",
+        "points": 1
+      },
+      {
+        "id": "make_an_example_of_their_world",
+        "name": "Make an Example of Their World",
+        "set": "base",
+        "timing": "action",
+        "condition": "Use BOMBARDMENT to destroy the last of a player's ground forces on a planet.",
+        "omega": {
+          "source": "Codex",
+          "condition": "Destroy the last of a player's ground forces on a planet during the bombardment step."
+        },
+        "points": 1
+      },
+      {
+        "id": "spark_a_rebellion",
+        "name": "Spark a Rebellion",
+        "set": "base",
+        "timing": "action",
+        "condition": "Win a combat against a player who has the most victory points.",
+        "points": 1
+      },
+      {
+        "id": "turn_their_fleets_to_dust",
+        "name": "Turn Their Fleets to Dust",
+        "set": "base",
+        "timing": "action",
+        "condition": "Use SPACE CANNON to destroy the last of a player's ships in a system.",
+        "omega": {
+          "source": "Codex",
+          "condition": "Destroy the last of a player's non-fighter ships in the active system during the space cannon offense step."
+        },
+        "points": 1
+      },
+      {
+        "id": "unveil_flagship",
+        "name": "Unveil Flagship",
+        "set": "base",
+        "timing": "action",
+        "condition": "Win a space combat in a system that contains your flagship. You cannot score this objective if your flagship is destroyed in the combat.",
+        "points": 1
+      },
+      {
+        "id": "become_a_martyr",
+        "name": "Become a Martyr",
+        "set": "pok",
+        "timing": "action",
+        "condition": "Lose control of a planet in a home system.",
+        "points": 1
+      },
+      {
+        "id": "betray_a_friend",
+        "name": "Betray a Friend",
+        "set": "pok",
+        "timing": "action",
+        "condition": "Win a combat against a player whose promissory note you had in your play area at the start of your tactical action.",
+        "points": 1
+      },
+      {
+        "id": "brave_the_void",
+        "name": "Brave the Void",
+        "set": "pok",
+        "timing": "action",
+        "condition": "Win a combat in an anomaly.",
+        "points": 1
+      },
+      {
+        "id": "darken_the_skies",
+        "name": "Darken the Skies",
+        "set": "pok",
+        "timing": "action",
+        "condition": "Win a combat in another player's home system.",
+        "points": 1
+      },
+      {
+        "id": "demonstrate_your_power",
+        "name": "Demonstrate Your Power",
+        "set": "pok",
+        "timing": "action",
+        "condition": "Have 3 or more non-fighter ships in the active system at the end of a space combat.",
+        "points": 1
+      },
+      {
+        "id": "fight_with_precision",
+        "name": "Fight With Precision",
+        "set": "pok",
+        "timing": "action",
+        "condition": "Use ANTI-FIGHTER BARRAGE to destroy the last of a player's fighters in a system.",
+        "omega": {
+          "source": "Codex",
+          "condition": "Destroy the last of a player's fighters in the active system during the anti-fighter barrage step."
+        },
+        "points": 1
+      },
+      {
+        "id": "prove_endurance",
+        "name": "Prove Endurance",
+        "set": "pok",
+        "timing": "action",
+        "condition": "Be the last player to pass during a game round.",
+        "points": 1
+      }
+    ],
+    "statusPhase": [
+      {
+        "id": "adapt_new_strategies",
+        "name": "Adapt New Strategies",
+        "set": "base",
+        "timing": "status",
+        "condition": "Own 2 faction technologies. (Valefar Assimilator technologies do not count toward this objective.)",
+        "points": 1
+      },
+      {
+        "id": "become_the_gatekeeper",
+        "name": "Become the Gatekeeper",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 1 or more ships in a system that contains an alpha wormhole and 1 or more ships in a system that contains a beta wormhole.",
+        "points": 1
+      },
+      {
+        "id": "control_the_region",
+        "name": "Control the Region",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 1 or more ships in 6 systems.",
+        "points": 1
+      },
+      {
+        "id": "cut_supply_lines",
+        "name": "Cut Supply Lines",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 1 or more ships in the same system as another player's space dock.",
+        "points": 1
+      },
+      {
+        "id": "establish_a_perimeter",
+        "name": "Establish a Perimeter",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 4 PDS units on the game board.",
+        "points": 1
+      },
+      {
+        "id": "forge_an_alliance",
+        "name": "Forge an Alliance",
+        "set": "base",
+        "timing": "status",
+        "condition": "Control 4 cultural planets.",
+        "points": 1
+      },
+      {
+        "id": "form_a_spy_network",
+        "name": "Form a Spy Network",
+        "set": "base",
+        "timing": "status",
+        "condition": "Discard 5 Action Cards.",
+        "points": 1
+      },
+      {
+        "id": "fuel_the_war_machine",
+        "name": "Fuel the War Machine",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 3 space docks on the game board.",
+        "points": 1
+      },
+      {
+        "id": "gather_a_mighty_fleet",
+        "name": "Gather a Mighty Fleet",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 5 dreadnoughts on the game board.",
+        "points": 1
+      },
+      {
+        "id": "learn_the_secrets_of_the_cosmos",
+        "name": "Learn the Secrets of the Cosmos",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 1 or more ships in 3 systems that are each adjacent to an anomaly.",
+        "points": 1
+      },
+      {
+        "id": "master_the_laws_of_physics",
+        "name": "Master the Laws of Physics",
+        "set": "base",
+        "timing": "status",
+        "condition": "Own 4 technologies of the same color.",
+        "points": 1
+      },
+      {
+        "id": "mine_rare_metals",
+        "name": "Mine Rare Metals",
+        "set": "base",
+        "timing": "status",
+        "condition": "Control 4 hazardous planets.",
+        "points": 1
+      },
+      {
+        "id": "monopolize_production",
+        "name": "Monopolize Production",
+        "set": "base",
+        "timing": "status",
+        "condition": "Control 4 industrial planets.",
+        "points": 1
+      },
+      {
+        "id": "occupy_the_seat_of_the_empire",
+        "name": "Occupy the Seat of the Empire",
+        "set": "base",
+        "timing": "status",
+        "condition": "Control Mecatol Rex and have 3 or more ships in its system.",
+        "points": 1
+      },
+      {
+        "id": "threaten_enemies",
+        "name": "Threaten Enemies",
+        "set": "base",
+        "timing": "status",
+        "condition": "Have 1 or more ships in a system that is adjacent to another player's home system.",
+        "points": 1
+      },
+      {
+        "id": "defy_space_and_time",
+        "name": "Defy Space and Time",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Have units in the wormhole nexus.",
+        "points": 1
+      },
+      {
+        "id": "destroy_heretical_works",
+        "name": "Destroy Heretical Works",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Purge 2 of your relic fragments of any type.",
+        "points": 1
+      },
+      {
+        "id": "establish_hegemony",
+        "name": "Establish Hegemony",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Control planets that have a combined influence value of at least 12.",
+        "points": 1
+      },
+      {
+        "id": "foster_cohesion",
+        "name": "Foster Cohesion",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Be neighbors with all other players.",
+        "points": 1
+      },
+      {
+        "id": "hoard_raw_materials",
+        "name": "Hoard Raw Materials",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Control planets that have a combined resource value of at least 12.",
+        "points": 1
+      },
+      {
+        "id": "mechanize_the_military",
+        "name": "Mechanize the Military",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Have 1 mech on each of 4 planets.",
+        "points": 1
+      },
+      {
+        "id": "occupy_the_fringe",
+        "name": "Occupy the Fringe",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Have 9 or more ground forces on a planet that does not contain 1 of your space docks.",
+        "points": 1
+      },
+      {
+        "id": "produce_en_masse",
+        "name": "Produce En Masse",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Have units with a combined PRODUCTION value of at least 8 in a single system.",
+        "points": 1
+      },
+      {
+        "id": "seize_an_icon",
+        "name": "Seize An Icon",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Control a legendary planet.",
+        "points": 1
+      },
+      {
+        "id": "stake_your_claim",
+        "name": "Stake your Claim",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Control a planet in a system that contains a planet controlled by another player.",
+        "points": 1
+      },
+      {
+        "id": "strengthen_bonds",
+        "name": "Strengthen Bonds",
+        "set": "pok",
+        "timing": "status",
+        "condition": "Have another player's promissory note in your play area.",
+        "points": 1
+      }
+    ],
+    "agendaPhase": [
+      {
+        "id": "dictate_policy",
+        "name": "Dictate Policy",
+        "set": "pok",
+        "timing": "agenda",
+        "condition": "There are 3 or more laws in play.",
+        "points": 1
+      },
+      {
+        "id": "drive_the_debate",
+        "name": "Drive the Debate",
+        "set": "pok",
+        "timing": "agenda",
+        "condition": "You or a planet you control are elected by an agenda.",
+        "points": 1
+      }
+    ]
+  }
+}
