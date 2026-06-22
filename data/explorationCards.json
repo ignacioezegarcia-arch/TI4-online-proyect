@@ -1,0 +1,289 @@
+{
+  "_comment": "Cartas de Exploración de TI4. Fuente: PDF Player Components (oficial). 60 cartas de exploración (20 cultural, 20 industrial, 20 hazardous) + 20 frontier. Las cartas con ATTACH modifican permanentemente un planeta.",
+  "rules": {
+    "exploring": "Cuando un jugador toma control de un planeta que no estaba controlado, lo explora: saca 1 carta del deck correspondiente al trait del planeta (cultural/industrial/hazardous) y resuelve su efecto. Luego descarta, salvo que sea relic fragment, tenga ATTACH, o diga específicamente que se guarde.",
+    "noTrait": "Un planeta sin trait no puede ser explorado.",
+    "multipleSimultaneous": "Si un jugador gana control de múltiples planetas al mismo tiempo, elige el orden en que los explora.",
+    "reExplore": "Un planeta ya explorado puede volver a explorarse con Scanlink Drone Network u otras habilidades.",
+    "frontierTokens": "Se colocan durante el setup en todos los sistemas sin planetas (anomalías sin planeta, wormholes, espacio vacío). También en el Creuss Gate System. Los hyperlane tiles no son sistemas. Se exploran con Dark Energy Tap o por efectos de cartas/habilidades."
+  },
+  "decks": {
+    "cultural": {
+      "label": "Cultural Exploration Deck",
+      "count": 20,
+      "cards": [
+        {
+          "id": "demilitarized_zone_explore",
+          "name": "Demilitarized Zone",
+          "count": 1,
+          "effect": "Return all structures on this planet to your reinforcements. Then, return all ground forces on this planet to the space area.",
+          "attach": true,
+          "attachEffect": "Units cannot be committed to, produced on or placed on this planet. During the agenda phase, this planet's planet card can be traded as part of a transaction."
+        },
+        {
+          "id": "dyson_sphere",
+          "name": "Dyson Sphere",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet's resource value is increased by 2 and its influence value is increased by 1."
+        },
+        {
+          "id": "freelancers",
+          "name": "Freelancers",
+          "count": 3,
+          "effect": "You may produce 1 unit in this system; you may spend influence as if it were resources to produce this unit."
+        },
+        {
+          "id": "gamma_wormhole_explore",
+          "name": "Gamma Wormhole",
+          "count": 1,
+          "effect": "Place a gamma wormhole token in this system. Then, purge this card."
+        },
+        {
+          "id": "mercenary_outfit",
+          "name": "Mercenary Outfit",
+          "count": 3,
+          "effect": "You may place 1 infantry from your reinforcements on this planet."
+        },
+        {
+          "id": "paradise_world",
+          "name": "Paradise World",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet's influence value is increased by 2."
+        },
+        {
+          "id": "tomb_of_emphidia",
+          "name": "Tomb of Emphidia",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet's influence value is increased by 1. If the player who has the 'Crown of Emphidia' Relic has control of this planet, they can use that relic to gain 1 Victory Point."
+        },
+        {
+          "id": "cultural_relic_fragment",
+          "name": "Cultural Relic Fragment",
+          "count": 9,
+          "effect": "ACTION: Purge 3 of your cultural relic fragments to gain 1 Relic.",
+          "isRelicFragment": true,
+          "fragmentType": "cultural"
+        }
+      ]
+    },
+    "industrial": {
+      "label": "Industrial Exploration Deck",
+      "count": 20,
+      "cards": [
+        {
+          "id": "abandoned_warehouses",
+          "name": "Abandoned Warehouses",
+          "count": 4,
+          "effect": "You may gain 2 commodities, or you may convert up to 2 of your commodities to trade goods."
+        },
+        {
+          "id": "biotic_research_facility",
+          "name": "Biotic Research Facility",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet has a green technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
+        },
+        {
+          "id": "cybernetic_research_facility",
+          "name": "Cybernetic Research Facility",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet has a yellow technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
+        },
+        {
+          "id": "functioning_base",
+          "name": "Functioning Base",
+          "count": 4,
+          "effect": "You may gain 1 commodity, or you may spend 1 trade good or 1 commodity to draw 1 action card."
+        },
+        {
+          "id": "local_fabricators",
+          "name": "Local Fabricators",
+          "count": 4,
+          "effect": "You may gain 1 commodity, or you may spend 1 trade good or 1 commodity to place 1 mech from your reinforcements on this planet."
+        },
+        {
+          "id": "propulsion_research_facility",
+          "name": "Propulsion Research Facility",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet has a blue technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
+        },
+        {
+          "id": "industrial_relic_fragment",
+          "name": "Industrial Relic Fragment",
+          "count": 5,
+          "effect": "ACTION: Purge 3 of your industrial relic fragments to gain 1 Relic.",
+          "isRelicFragment": true,
+          "fragmentType": "industrial"
+        }
+      ]
+    },
+    "hazardous": {
+      "label": "Hazardous Exploration Deck",
+      "count": 20,
+      "cards": [
+        {
+          "id": "core_mine",
+          "name": "Core Mine",
+          "count": 3,
+          "effect": "If you have at least 1 mech on this planet, or if you remove 1 infantry from this planet (placing it in your reinforcements), gain 1 trade good.",
+          "_clarification": "The card's wording is ambiguous. Official clarification: if you have at least 1 mech, gain the benefit; otherwise, you may choose to remove 1 infantry to gain the benefit."
+        },
+        {
+          "id": "expedition",
+          "name": "Expedition",
+          "count": 3,
+          "effect": "If you have at least 1 mech on this planet, or if you remove 1 infantry from this planet (placing it in your reinforcements), ready this planet.",
+          "_clarification": "Same clarification as Core Mine applies."
+        },
+        {
+          "id": "lazax_survivors",
+          "name": "Lazax Survivors",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet's resource value is increased by 1 and its influence value is increased by 2."
+        },
+        {
+          "id": "mining_world",
+          "name": "Mining World",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet's resource value is increased by 2."
+        },
+        {
+          "id": "rich_world",
+          "name": "Rich World",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet's resource value is increased by 1."
+        },
+        {
+          "id": "volatile_fuel_source",
+          "name": "Volatile Fuel Source",
+          "count": 3,
+          "effect": "If you have at least 1 mech on this planet, or if you remove 1 infantry from this planet (placing it in your reinforcements), gain 1 command token.",
+          "_clarification": "Same clarification as Core Mine applies."
+        },
+        {
+          "id": "warfare_research_facility",
+          "name": "Warfare Research Facility",
+          "count": 1,
+          "attach": true,
+          "attachEffect": "This planet has a red technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
+        },
+        {
+          "id": "hazardous_relic_fragment",
+          "name": "Hazardous Relic Fragment",
+          "count": 7,
+          "effect": "ACTION: Purge 3 of your hazardous relic fragments to gain 1 Relic.",
+          "isRelicFragment": true,
+          "fragmentType": "hazardous"
+        }
+      ]
+    },
+    "frontier": {
+      "label": "Frontier Deck",
+      "count": 20,
+      "cards": [
+        {
+          "id": "derelict_vessel",
+          "name": "Derelict Vessel",
+          "count": 2,
+          "set": "pok",
+          "effect": "Draw 1 secret objective."
+        },
+        {
+          "id": "enigmatic_device",
+          "name": "Enigmatic Device",
+          "count": 2,
+          "set": "pok",
+          "effect": "Place this card face up in your play area. ACTION: You may spend 6 resources and purge this card to research 1 technology.",
+          "keepInPlayArea": true
+        },
+        {
+          "id": "gamma_relay",
+          "name": "Gamma Relay",
+          "count": 1,
+          "set": "pok",
+          "effect": "Place a gamma wormhole token in this system. Then, purge this card."
+        },
+        {
+          "id": "ion_storm",
+          "name": "Ion Storm",
+          "count": 1,
+          "set": "pok",
+          "effect": "Place the ion storm token in this system with either side face up. Then, place this card in the common play area. At the end of a 'Move Ships' or 'Retreat' sub-step of a tactical action during which 1 or more of your ships use the ion storm wormhole, flip the ion storm token to its opposing side."
+        },
+        {
+          "id": "lost_crew",
+          "name": "Lost Crew",
+          "count": 2,
+          "set": "pok",
+          "effect": "Draw 2 Action Cards."
+        },
+        {
+          "id": "merchant_station",
+          "name": "Merchant Station",
+          "count": 2,
+          "set": "pok",
+          "effect": "You may replenish your commodities, or you may convert your commodities to trade goods."
+        },
+        {
+          "id": "mirage_frontier",
+          "name": "Mirage",
+          "count": 1,
+          "set": "pok",
+          "effect": "Place the Mirage planet token in this system. Gain the Mirage planet card and ready it. Then, purge this card."
+        },
+        {
+          "id": "unknown_relic_fragment",
+          "name": "Unknown Relic Fragment",
+          "count": 3,
+          "set": "pok",
+          "effect": "This card counts as a relic fragment of any type.",
+          "isRelicFragment": true,
+          "fragmentType": "any"
+        },
+        {
+          "id": "dead_world",
+          "name": "Dead World",
+          "count": 1,
+          "set": "codex",
+          "effect": "Draw 1 relic."
+        },
+        {
+          "id": "entropic_field",
+          "name": "Entropic Field",
+          "count": 1,
+          "set": "codex",
+          "effect": "Gain 1 command token and 2 trade goods."
+        },
+        {
+          "id": "keleres_ship",
+          "name": "Keleres Ship",
+          "count": 2,
+          "set": "codex",
+          "effect": "Gain 2 command tokens."
+        },
+        {
+          "id": "major_entropic_field",
+          "name": "Major Entropic Field",
+          "count": 1,
+          "set": "codex",
+          "effect": "Gain 1 command token and 3 trade goods."
+        },
+        {
+          "id": "minor_entropic_field",
+          "name": "Minor Entropic Field",
+          "count": 1,
+          "set": "codex",
+          "effect": "Gain 1 command token and 1 trade good."
+        }
+      ]
+    }
+  }
+}
