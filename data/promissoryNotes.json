@@ -1,0 +1,61 @@
+{
+  "_comment": "Promissory Notes genéricas de TI4. Fuente: usuario (material físico). Las promissory notes específicas de cada facción van en su archivo de facción correspondiente (data/factions/). Cada jugador empieza con 5 cartas genéricas (por color) + 1 de facción = 6 total. PoK agrega 'Alliance' sumando 1 más = 6 por defecto en PoK (7 para Empyrean que tiene 2 de facción).",
+  "rules": [
+    "Cada jugador comienza la partida con 5 promissory notes genéricas (por color de componentes) + 1 única de su facción en mano.",
+    "PoK agrega 'Alliance', llevando el total base a 6. Empyrean tiene 2 promissory notes de facción en lugar de 1, dándole 7 en total.",
+    "Los jugadores pueden tradear promissory notes como parte de una transacción (1 por transacción).",
+    "Generalmente, cuando un jugador recibe la promissory note de otro, la coloca en su mano y puede usar su habilidad como indica la carta.",
+    "Los jugadores pueden transaccionar cualquier promissory note en su mano, incluyendo las de otros jugadores.",
+    "'Support for the Throne', 'Alliance' y varias de facción se colocan boca arriba en el área de juego al recibirlas — NO pueden ser intercambiadas nuevamente."
+  ],
+  "generic": [
+    {
+      "id": "ceasefire",
+      "name": "Ceasefire",
+      "set": "base",
+      "color": true,
+      "timing": "After the (color) player activates a system that contains 1 or more of your units:",
+      "effect": "The (color) player cannot move units into the active system. Then, return this card to the (color) player.",
+      "placeInPlayArea": false
+    },
+    {
+      "id": "trade_agreement",
+      "name": "Trade Agreement",
+      "set": "base",
+      "color": true,
+      "timing": "When the (color) player replenishes commodities:",
+      "effect": "The (color) player gives you all of their commodities. Then, return this card to the (color) player.",
+      "placeInPlayArea": false
+    },
+    {
+      "id": "political_secret",
+      "name": "Political Secret",
+      "set": "base",
+      "color": true,
+      "timing": "When an agenda is revealed:",
+      "effect": "The (color) player cannot vote, play action cards, or use faction abilities until after that agenda has been resolved. Then, return this card to the (color) player.",
+      "placeInPlayArea": false
+    },
+    {
+      "id": "support_for_the_throne",
+      "name": "Support for the Throne",
+      "set": "base",
+      "color": true,
+      "timing": "When you receive this card:",
+      "effect": "If you are not the (color) player, you must place it face-up in your play area and gain 1 Victory Point. If you activate a system that contains 1 or more of the (color) player's units, or if the (color) player is eliminated, lose 1 Victory Point and return this card to the (color) player.",
+      "placeInPlayArea": true,
+      "grantsVictoryPoint": true,
+      "notes": "No puede ser intercambiada una vez recibida. Se pierde el VP si atacás al jugador que te la dio o si ese jugador es eliminado."
+    },
+    {
+      "id": "alliance",
+      "name": "Alliance",
+      "set": "pok",
+      "color": true,
+      "timing": "When you receive this card:",
+      "effect": "If you are not the (color) player, you must place it face up in your play area. While this card is in your play area, you can use the (color) player's commander ability, if it is unlocked. If you activate a system that contains 1 or more of the (color) player's units, return this card to the (color) player.",
+      "placeInPlayArea": true,
+      "notes": "No puede ser intercambiada una vez recibida. Otorga acceso a la habilidad del Commander del jugador que la dio, siempre que esté desbloqueado."
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "_comment": "Control Tokens de TI4. Fuente: usuario (material físico). Fichas rectangulares pequeñas con el símbolo de la facción en ambas caras.",
+  "uses": [
+    "Si un jugador controla un planeta pero luego mueve todas sus unidades fuera de él, debe colocar un control token de su facción en ese planeta para marcar que sigue siendo suyo.",
+    "Cuando un jugador anota un Victory Point, coloca un control token en el Victory Point tracker para marcar su puntaje actual.",
+    "Se coloca un control token sobre cada Public Objective anotado como prueba de que ese jugador lo completó."
+  ],
+  "rules": [
+    "Los control tokens comienzan en 0 en el Victory Point tracker y avanzan a medida que cada jugador anota puntos.",
+    "Cada jugador tiene control tokens que coinciden con el símbolo de su facción.",
+    "Los control tokens NO son unidades — no participan en combate ni cuentan para ningún límite de flota."
+  ]
+}
