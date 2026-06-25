@@ -1,0 +1,115 @@
+{
+  "id": "hacan",
+  "name": "The Emirates of Hacan",
+  "set": "base",
+  "commodities": 6,
+  "homePlanets": ["Arretze", "Hercant", "Kamdorn"],
+  "startingUnits": {
+    "carrier": 2,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 4,
+    "spaceDock": 1
+  },
+  "startingTechnologies": ["antimass_deflectors", "sarween_tools"],
+  "factionAbilities": [
+    {
+      "name": "MASTERS OF TRADE",
+      "effect": "You do not have to spend a command token to resolve the secondary ability of the 'Trade' strategy card."
+    },
+    {
+      "name": "GUILD SHIPS",
+      "effect": "You can negotiate transactions with players who are not your neighbor."
+    },
+    {
+      "name": "ARBITERS",
+      "effect": "When you are negotiating a transaction, action cards can be exchanged as part of that transaction."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Trade Convoys",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "ACTION:",
+        "effect": "Place this card face-up in your play area. While this card is in your play area, you may negotiate transactions with players who are not your neighbor. If you activate a system that contains 1 or more of the Hacan player's units, return this card to the Hacan player.",
+        "placeInPlayArea": true
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "production_biomes",
+      "name": "Production Biomes",
+      "color": "green",
+      "prerequisites": ["green", "green"],
+      "exhaustable": true,
+      "effect": "ACTION: Exhaust this card and spend 1 token from your strategy pool to gain 4 trade goods and choose 1 other player; that player gains 2 trade goods."
+    },
+    {
+      "id": "quantum_datahub_node",
+      "name": "Quantum Datahub Node",
+      "color": "yellow",
+      "prerequisites": ["yellow", "yellow", "yellow"],
+      "effect": "At the end of the strategy phase, you may spend 1 token from your strategy pool and give another player 3 of your trade goods. If you do, give 1 of your strategy cards to that player and take 1 of their strategy cards."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "Wrath of Kenara",
+      "cost": 8,
+      "combat": 7,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Trade Good Bonus",
+          "effect": "After you roll a die during a space combat in this system, you may spend 1 trade good to apply +1 to the result."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Pride of Kenara",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Tradeable Planet",
+          "effect": "This planet's card may be traded as part of a transaction; if you do, move all of your units from this planet to another planet you control."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Auto-Factories",
+    "synergy": "When you produce 3 or more non-fighter ships, place 1 command token from your reinforcements into your fleet pool."
+  },
+  "leaders": {
+    "agent": {
+      "name": "Carth of Golden Sands",
+      "unlock": "At Game Start",
+      "ability": "During the action phase: You may exhaust this card to gain 2 commodities or replenish another player's commodities."
+    },
+    "commander": {
+      "name": "Gila the Silvertongue",
+      "unlock": "Have 10 Trade Goods.",
+      "ability": "When you cast votes: You may spend any number of trade goods; cast 2 additional votes for each trade good spent."
+    },
+    "hero": {
+      "name": "Harrugh Gefhara",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "GALACTIC SECURITIES NET — When 1 or more of your units use PRODUCTION: You may reduce the cost of each of your units to 0 during this use of PRODUCTION. If you do, purge this card."
+    }
+  }
+}
