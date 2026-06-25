@@ -1,0 +1,141 @@
+{
+  "id": "arborec",
+  "name": "The Arborec",
+  "set": "base",
+  "commodities": 3,
+  "homePlanets": ["Nestphar"],
+  "startingUnits": {
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 4,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": ["magen_defense_grid"],
+  "factionAbilities": [
+    {
+      "name": "MITOSIS",
+      "effect": "Your space docks cannot produce infantry. At the start of the status phase, place 1 infantry from your reinforcements on any planet you control."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Stymie",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "ACTION:",
+        "effect": "Place this card face up in your play area. While this card is in your play area, the Arborec player cannot produce units in or adjacent to non-home systems that contain 1 or more of your units. If you activate a system that contains 1 or more of the Arborec player's units, return this card to the Arborec player.",
+        "placeInPlayArea": true
+      },
+      {
+        "version": "Ω",
+        "source": "codex",
+        "timing": "After another player moves ships into a system that contains 1 or more of your units:",
+        "effect": "You may place 1 command token from that player's reinforcements in any non-home system. Then, return this card to the Arborec player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "bioplasmosis",
+      "name": "Bioplasmosis",
+      "color": "green",
+      "prerequisites": ["green", "green"],
+      "effect": "At the end of the status phase, you may remove any number of infantry from planets you control and place them on 1 or more planets you control in the same or adjacent systems."
+    }
+  ],
+  "units": {
+    "infantry": {
+      "name": "Letani Warrior",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Letani Warrior I",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 8,
+          "abilities": [
+            {
+              "name": "Production",
+              "value": 1,
+              "effect": "PRODUCTION 1"
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Letani Warrior II",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 7,
+          "abilities": [
+            {
+              "name": "Production",
+              "value": 2,
+              "effect": "PRODUCTION 2"
+            },
+            {
+              "name": "Respawn",
+              "effect": "After this unit is destroyed, roll 1 die. If the result is 6 or greater, place the unit on this card. At the start of your next turn, place each unit that is on this card on a planet you control in your home system."
+            }
+          ],
+          "techPrerequisite": "bioplasmosis"
+        }
+      ]
+    },
+    "flagship": {
+      "name": "Duha Menaimon",
+      "cost": 8,
+      "combat": 7,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 5,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Production",
+          "effect": "After you activate this system, you may produce up to 5 units in this system."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Letani Behemoth",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "When you would use your MITOSIS faction ability you may replace 1 of your infantry with 1 mech from your reinforcements instead.",
+      "abilities": [
+        {"name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
+        {"name": "Production", "value": 2, "effect": "PRODUCTION 2"},
+        {"name": "Planetary Shield", "effect": "PLANETARY SHIELD"}
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Psychospore",
+    "synergy": "ACTION: Exhaust this card to remove a command token from a system that contains 1 or more of your infantry and return it to your reinforcements. Then, place 1 infantry in that system."
+  },
+  "leaders": {
+    "agent": {
+      "name": "Letani Ospha",
+      "unlock": "At Game Start",
+      "ability": "ACTION: Exhaust this card and choose a player's non-fighter ship; that player may replace that ship with one from their reinforcements that costs up to 2 more than the replaced ship."
+    },
+    "commander": {
+      "name": "Dirzuga Rophal",
+      "unlock": "Have 12 Ground Forces on Planets you control.",
+      "ability": "After another player activates a system that contains 1 or more of your units that have PRODUCTION: You may produce 1 unit in that system."
+    },
+    "hero": {
+      "name": "Letani Miasmiala",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "ULTRASONIC EMITTER — ACTION: Produce any number of units in any number of systems that contain 1 or more of your ground forces. Then, purge this card."
+    }
+  }
+}

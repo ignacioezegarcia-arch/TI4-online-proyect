@@ -1,0 +1,125 @@
+{
+  "id": "letnev",
+  "name": "The Barony of Letnev",
+  "set": "base",
+  "commodities": 2,
+  "homePlanets": ["Arc Prime", "Wren Terra"],
+  "startingUnits": {
+    "dreadnought": 1,
+    "carrier": 1,
+    "destroyer": 1,
+    "fighter": 1,
+    "infantry": 3,
+    "spaceDock": 1
+  },
+  "startingTechnologies": ["antimass_deflectors", "plasma_scoring"],
+  "factionAbilities": [
+    {
+      "name": "MUNITIONS RESERVES",
+      "effect": "At the start of each round of space combat, you may spend 2 trade goods; you may re-roll any number of your dice during that combat round."
+    },
+    {
+      "name": "ARMADA",
+      "effect": "The maximum number of non-fighter ships you can have in each system is equal to 2 more than the number of tokens in your fleet pool."
+    }
+  ],
+  "promissoryNote": {
+    "name": "War Funding",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the start of a round of space combat:",
+        "effect": "The Letnev player loses 2 trade goods. During this combat round, re-roll any number of your dice. Then, return this card to the Letnev player.",
+        "placeInPlayArea": false
+      },
+      {
+        "version": "Ω",
+        "source": "codex",
+        "timing": "After you and your opponent roll dice during space combat:",
+        "effect": "You may reroll all of your opponent's dice. You may reroll any number of your dice. Then, return this card to the Letnev player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "l4_disruptors",
+      "name": "L4 Disruptors",
+      "color": "yellow",
+      "prerequisites": ["yellow"],
+      "effect": "During an invasion, units cannot use SPACE CANNON against your units."
+    },
+    {
+      "id": "non_euclidean_shielding",
+      "name": "Non-Euclidean Shielding",
+      "color": "red",
+      "prerequisites": ["red", "red"],
+      "effect": "When 1 of your units uses SUSTAIN DAMAGE, cancel 2 hits instead of 1."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "Arc Secundus",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Bombardment",
+          "value": 5,
+          "diceCount": 3,
+          "effect": "BOMBARDMENT 5 (x3)"
+        },
+        {
+          "name": "Planetary Shield Removal",
+          "effect": "Other players' units in this system lose PLANETARY SHIELD."
+        },
+        {
+          "name": "Auto-Repair",
+          "effect": "At the start of each space combat round, repair this ship."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Dunlain Reaper",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "At the start of a round of ground combat, you may spend 2 resources to replace 1 of your infantry in that combat with 1 mech.",
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Gravleash Maneuvers",
+    "synergy": "Before you roll dice during space combat, apply +X to the results of 1 of your ship's rolls, where X is the number of ship types you have in the combat.",
+    "passiveAbility": "During movement, your non-fighter ships' move values are equal to the highest move value amongst moving ships in the system they started in."
+  },
+  "leaders": {
+    "agent": {
+      "name": "Viscount Unlenn",
+      "unlock": "At Game Start",
+      "ability": "At the start of a Space Combat round: You may exhaust this card to choose 1 ship in the active system. That ship rolls 1 additional die during this combat round."
+    },
+    "commander": {
+      "name": "Rear Admiral Farran",
+      "unlock": "Have 5 non-fighter ships in 1 system.",
+      "ability": "After 1 of your units uses SUSTAIN DAMAGE: You may gain 1 Trade Good."
+    },
+    "hero": {
+      "name": "Darktalon Treilla",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "DARK MATTER AFFINITY — ACTION: Place this card near the game board; the number of non-fighter ships you can have in systems is not limited by laws or by the number of command tokens in your fleet pool during this game round. At the end of that game round, purge this card."
+    }
+  }
+}
