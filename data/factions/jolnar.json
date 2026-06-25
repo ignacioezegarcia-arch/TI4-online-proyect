@@ -1,0 +1,128 @@
+{
+  "id": "jolnar",
+  "name": "The Universities of Jol-Nar",
+  "set": "base",
+  "commodities": 4,
+  "homePlanets": ["Jol", "Nar"],
+  "startingUnits": {
+    "dreadnought": 1,
+    "carrier": 2,
+    "fighter": 1,
+    "infantry": 2,
+    "spaceDock": 1,
+    "pds": 2
+  },
+  "startingTechnologies": [
+    "neural_motivator",
+    "antimass_deflectors",
+    "sarween_tools",
+    "plasma_scoring"
+  ],
+  "factionAbilities": [
+    {
+      "id": "fragile",
+      "name": "FRAGILE",
+      "effect": "Apply -1 to the result of each of your unit's combat rolls."
+    },
+    {
+      "id": "brilliant",
+      "name": "BRILLIANT",
+      "effect": "When you spend a command token to resolve the secondary ability of the 'Technology' strategy card, you may resolve the primary ability instead."
+    },
+    {
+      "id": "analytical",
+      "name": "ANALYTICAL",
+      "effect": "When you research a technology that is not a unit upgrade technology, you may ignore 1 prerequisite."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Research Agreement",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "After the Jol-Nar player researches a technology that is not a faction technology:",
+        "effect": "Gain that technology. Then, return this card to the Jol-Nar player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "e_res_siphons",
+      "name": "E-Res Siphons",
+      "color": "yellow",
+      "prerequisites": ["yellow", "yellow"],
+      "effect": "After another player activates a system that contains 1 or more of your ships, gain 4 trade goods."
+    },
+    {
+      "id": "spatial_conduit_cylinder",
+      "name": "Spatial Conduit Cylinder",
+      "color": "blue",
+      "prerequisites": ["blue", "blue"],
+      "exhaustable": true,
+      "effect": "You may exhaust this card after you activate a system that contains 1 or more of your units; that system is adjacent to all other systems that contain 1 or more of your units during this activation."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "J.N.S. Hylarim",
+      "cost": 8,
+      "combat": 6,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "hylarim_bonus_hits",
+          "name": "Bonus Hits",
+          "effect": "When making a combat roll for this ship, each result of 9 or 10, before applying modifiers, produces 2 additional hits."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Shield Paling",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "shield_paling_fragile_immunity",
+          "name": "Fragile Immunity",
+          "effect": "Your infantry on this planet are not affected by your FRAGILE faction ability."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Specialized Compounds",
+    "synergy": "When you research technology using the 'Technology' strategy card, you may exhaust a planet that has a technology speciality instead of spending resources; if you do you must research a technology of that colour."
+  },
+  "leaders": {
+    "agent": {
+      "name": "Doctor Sucaban",
+      "unlock": "At Game Start",
+      "ability": "When a player spends resources to research: You may exhaust this card to allow that player to remove any number of their infantry from the game board. For each unit removed, reduce the resources spent by 1."
+    },
+    "commander": {
+      "name": "Ta Zern",
+      "unlock": "Own 8 technologies.",
+      "ability": "After you roll dice for a unit ability: You may reroll any of those dice."
+    },
+    "hero": {
+      "name": "Rin, The Master's Legacy",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "GENETIC MEMORY — ACTION: For each non-unit upgrade technology you own, you may replace that technology with any technology of the same color from the deck. Then, purge this card."
+    }
+  }
+}
