@@ -1,0 +1,148 @@
+{
+  "id": "sol",
+  "name": "The Federation of Sol",
+  "set": "base",
+  "commodities": 4,
+  "homePlanets": ["Jord"],
+  "startingUnits": {
+    "carrier": 2,
+    "destroyer": 1,
+    "fighter": 3,
+    "infantry": 5,
+    "spaceDock": 1
+  },
+  "startingTechnologies": ["neural_motivator", "antimass_deflectors"],
+  "factionAbilities": [
+    {
+      "name": "ORBITAL DROP",
+      "effect": "ACTION: Spend 1 token from your strategy pool to place 2 infantry from your reinforcements on 1 planet you control."
+    },
+    {
+      "name": "VERSATILE",
+      "effect": "When you gain command tokens during the status phase, gain 1 additional command token."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Military Support",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the start of the Sol player's turn:",
+        "effect": "Remove 1 token from the Sol player's strategy pool, if able, and return it to their reinforcements. Then, you may place 2 infantry from your reinforcements on any planet you control. Then, return this card to the Sol player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionSpecificUnits": {
+    "infantry": {
+      "name": "Spec Ops",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Spec Ops I",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 7,
+          "abilities": [],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Spec Ops II",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 6,
+          "abilities": [
+            {
+              "name": "Respawn",
+              "effect": "After this unit is destroyed, roll 1 die. If the result is 5 or greater, place the unit on this card. At the start of your next turn, place each unit that is on this card on a planet you control in your home system."
+            }
+          ]
+        }
+      ]
+    },
+    "carrier": {
+      "name": "Advanced Carrier",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Advanced Carrier I",
+          "cost": 3,
+          "combat": 9,
+          "move": 1,
+          "capacity": 6,
+          "abilities": [],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Advanced Carrier II",
+          "cost": 3,
+          "combat": 9,
+          "move": 2,
+          "capacity": 8,
+          "abilities": [
+            {
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "units": {
+    "flagship": {
+      "name": "Genesis",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 12,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Infantry Spawn",
+          "effect": "At the end of the status phase, place 1 infantry from your reinforcements in this system's space area."
+        }
+      ]
+    },
+    "mech": {
+      "name": "ZS Thunderbolt M2",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "After you use your ORBITAL DROP faction ability, you may spend 3 resources to place 1 mech on that planet.",
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Bellum Gloriosum",
+    "synergy": "When you produce a ship that has capacity, you may also produce any combination of ground forces or fighters up to that ship's capacity; they do not count against your PRODUCTION limit."
+  },
+  "leaders": {
+    "agent": {
+      "name": "Evelyn Delouis",
+      "unlock": "At Game Start",
+      "ability": "At the start of a ground combat round: You may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round."
+    },
+    "commander": {
+      "name": "Claire Gibson",
+      "unlock": "Control planets that have a combined total of at least 12 resources.",
+      "ability": "At the start of a ground combat on a planet you control: You may place 1 infantry from your reinforcements on that planet."
+    },
+    "hero": {
+      "name": "Jace X. 4th Air Legion",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "HELIO COMMAND ARRAY — ACTION: Remove each of your command tokens from the game board and return them to your reinforcements. Then, purge this card."
+    }
+  }
+}
