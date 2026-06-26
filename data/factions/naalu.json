@@ -1,0 +1,220 @@
+{
+  "id": "naalu",
+  "name": "The Naalu Collective",
+  "set": "base",
+  "commodities": 3,
+  "homePlanets": ["Maaluuk", "Druaa"],
+  "startingUnits": {
+    "carrier": 1,
+    "cruiser": 1,
+    "destroyer": 1,
+    "fighter": 3,
+    "infantry": 4,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": ["neural_motivator", "sarween_tools"],
+  "factionAbilities": [
+    {
+      "id": "telepathic",
+      "name": "TELEPATHIC",
+      "effect": "At the end of the strategy phase, place the Naalu '0' token on your strategy card; you are first in initiative order."
+    },
+    {
+      "id": "foresight",
+      "name": "FORESIGHT",
+      "effect": "After another player moves ships into a system that contains 1 or more of your ships, you may place 1 token from your strategy pool in an adjacent system that does not contain another player's ships; move your ships from the active system into that system."
+    }
+  ],
+  "factionSpecificComponents": [
+    {
+      "type": "token",
+      "id": "naalu_zero_token",
+      "name": "Naalu '0' Token",
+      "description": "Placed on top of a strategy card to make that player first in initiative order, going before all other players in the round and scoring first during the status phase."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Gift of Prescience",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the end of the strategy phase:",
+        "effect": "Place this card face-up in your play area and place the Naalu '0' token on your strategy card; you are first in the initiative order. The Naalu player cannot use their TELEPATHIC faction ability during this game round. Return this card to the Naalu player at the end of the status phase.",
+        "placeInPlayArea": true
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "neuroglaive",
+      "name": "Neuroglaive",
+      "color": "green",
+      "prerequisites": ["green", "green", "green"],
+      "effect": "After another player activates a system that contains 1 or more of your ships, that player removes 1 token from their fleet pool and returns it to their reinforcements."
+    }
+  ],
+  "factionSpecificUnits": {
+    "fighter": {
+      "name": "Hybrid Crystal Fighter",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Hybrid Crystal Fighter I",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 8,
+          "move": null,
+          "capacity": 0,
+          "abilities": [],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Hybrid Crystal Fighter II",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 7,
+          "move": 2,
+          "capacity": 0,
+          "abilities": [
+            {
+              "id": "self_propelled",
+              "name": "Self Propelled",
+              "effect": "This unit may move without being transported."
+            },
+            {
+              "id": "half_fleet_count",
+              "name": "Half Fleet Count",
+              "effect": "Each fighter in excess of your ships' capacity counts as 1/2 of a ship against your fleet pool."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "units": {
+    "flagship": {
+      "name": "Matriarch",
+      "cost": 8,
+      "combat": 9,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 6,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "matriarch_fighter_invasion",
+          "name": "Fighter Invasion",
+          "effect": "During an invasion in this system, you may commit fighters to planets as if they were ground forces. When combat ends, return those units to the space area."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Iconoclast",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "versions": [
+        {
+          "version": "original",
+          "source": "base",
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "iconoclast_relic_bonus",
+              "name": "Relic Bonus",
+              "effect": "During combat against an opponent who has at least 1 relic fragment, apply +2 to the results of this unit's combat rolls."
+            }
+          ]
+        },
+        {
+          "version": "Ω",
+          "source": "codex",
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "iconoclast_barrage_immunity",
+              "name": "Barrage Immunity",
+              "effect": "Other players cannot use ANTI-FIGHTER BARRAGE against your units in this system."
+            }
+          ]
+        },
+        {
+          "version": "ΩΩ",
+          "source": "thundersEdge",
+          "deploy": "When another player gains a relic, place 1 mech on any planet you control.",
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Mindsieve",
+    "synergy": "When you would resolve the secondary ability of another player's strategy card, you may give them a promissory note to resolve it without spending a command token."
+  },
+  "leaders": {
+    "agent": {
+      "name": "Z'eu",
+      "unlock": "At Game Start",
+      "versions": [
+        {
+          "version": "original",
+          "source": "base",
+          "ability": "After an agenda is revealed: You may exhaust this card to look at the top card of the agenda deck. Then, you may show that card to 1 other player."
+        },
+        {
+          "version": "Ω",
+          "source": "codex",
+          "ability": "ACTION: Exhaust this card and choose a player; that player may perform a tactical action in a non-home system without placing a command token; that system still counts as being activated."
+        },
+        {
+          "version": "ΩΩ",
+          "source": "thundersEdge",
+          "ability": "After any player's command token is placed in a system: You may exhaust this card to return that token to that player's reinforcements."
+        }
+      ]
+    },
+    "commander": {
+      "name": "M'aban",
+      "versions": [
+        {
+          "version": "original",
+          "source": "base",
+          "unlock": "Have 12 fighters on the game board.",
+          "ability": "You may produce 1 additional fighter for their cost; these additional units do not count against your production limit."
+        },
+        {
+          "version": "Ω",
+          "source": "codex",
+          "unlock": "Have ground forces in or adjacent to the Mecatol Rex system.",
+          "ability": "At any time: You may look at your neighbours' hands of promissory notes and the top and bottom card of the agenda deck."
+        }
+      ]
+    },
+    "hero": {
+      "name": "The Oracle",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "C-RADIUM GEOMETRY — At the end of the status phase: You may force each other player to give you 1 promissory note from their hand. If you do, purge this card."
+    }
+  }
+}

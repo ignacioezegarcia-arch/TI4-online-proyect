@@ -1,0 +1,125 @@
+{
+  "id": "mentak",
+  "name": "The Mentak Coalition",
+  "set": "base",
+  "commodities": 2,
+  "homePlanets": ["Moll Primus"],
+  "startingUnits": {
+    "carrier": 1,
+    "cruiser": 2,
+    "fighter": 3,
+    "infantry": 4,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": ["sarween_tools", "plasma_scoring"],
+  "factionAbilities": [
+    {
+      "id": "ambush",
+      "name": "AMBUSH",
+      "effect": "At the start of a space combat, you may roll 1 die for each of up to 2 of your cruisers or destroyers in the system. For each result equal to or greater than that ship's combat value, produce 1 hit; your opponent must assign it to 1 of their ships."
+    },
+    {
+      "id": "pillage",
+      "name": "PILLAGE",
+      "effect": "After 1 of your neighbors gains trade goods or resolves a transaction, if they have 3 or more trade goods, you may take 1 of their trade goods or commodities."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Promise of Protection",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "ACTION:",
+        "effect": "Place this card face-up in your play area. While this card is in your play area, the Mentak player cannot use their Pillage faction ability against you. If you activate a system that contains 1 or more of the Mentak player's units, return this card to the Mentak player.",
+        "placeInPlayArea": true
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "salvage_operations",
+      "name": "Salvage Operations",
+      "color": "yellow",
+      "prerequisites": ["yellow", "yellow"],
+      "effect": "After you win or lose a space combat, gain 1 trade good; if you won the combat, you may also produce 1 ship in that system of any ship type that was destroyed during the combat."
+    },
+    {
+      "id": "mirror_computing",
+      "name": "Mirror Computing",
+      "color": "yellow",
+      "prerequisites": ["yellow", "yellow", "yellow", "yellow"],
+      "effect": "When you spend trade goods, each trade good is worth 2 resources or influence instead of 1."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "Fourth Moon",
+      "cost": 8,
+      "combat": 7,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "fourth_moon_suppress",
+          "name": "Suppress Sustain",
+          "effect": "Other players' ships in this system cannot use Sustain Damage."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Moll Terminus",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "moll_terminus_suppress",
+          "name": "Suppress Ground Sustain",
+          "effect": "Other players' ground forces on this planet cannot use SUSTAIN DAMAGE."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "The Table's Grace",
+    "synergy": "If you have the Cruiser II unit upgrade technology, flip this card and place it on top of Cruiser II.",
+    "flippedCard": {
+      "name": "Corsair",
+      "synergy": "If the active system contains another player's non-fighter ships, this unit can move through systems that contain other players' ships.",
+      "cost": 2,
+      "combat": 6,
+      "move": 3,
+      "capacity": 2
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Suffi An",
+      "unlock": "At Game Start",
+      "ability": "After the PILLAGE faction ability is used against another player: You may exhaust this card; if you do, you and that player each draw 1 action card."
+    },
+    "commander": {
+      "name": "S'Ula Mentarion",
+      "unlock": "Have 4 cruisers on the game board.",
+      "ability": "After you win a space combat: You may force your opponent to give you 1 promissory note from their hand."
+    },
+    "hero": {
+      "name": "Ipswitch, Loose Cannon",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "SLEEPER CELL — At the start of space combat that you are participating in: You may purge this card; if you do, for each other player's ship that is destroyed during this combat, place 1 ship of that type from your reinforcements in the active system."
+    }
+  }
+}

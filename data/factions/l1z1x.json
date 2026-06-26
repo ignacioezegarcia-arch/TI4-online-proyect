@@ -1,0 +1,182 @@
+{
+  "id": "l1z1x",
+  "name": "The L1Z1X Mindnet",
+  "set": "base",
+  "commodities": 2,
+  "homePlanets": ["[0.0.0]"],
+  "startingUnits": {
+    "dreadnought": 1,
+    "carrier": 1,
+    "fighter": 3,
+    "infantry": 5,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": ["neural_motivator", "plasma_scoring"],
+  "factionAbilities": [
+    {
+      "id": "assimilate",
+      "name": "ASSIMILATE",
+      "effect": "When you gain control of a planet, replace each PDS and space dock that is on that planet with a matching unit from your reinforcements."
+    },
+    {
+      "id": "harrow",
+      "name": "HARROW",
+      "effect": "At the end of each round of ground combat, your ships in the active system may use their Bombardment abilities against your opponent's ground forces on the planet."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Cybernetic Enhancements",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the start of your turn:",
+        "effect": "Remove 1 token from the L1Z1X player's strategy pool and return it to his reinforcements. Then, place 1 command token from your reinforcements in your strategy pool. Then, return this card to the L1Z1X player.",
+        "placeInPlayArea": false
+      },
+      {
+        "version": "Ω",
+        "source": "codex",
+        "timing": "When you gain command tokens during the status phase:",
+        "effect": "Gain 1 additional command token. Then, return this card to the L1Z1X player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "inheritance_systems",
+      "name": "Inheritance Systems",
+      "color": "yellow",
+      "prerequisites": ["yellow", "yellow"],
+      "exhaustable": true,
+      "effect": "You may exhaust this card and spend 2 resources when you research a technology; ignore all of that technology's prerequisites."
+    }
+  ],
+  "factionSpecificUnits": {
+    "dreadnought": {
+      "name": "Super-Dreadnought",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Super-Dreadnought I",
+          "cost": 4,
+          "combat": 5,
+          "move": 1,
+          "capacity": 2,
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "bombardment",
+              "name": "Bombardment",
+              "value": 5,
+              "diceCount": 1,
+              "effect": "BOMBARDMENT 5"
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Super-Dreadnought II",
+          "cost": 4,
+          "combat": 4,
+          "move": 2,
+          "capacity": 2,
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "bombardment",
+              "name": "Bombardment",
+              "value": 4,
+              "diceCount": 1,
+              "effect": "BOMBARDMENT 4"
+            },
+            {
+              "id": "direct_hit_immunity",
+              "name": "Direct Hit Immunity",
+              "effect": "This unit cannot be destroyed by 'Direct Hit' action cards."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "units": {
+    "flagship": {
+      "name": "[0.1]",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 5,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "priority_targeting",
+          "name": "Priority Targeting",
+          "effect": "During a space combat, hits produced by this ship and by your dreadnoughts in this system must be assigned to non-fighter ships if able."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Annihilator",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "bombardment",
+          "name": "Bombardment",
+          "value": 8,
+          "diceCount": 1,
+          "effect": "BOMBARDMENT 8"
+        },
+        {
+          "id": "ground_bombardment",
+          "name": "Ground Bombardment",
+          "effect": "While not participating in ground combat, this unit can use its BOMBARDMENT ability on planets in its system as if it were a ship."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Fealty Uplink",
+    "synergy": "When you gain control of a planet, place infantry from your reinforcements equal to that planet's influence value on that planet."
+  },
+  "leaders": {
+    "agent": {
+      "name": "I48S",
+      "unlock": "At Game Start",
+      "ability": "After a player activates a system: You may exhaust this card to allow that player to replace 1 of their infantry in the active system with 1 mech from their reinforcements."
+    },
+    "commander": {
+      "name": "2RAM",
+      "unlock": "Have 4 dreadnoughts on the board.",
+      "ability": "Units that have PLANETARY SHIELD do not prevent you from using Bombardment."
+    },
+    "hero": {
+      "name": "The Helmsman",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "DARK SPACE NAVIGATION — ACTION: Choose 1 system that does not contain other players' ships; you may move your flagship and any number of your dreadnoughts from other systems into the chosen system. Then, purge this card."
+    }
+  }
+}
