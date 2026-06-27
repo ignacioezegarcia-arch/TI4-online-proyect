@@ -1,0 +1,166 @@
+{
+  "id": "sardakk",
+  "name": "Sardakk N'orr",
+  "set": "base",
+  "commodities": 3,
+  "homePlanets": ["Tren'lak", "Quinarra"],
+  "startingUnits": {
+    "carrier": 2,
+    "cruiser": 1,
+    "infantry": 5,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": [],
+  "factionAbilities": [
+    {
+      "id": "unrelenting",
+      "name": "UNRELENTING",
+      "effect": "Apply +1 to the result of each of your unit's combat rolls."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Tekklar Legion",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the start of an invasion combat:",
+        "effect": "Apply +1 to the result of each of your unit's combat rolls during this combat. If your opponent is the N'orr player, apply -1 to the result of each of their unit's combat rolls during this combat. Then, return this card to the N'orr player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "valkyrie_particle_weave",
+      "name": "Valkyrie Particle Weave",
+      "color": "red",
+      "prerequisites": ["red", "red"],
+      "effect": "After making combat rolls during a round of ground combat, if your opponent produced 1 or more hits, you produce 1 additional hit."
+    }
+  ],
+  "factionSpecificUnits": {
+    "dreadnought": {
+      "name": "Exotrireme",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Exotrireme I",
+          "cost": 4,
+          "combat": 5,
+          "move": 1,
+          "capacity": 1,
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "bombardment",
+              "name": "Bombardment",
+              "value": 4,
+              "diceCount": 2,
+              "effect": "BOMBARDMENT 4 (x2)"
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Exotrireme II",
+          "cost": 4,
+          "combat": 5,
+          "move": 2,
+          "capacity": 1,
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "bombardment",
+              "name": "Bombardment",
+              "value": 4,
+              "diceCount": 2,
+              "effect": "BOMBARDMENT 4 (x2)"
+            },
+            {
+              "id": "direct_hit_immunity",
+              "name": "Direct Hit Immunity",
+              "effect": "This unit cannot be destroyed by 'Direct Hit' action cards."
+            },
+            {
+              "id": "self_destruct",
+              "name": "Self Destruct",
+              "effect": "After a round of space combat, you may destroy this unit to destroy up to 2 ships in this system."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "units": {
+    "flagship": {
+      "name": "C'Morran N'orr",
+      "cost": 8,
+      "combat": 6,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "cmorran_fleet_bonus",
+          "name": "Fleet Combat Bonus",
+          "effect": "Apply +1 to the result of each of your other ships' combat rolls in this system."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Valkyrie Exoskeleton",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "valkyrie_retaliation",
+          "name": "Retaliation Strike",
+          "effect": "After this unit uses its SUSTAIN DAMAGE ability during Ground Combat, it produces 1 hit against your opponent's ground forces on this planet."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "N'orr Supremacy",
+    "synergy": "After you win a combat, either gain 1 command token or research a unit upgrade technology."
+  },
+  "leaders": {
+    "agent": {
+      "name": "T'ro",
+      "unlock": "At Game Start",
+      "ability": "At the end of a player's tactical action: You may exhaust this card; if you do, that player may place 2 infantry from their reinforcements on a planet they control in the active system."
+    },
+    "commander": {
+      "name": "G'hom Sek'kus",
+      "unlock": "Control 5 planets in non-home systems.",
+      "ability": "During the 'Commit Ground Forces' step: You can commit up to 1 ground force from each planet in the active system and each planet in adjacent systems that do not contain 1 of your command tokens."
+    },
+    "hero": {
+      "name": "Sh'val, Harbinger",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "TEKKLAR CONDITIONING — After you move ships into the active system: You may skip directly to the 'Commit Ground Forces' step. If you do, after you commit ground forces to land on planets, purge this card and return each of your ships in the active system to your reinforcements."
+    }
+  }
+}

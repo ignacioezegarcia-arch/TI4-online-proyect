@@ -1,0 +1,140 @@
+{
+  "id": "nekro",
+  "name": "The Nekro Virus",
+  "set": "base",
+  "commodities": 3,
+  "homePlanets": ["Mordai II"],
+  "startingUnits": {
+    "dreadnought": 1,
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 2,
+    "spaceDock": 1
+  },
+  "startingTechnologies": [
+    "dacxive_animators",
+    "valefar_assimilator_x",
+    "valefar_assimilator_y"
+  ],
+  "factionAbilities": [
+    {
+      "id": "galactic_threat",
+      "name": "GALACTIC THREAT",
+      "effect": "You cannot vote on agendas. Once per agenda phase, after an agenda is revealed, you may predict aloud the outcome of that agenda. If your prediction is correct, gain 1 technology that is owned by a player who voted how you predicted."
+    },
+    {
+      "id": "technological_singularity",
+      "name": "TECHNOLOGICAL SINGULARITY",
+      "effect": "Once per combat, after 1 of your opponent's units is destroyed, you may gain 1 technology that is owned by that player."
+    },
+    {
+      "id": "propagation",
+      "name": "PROPAGATION",
+      "effect": "You cannot research technology. When you would research a technology, gain 3 command tokens instead."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Antivirus",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the start of a combat:",
+        "effect": "Place this card face-up in your play area. While this card is in your play area, the Nekro player cannot use their TECHNOLOGICAL SINGULARITY faction ability against you. If you activate a system that contains 1 or more of the Nekro player's units, return this card to the Nekro player.",
+        "placeInPlayArea": true
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "valefar_assimilator_x",
+      "name": "Valefar Assimilator X",
+      "color": null,
+      "prerequisites": [],
+      "effect": "When you would gain another player's technology using 1 of your faction abilities, you may place the 'X' assimilator token on a faction technology owned by that player instead. While that token is on a technology, this card gains that technology's text. You cannot place an assimilator token on technology that already has an assimilator token."
+    },
+    {
+      "id": "valefar_assimilator_y",
+      "name": "Valefar Assimilator Y",
+      "color": null,
+      "prerequisites": [],
+      "effect": "When you would gain another player's technology using 1 of your faction abilities, you may place the 'Y' assimilator token on a faction technology owned by that player instead. While that token is on a technology, this card gains that technology's text. You cannot place an assimilator token on technology that already has an assimilator token."
+    }
+  ],
+  "factionSpecificComponents": [
+    {
+      "type": "token",
+      "id": "valefar_assimilator_x_token",
+      "name": "X Assimilator Token",
+      "description": "Tracks which faction technology the Valefar Assimilator X is copying."
+    },
+    {
+      "type": "token",
+      "id": "valefar_assimilator_y_token",
+      "name": "Y Assimilator Token",
+      "description": "Tracks which faction technology the Valefar Assimilator Y is copying."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "The Alastor",
+      "cost": 8,
+      "combat": 9,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "alastor_ground_combat",
+          "name": "Ground Combat Participation",
+          "effect": "At the start of a space combat, choose any number of your ground forces in this system to participate in that combat as if they were ships."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Mordred",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "mordred_assimilator_bonus",
+          "name": "Assimilator Bonus",
+          "effect": "During combat against an opponent who has an 'X' or 'Y' token on 1 or more of their technologies, apply +2 to the result of each of this unit's combat rolls."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "name": "Valefar Assimilator Z",
+    "synergy": "When you would gain another player's technology using one of your faction abilities, you may instead place one of your 'Z' assimilator tokens on that player's faction sheet. Your flagship gains the text abilities of that faction's flagship in addition to its own."
+  },
+  "leaders": {
+    "agent": {
+      "name": "Nekro Malleon",
+      "unlock": "At Game Start",
+      "ability": "During the action phase: You may exhaust this card to choose a player; that player may discard 1 action card or spend 1 command token from their command sheet to gain 2 trade goods."
+    },
+    "commander": {
+      "name": "Nekro Acidos",
+      "unlock": "Own 3 technologies. A 'Valefar Assimilator' technology counts only if its X or Y token is on a technology.",
+      "ability": "After you gain a technology: You may draw 1 action card."
+    },
+    "hero": {
+      "name": "UNIT.DSGN.FLAYESH",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "POLYMORPHIC ALGORITHM — ACTION: Choose a planet that has a technology specialty in a system that contains your units. Destroy any other player's units on that planet. Gain trade goods equal to that planet's combined resource and influence values and gain 1 technology that matches the specialty of that planet. Then, purge this card."
+    }
+  }
+}
