@@ -1,0 +1,143 @@
+{
+  "id": "winnu",
+  "name": "The Winnu",
+  "set": "base",
+  "commodities": 3,
+  "homePlanets": [
+    "Winnu"
+  ],
+  "startingUnits": {
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 2,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": {
+    "rules": "Choose any 1 technology that has no prerequisites.",
+    "count": 1,
+    "restriction": "no_prerequisites"
+  },
+  "factionAbilities": [
+    {
+      "id": "blood_ties",
+      "name": "BLOOD TIES",
+      "effect": "You do not have to spend influence to remove the custodians token from Mecatol Rex."
+    },
+    {
+      "id": "reclamation",
+      "name": "RECLAMATION",
+      "effect": "After you resolve a tactical action during which you gained control of Mecatol Rex, you may place 1 PDS and 1 space dock from your reinforcements on Mecatol Rex."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Acquiescence",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the end of the strategy phase:",
+        "effect": "Exchange 1 of your strategy cards with a strategy card that was chosen by the Winnu player. Then, return this card to the Winnu player.",
+        "placeInPlayArea": false
+      },
+      {
+        "version": "Ω",
+        "source": "codex",
+        "timing": "When the Winnu player resolves a strategic action:",
+        "effect": "You do not have to spend or place a command token to resolve the secondary ability of that strategy card. Then, return this card to the Winnu player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "lazax_gate_folding",
+      "name": "Lazax Gate Folding",
+      "color": "blue",
+      "prerequisites": [],
+      "exhaustable": true,
+      "effect": "During your tactical actions, if you do not control Mecatol Rex, treat its system as if it contains both an alpha and beta wormhole. ACTION: If you control Mecatol Rex, exhaust this card to place 1 infantry from your reinforcements on Mecatol Rex."
+    },
+    {
+      "id": "hegemonic_trade_policy",
+      "name": "Hegemonic Trade Policy",
+      "color": "yellow",
+      "prerequisites": [
+        "yellow"
+      ],
+      "exhaustable": true,
+      "effect": "Exhaust this card when 1 or more of your units use PRODUCTION; swap the resource and influence values of 1 planet you control during that use of Production."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "Salai Sai Corian",
+      "cost": 8,
+      "combat": 7,
+      "combatDiceCount": "variable",
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "salai_scaling_dice",
+          "name": "Scaling Combat Dice",
+          "effect": "When this unit makes a combat roll, it rolls a number of dice equal to the number of your opponent's non-fighter ships in this system."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Reclaimer",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "reclaimer_structures",
+          "name": "Reclaim Structures",
+          "effect": "After you resolve a tactical action where you gained control of this planet, you may place 1 PDS or 1 Space Dock from your reinforcements on this planet."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": [
+        "blue",
+        "red"
+      ],
+      "description": "Tus tecnologías azules pueden usarse como rojas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Imperator",
+      "effect": "Apply +1 to the results of each of your unit's combat rolls for each 'Support for the Throne' in your opponent's play area. After you activate a system that contains a legendary planet, apply +1 to the move value of 1 of your ships during this tactical action."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Berekon",
+      "unlock": "At Game Start",
+      "ability": "When 1 or more of a player's units use PRODUCTION: You may exhaust this card to reduce the combined cost of the produced units by 2."
+    },
+    "commander": {
+      "name": "Rickar Rickani",
+      "unlock": "Control Mecatol Rex or enter into a combat in the Mecatol Rex system.",
+      "ability": "During combat: Apply +2 to the result of each of your unit's combat rolls in the Mecatol Rex system, your home system, and each system that contains a legendary planet."
+    },
+    "hero": {
+      "name": "Mathis Mathinus",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "IMPERIAL SEAL — ACTION: Perform the primary ability of any strategy card. Then, choose any number of other players. Those players may perform the secondary ability of that strategy card. Then, purge this card."
+    }
+  }
+}

@@ -3,7 +3,9 @@
   "name": "The Arborec",
   "set": "base",
   "commodities": 3,
-  "homePlanets": ["Nestphar"],
+  "homePlanets": [
+    "Nestphar"
+  ],
   "startingUnits": {
     "carrier": 1,
     "cruiser": 1,
@@ -12,7 +14,9 @@
     "spaceDock": 1,
     "pds": 1
   },
-  "startingTechnologies": ["magen_defense_grid"],
+  "startingTechnologies": [
+    "magen_defense_grid"
+  ],
   "factionAbilities": [
     {
       "name": "MITOSIS",
@@ -43,7 +47,10 @@
       "id": "bioplasmosis",
       "name": "Bioplasmosis",
       "color": "green",
-      "prerequisites": ["green", "green"],
+      "prerequisites": [
+        "green",
+        "green"
+      ],
       "effect": "At the end of the status phase, you may remove any number of infantry from planets you control and place them on 1 or more planets you control in the same or adjacent systems."
     }
   ],
@@ -111,15 +118,34 @@
       "combat": 6,
       "deploy": "When you would use your MITOSIS faction ability you may replace 1 of your infantry with 1 mech from your reinforcements instead.",
       "abilities": [
-        {"name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
-        {"name": "Production", "value": 2, "effect": "PRODUCTION 2"},
-        {"name": "Planetary Shield", "effect": "PLANETARY SHIELD"}
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Production",
+          "value": 2,
+          "effect": "PRODUCTION 2"
+        },
+        {
+          "name": "Planetary Shield",
+          "effect": "PLANETARY SHIELD"
+        }
       ]
     }
   },
   "breakthrough": {
-    "name": "Psychospore",
-    "synergy": "ACTION: Exhaust this card to remove a command token from a system that contains 1 or more of your infantry and return it to your reinforcements. Then, place 1 infantry in that system."
+    "synergy": {
+      "colors": [
+        "red",
+        "green"
+      ],
+      "description": "Tus tecnologías rojas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Psychospore",
+      "effect": "ACTION: Exhaust this card to remove a command token from a system that contains 1 or more of your infantry and return it to your reinforcements. Then, place 1 infantry in that system."
+    }
   },
   "leaders": {
     "agent": {

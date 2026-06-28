@@ -3,7 +3,9 @@
   "name": "The L1Z1X Mindnet",
   "set": "base",
   "commodities": 2,
-  "homePlanets": ["[0.0.0]"],
+  "homePlanets": [
+    "[0.0.0]"
+  ],
   "startingUnits": {
     "dreadnought": 1,
     "carrier": 1,
@@ -12,7 +14,10 @@
     "spaceDock": 1,
     "pds": 1
   },
-  "startingTechnologies": ["neural_motivator", "plasma_scoring"],
+  "startingTechnologies": [
+    "neural_motivator",
+    "plasma_scoring"
+  ],
   "factionAbilities": [
     {
       "id": "assimilate",
@@ -49,7 +54,10 @@
       "id": "inheritance_systems",
       "name": "Inheritance Systems",
       "color": "yellow",
-      "prerequisites": ["yellow", "yellow"],
+      "prerequisites": [
+        "yellow",
+        "yellow"
+      ],
       "exhaustable": true,
       "effect": "You may exhaust this card and spend 2 resources when you research a technology; ignore all of that technology's prerequisites."
     }
@@ -159,8 +167,17 @@
     }
   },
   "breakthrough": {
-    "name": "Fealty Uplink",
-    "synergy": "When you gain control of a planet, place infantry from your reinforcements equal to that planet's influence value on that planet."
+    "synergy": {
+      "colors": [
+        "red",
+        "green"
+      ],
+      "description": "Tus tecnologías rojas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Fealty Uplink",
+      "effect": "When you gain control of a planet, place infantry from your reinforcements equal to that planet's influence value on that planet."
+    }
   },
   "leaders": {
     "agent": {

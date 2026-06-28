@@ -3,7 +3,10 @@
   "name": "Sardakk N'orr",
   "set": "base",
   "commodities": 3,
-  "homePlanets": ["Tren'lak", "Quinarra"],
+  "homePlanets": [
+    "Tren'lak",
+    "Quinarra"
+  ],
   "startingUnits": {
     "carrier": 2,
     "cruiser": 1,
@@ -36,7 +39,10 @@
       "id": "valkyrie_particle_weave",
       "name": "Valkyrie Particle Weave",
       "color": "red",
-      "prerequisites": ["red", "red"],
+      "prerequisites": [
+        "red",
+        "red"
+      ],
       "effect": "After making combat rolls during a round of ground combat, if your opponent produced 1 or more hits, you produce 1 additional hit."
     }
   ],
@@ -143,8 +149,17 @@
     }
   },
   "breakthrough": {
-    "name": "N'orr Supremacy",
-    "synergy": "After you win a combat, either gain 1 command token or research a unit upgrade technology."
+    "synergy": {
+      "colors": [
+        "blue",
+        "red"
+      ],
+      "description": "Tus tecnologías azules pueden usarse como rojas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "N'orr Supremacy",
+      "effect": "After you win a combat, either gain 1 command token or research a unit upgrade technology."
+    }
   },
   "leaders": {
     "agent": {

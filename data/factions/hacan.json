@@ -3,7 +3,11 @@
   "name": "The Emirates of Hacan",
   "set": "base",
   "commodities": 6,
-  "homePlanets": ["Arretze", "Hercant", "Kamdorn"],
+  "homePlanets": [
+    "Arretze",
+    "Hercant",
+    "Kamdorn"
+  ],
   "startingUnits": {
     "carrier": 2,
     "cruiser": 1,
@@ -11,7 +15,10 @@
     "infantry": 4,
     "spaceDock": 1
   },
-  "startingTechnologies": ["antimass_deflectors", "sarween_tools"],
+  "startingTechnologies": [
+    "antimass_deflectors",
+    "sarween_tools"
+  ],
   "factionAbilities": [
     {
       "name": "MASTERS OF TRADE",
@@ -43,7 +50,10 @@
       "id": "production_biomes",
       "name": "Production Biomes",
       "color": "green",
-      "prerequisites": ["green", "green"],
+      "prerequisites": [
+        "green",
+        "green"
+      ],
       "exhaustable": true,
       "effect": "ACTION: Exhaust this card and spend 1 token from your strategy pool to gain 4 trade goods and choose 1 other player; that player gains 2 trade goods."
     },
@@ -51,7 +61,11 @@
       "id": "quantum_datahub_node",
       "name": "Quantum Datahub Node",
       "color": "yellow",
-      "prerequisites": ["yellow", "yellow", "yellow"],
+      "prerequisites": [
+        "yellow",
+        "yellow",
+        "yellow"
+      ],
       "effect": "At the end of the strategy phase, you may spend 1 token from your strategy pool and give another player 3 of your trade goods. If you do, give 1 of your strategy cards to that player and take 1 of their strategy cards."
     }
   ],
@@ -92,8 +106,17 @@
     }
   },
   "breakthrough": {
-    "name": "Auto-Factories",
-    "synergy": "When you produce 3 or more non-fighter ships, place 1 command token from your reinforcements into your fleet pool."
+    "synergy": {
+      "colors": [
+        "red",
+        "yellow"
+      ],
+      "description": "Tus tecnologías rojas pueden usarse como amarillas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Auto-Factories",
+      "effect": "When you produce 3 or more non-fighter ships, place 1 command token from your reinforcements into your fleet pool."
+    }
   },
   "leaders": {
     "agent": {

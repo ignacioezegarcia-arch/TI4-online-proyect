@@ -3,7 +3,9 @@
   "name": "The Federation of Sol",
   "set": "base",
   "commodities": 4,
-  "homePlanets": ["Jord"],
+  "homePlanets": [
+    "Jord"
+  ],
   "startingUnits": {
     "carrier": 2,
     "destroyer": 1,
@@ -11,7 +13,10 @@
     "infantry": 5,
     "spaceDock": 1
   },
-  "startingTechnologies": ["neural_motivator", "antimass_deflectors"],
+  "startingTechnologies": [
+    "neural_motivator",
+    "antimass_deflectors"
+  ],
   "factionAbilities": [
     {
       "name": "ORBITAL DROP",
@@ -125,8 +130,17 @@
     }
   },
   "breakthrough": {
-    "name": "Bellum Gloriosum",
-    "synergy": "When you produce a ship that has capacity, you may also produce any combination of ground forces or fighters up to that ship's capacity; they do not count against your PRODUCTION limit."
+    "synergy": {
+      "colors": [
+        "yellow",
+        "green"
+      ],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Bellum Gloriosum",
+      "effect": "When you produce a ship that has capacity, you may also produce any combination of ground forces or fighters up to that ship's capacity; they do not count against your PRODUCTION limit."
+    }
   },
   "leaders": {
     "agent": {

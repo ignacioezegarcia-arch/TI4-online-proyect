@@ -3,7 +3,10 @@
   "name": "The Barony of Letnev",
   "set": "base",
   "commodities": 2,
-  "homePlanets": ["Arc Prime", "Wren Terra"],
+  "homePlanets": [
+    "Arc Prime",
+    "Wren Terra"
+  ],
   "startingUnits": {
     "dreadnought": 1,
     "carrier": 1,
@@ -12,7 +15,10 @@
     "infantry": 3,
     "spaceDock": 1
   },
-  "startingTechnologies": ["antimass_deflectors", "plasma_scoring"],
+  "startingTechnologies": [
+    "antimass_deflectors",
+    "plasma_scoring"
+  ],
   "factionAbilities": [
     {
       "name": "MUNITIONS RESERVES",
@@ -47,14 +53,19 @@
       "id": "l4_disruptors",
       "name": "L4 Disruptors",
       "color": "yellow",
-      "prerequisites": ["yellow"],
+      "prerequisites": [
+        "yellow"
+      ],
       "effect": "During an invasion, units cannot use SPACE CANNON against your units."
     },
     {
       "id": "non_euclidean_shielding",
       "name": "Non-Euclidean Shielding",
       "color": "red",
-      "prerequisites": ["red", "red"],
+      "prerequisites": [
+        "red",
+        "red"
+      ],
       "effect": "When 1 of your units uses SUSTAIN DAMAGE, cancel 2 hits instead of 1."
     }
   ],
@@ -101,9 +112,17 @@
     }
   },
   "breakthrough": {
-    "name": "Gravleash Maneuvers",
-    "synergy": "Before you roll dice during space combat, apply +X to the results of 1 of your ship's rolls, where X is the number of ship types you have in the combat.",
-    "passiveAbility": "During movement, your non-fighter ships' move values are equal to the highest move value amongst moving ships in the system they started in."
+    "synergy": {
+      "colors": [
+        "blue",
+        "red"
+      ],
+      "description": "Tus tecnologías azules pueden usarse como rojas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Gravleash Maneuvers",
+      "effect": "During movement, your non-fighter ships' move values are equal to the highest move value amongst moving ships in the system they started in."
+    }
   },
   "leaders": {
     "agent": {

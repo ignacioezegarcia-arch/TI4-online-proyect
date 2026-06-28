@@ -3,7 +3,10 @@
   "name": "The Universities of Jol-Nar",
   "set": "base",
   "commodities": 4,
-  "homePlanets": ["Jol", "Nar"],
+  "homePlanets": [
+    "Jol",
+    "Nar"
+  ],
   "startingUnits": {
     "dreadnought": 1,
     "carrier": 2,
@@ -52,14 +55,20 @@
       "id": "e_res_siphons",
       "name": "E-Res Siphons",
       "color": "yellow",
-      "prerequisites": ["yellow", "yellow"],
+      "prerequisites": [
+        "yellow",
+        "yellow"
+      ],
       "effect": "After another player activates a system that contains 1 or more of your ships, gain 4 trade goods."
     },
     {
       "id": "spatial_conduit_cylinder",
       "name": "Spatial Conduit Cylinder",
       "color": "blue",
-      "prerequisites": ["blue", "blue"],
+      "prerequisites": [
+        "blue",
+        "blue"
+      ],
       "exhaustable": true,
       "effect": "You may exhaust this card after you activate a system that contains 1 or more of your units; that system is adjacent to all other systems that contain 1 or more of your units during this activation."
     }
@@ -105,8 +114,17 @@
     }
   },
   "breakthrough": {
-    "name": "Specialized Compounds",
-    "synergy": "When you research technology using the 'Technology' strategy card, you may exhaust a planet that has a technology speciality instead of spending resources; if you do you must research a technology of that colour."
+    "synergy": {
+      "colors": [
+        "yellow",
+        "green"
+      ],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Specialized Compounds",
+      "effect": "When you research technology using the 'Technology' strategy card, you may exhaust a planet that has a technology speciality instead of spending resources; if you do you must research a technology of that colour."
+    }
   },
   "leaders": {
     "agent": {

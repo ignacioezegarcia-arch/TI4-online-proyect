@@ -3,7 +3,10 @@
   "name": "The Clan of Saar",
   "set": "base",
   "commodities": 3,
-  "homePlanets": ["Lisis II", "Ragh"],
+  "homePlanets": [
+    "Lisis II",
+    "Ragh"
+  ],
   "startingUnits": {
     "carrier": 2,
     "cruiser": 1,
@@ -11,7 +14,9 @@
     "infantry": 4,
     "spaceDock": 1
   },
-  "startingTechnologies": ["antimass_deflectors"],
+  "startingTechnologies": [
+    "antimass_deflectors"
+  ],
   "factionAbilities": [
     {
       "name": "SCAVENGE",
@@ -39,7 +44,9 @@
       "id": "chaos_mapping",
       "name": "Chaos Mapping",
       "color": "blue",
-      "prerequisites": ["blue"],
+      "prerequisites": [
+        "blue"
+      ],
       "effect": "Other players cannot activate asteroid fields that contain 1 or more of your ships. At the start of your turn during the action phase, you may produce 1 unit in a system that contains at least 1 of your units that has Production."
     }
   ],
@@ -121,8 +128,17 @@
     }
   },
   "breakthrough": {
-    "name": "Deorbit Barrage",
-    "synergy": "ACTION: Exhaust this card and spend any amount of resources to choose a planet up to 2 systems away from an asteroid field that contains your ships; roll a number of dice equal to the amount spent, and assign 1 hit to a ground force on that planet for each roll of 4 or greater."
+    "synergy": {
+      "colors": [
+        "blue",
+        "red"
+      ],
+      "description": "Tus tecnologías azules pueden usarse como rojas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Deorbit Barrage",
+      "effect": "ACTION: Exhaust this card and spend any amount of resources to choose a planet up to 2 systems away from an asteroid field that contains your ships; roll a number of dice equal to the amount spent, and assign 1 hit to a ground force on that planet for each roll of 4 or greater."
+    }
   },
   "leaders": {
     "agent": {

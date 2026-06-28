@@ -3,7 +3,9 @@
   "name": "The Mentak Coalition",
   "set": "base",
   "commodities": 2,
-  "homePlanets": ["Moll Primus"],
+  "homePlanets": [
+    "Moll Primus"
+  ],
   "startingUnits": {
     "carrier": 1,
     "cruiser": 2,
@@ -12,7 +14,10 @@
     "spaceDock": 1,
     "pds": 1
   },
-  "startingTechnologies": ["sarween_tools", "plasma_scoring"],
+  "startingTechnologies": [
+    "sarween_tools",
+    "plasma_scoring"
+  ],
   "factionAbilities": [
     {
       "id": "ambush",
@@ -42,14 +47,22 @@
       "id": "salvage_operations",
       "name": "Salvage Operations",
       "color": "yellow",
-      "prerequisites": ["yellow", "yellow"],
+      "prerequisites": [
+        "yellow",
+        "yellow"
+      ],
       "effect": "After you win or lose a space combat, gain 1 trade good; if you won the combat, you may also produce 1 ship in that system of any ship type that was destroyed during the combat."
     },
     {
       "id": "mirror_computing",
       "name": "Mirror Computing",
       "color": "yellow",
-      "prerequisites": ["yellow", "yellow", "yellow", "yellow"],
+      "prerequisites": [
+        "yellow",
+        "yellow",
+        "yellow",
+        "yellow"
+      ],
       "effect": "When you spend trade goods, each trade good is worth 2 resources or influence instead of 1."
     }
   ],
@@ -94,15 +107,16 @@
     }
   },
   "breakthrough": {
-    "name": "The Table's Grace",
-    "synergy": "If you have the Cruiser II unit upgrade technology, flip this card and place it on top of Cruiser II.",
-    "flippedCard": {
-      "name": "Corsair",
-      "synergy": "If the active system contains another player's non-fighter ships, this unit can move through systems that contain other players' ships.",
-      "cost": 2,
-      "combat": 6,
-      "move": 3,
-      "capacity": 2
+    "synergy": {
+      "colors": [
+        "yellow",
+        "green"
+      ],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "The Table's Grace",
+      "effect": "If you have the Cruiser II unit upgrade technology, flip this card and place it on top of Cruiser II. Corsair: Cost 2, Combat 6, Move 3, Capacity 2. If the active system contains another player's non-fighter ships, this unit can move through systems that contain other players' ships."
     }
   },
   "leaders": {

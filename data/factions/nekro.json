@@ -3,7 +3,9 @@
   "name": "The Nekro Virus",
   "set": "base",
   "commodities": 3,
-  "homePlanets": ["Mordai II"],
+  "homePlanets": [
+    "Mordai II"
+  ],
   "startingUnits": {
     "dreadnought": 1,
     "carrier": 1,
@@ -117,8 +119,11 @@
     }
   },
   "breakthrough": {
-    "name": "Valefar Assimilator Z",
-    "synergy": "When you would gain another player's technology using one of your faction abilities, you may instead place one of your 'Z' assimilator tokens on that player's faction sheet. Your flagship gains the text abilities of that faction's flagship in addition to its own."
+    "synergy": null,
+    "ability": {
+      "name": "Valefar Assimilator Z",
+      "effect": "When you would gain another player's technology using one of your faction abilities, you may instead place one of your 'Z' assimilator tokens on that player's faction sheet. Your flagship gains the text abilities of that faction's flagship in addition to its own."
+    }
   },
   "leaders": {
     "agent": {

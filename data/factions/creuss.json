@@ -3,7 +3,9 @@
   "name": "The Ghosts of Creuss",
   "set": "base",
   "commodities": 4,
-  "homePlanets": ["Creuss"],
+  "homePlanets": [
+    "Creuss"
+  ],
   "startingUnits": {
     "carrier": 1,
     "destroyer": 2,
@@ -11,7 +13,9 @@
     "infantry": 4,
     "spaceDock": 1
   },
-  "startingTechnologies": ["gravity_drive"],
+  "startingTechnologies": [
+    "gravity_drive"
+  ],
   "factionAbilities": [
     {
       "id": "quantum_entanglement",
@@ -46,7 +50,10 @@
       "id": "wormhole_generator",
       "name": "Wormhole Generator",
       "color": "blue",
-      "prerequisites": ["blue", "blue"],
+      "prerequisites": [
+        "blue",
+        "blue"
+      ],
       "versions": [
         {
           "version": "original",
@@ -64,7 +71,9 @@
       "id": "dimensional_splicer",
       "name": "Dimensional Splicer",
       "color": "red",
-      "prerequisites": ["red"],
+      "prerequisites": [
+        "red"
+      ],
       "effect": "At the start of space combat in a system that contains a wormhole and 1 or more of your ships, you may produce 1 hit and assign it to 1 of your opponent's ships."
     }
   ],
@@ -132,8 +141,17 @@
     }
   },
   "breakthrough": {
-    "name": "Particle Synthesis",
-    "synergy": "Each wormhole in a system that contains your ships gains PRODUCTION 1 as if it were a unit you control. Reduce the combined cost of units you produce in systems that contain wormholes by 1 for each wormhole in that system."
+    "synergy": {
+      "colors": [
+        "blue",
+        "yellow"
+      ],
+      "description": "Tus tecnologías azules pueden usarse como amarillas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Particle Synthesis",
+      "effect": "Each wormhole in a system that contains your ships gains PRODUCTION 1 as if it were a unit you control. Reduce the combined cost of units you produce in systems that contain wormholes by 1 for each wormhole in that system."
+    }
   },
   "leaders": {
     "agent": {

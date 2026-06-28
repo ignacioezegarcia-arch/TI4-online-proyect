@@ -3,7 +3,10 @@
   "name": "The Naalu Collective",
   "set": "base",
   "commodities": 3,
-  "homePlanets": ["Maaluuk", "Druaa"],
+  "homePlanets": [
+    "Maaluuk",
+    "Druaa"
+  ],
   "startingUnits": {
     "carrier": 1,
     "cruiser": 1,
@@ -13,7 +16,10 @@
     "spaceDock": 1,
     "pds": 1
   },
-  "startingTechnologies": ["neural_motivator", "sarween_tools"],
+  "startingTechnologies": [
+    "neural_motivator",
+    "sarween_tools"
+  ],
   "factionAbilities": [
     {
       "id": "telepathic",
@@ -51,7 +57,11 @@
       "id": "neuroglaive",
       "name": "Neuroglaive",
       "color": "green",
-      "prerequisites": ["green", "green", "green"],
+      "prerequisites": [
+        "green",
+        "green",
+        "green"
+      ],
       "effect": "After another player activates a system that contains 1 or more of your ships, that player removes 1 token from their fleet pool and returns it to their reinforcements."
     }
   ],
@@ -169,8 +179,17 @@
     }
   },
   "breakthrough": {
-    "name": "Mindsieve",
-    "synergy": "When you would resolve the secondary ability of another player's strategy card, you may give them a promissory note to resolve it without spending a command token."
+    "synergy": {
+      "colors": [
+        "red",
+        "green"
+      ],
+      "description": "Tus tecnologías rojas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Mindsieve",
+      "effect": "When you would resolve the secondary ability of another player's strategy card, you may give them a promissory note to resolve it without spending a command token."
+    }
   },
   "leaders": {
     "agent": {
