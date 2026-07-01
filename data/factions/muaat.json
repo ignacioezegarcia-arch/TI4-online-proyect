@@ -1,0 +1,165 @@
+{
+  "id": "muaat",
+  "name": "The Embers of Muaat",
+  "set": "base",
+  "commodities": 4,
+  "homePlanets": ["Muaat"],
+  "startingUnits": {
+    "warSun": 1,
+    "fighter": 2,
+    "infantry": 4,
+    "spaceDock": 1
+  },
+  "startingTechnologies": ["plasma_scoring"],
+  "factionAbilities": [
+    {
+      "id": "star_forge",
+      "name": "STAR FORGE",
+      "effect": "ACTION: Spend 1 token from your strategy pool to place either 2 fighters or 1 destroyer from your reinforcements in a system that contains 1 or more of your war suns."
+    },
+    {
+      "id": "gashlai_physiology",
+      "name": "GASHLAI PHYSIOLOGY",
+      "effect": "Your ships can move through supernovas."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Fires of the Gashlai",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "ACTION:",
+        "effect": "Remove 1 token from the Muaat player's fleet pool and return it to their reinforcements. Then, gain your war sun unit upgrade technology card. Then, return this card to the Muaat player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "magmus_reactor",
+      "name": "Magmus Reactor",
+      "color": "red",
+      "prerequisites": ["red"],
+      "versions": [
+        {
+          "version": "original",
+          "source": "base",
+          "effect": "Your ships can move into supernovas. After 1 or more of your units use Production in a system that either contains a war sun or is adjacent to a supernova, gain 1 trade good."
+        },
+        {
+          "version": "Ω",
+          "source": "codex",
+          "effect": "Your ships can move into supernovas. Each supernova that contains 1 or more of your units gains the PRODUCTION 5 ability as if it were 1 of your units."
+        }
+      ]
+    }
+  ],
+  "factionSpecificUnits": {
+    "warSun": {
+      "name": "Prototype War Sun",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Prototype War Sun I",
+          "cost": 12,
+          "combat": 3,
+          "combatDiceCount": 3,
+          "move": 1,
+          "capacity": 6,
+          "abilities": [
+            {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
+            {"id": "bombardment", "name": "Bombardment", "value": 3, "diceCount": 3, "effect": "BOMBARDMENT 3 (x3)"},
+            {"id": "planetary_shield_removal", "name": "Planetary Shield Removal", "effect": "Other players' units in this system lose PLANETARY SHIELD."}
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Prototype War Sun II",
+          "cost": 10,
+          "combat": 3,
+          "combatDiceCount": 3,
+          "move": 3,
+          "capacity": 6,
+          "abilities": [
+            {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
+            {"id": "bombardment", "name": "Bombardment", "value": 3, "diceCount": 3, "effect": "BOMBARDMENT 3 (x3)"},
+            {"id": "planetary_shield_removal", "name": "Planetary Shield Removal", "effect": "Other players' units in this system lose PLANETARY SHIELD."}
+          ]
+        }
+      ]
+    }
+  },
+  "factionSpecificComponents": [
+    {
+      "type": "planet_card",
+      "id": "avernus_planet_card",
+      "name": "Avernus Planet Card",
+      "description": "A 2/0 legendary planet with a hazardous planet trait."
+    },
+    {
+      "type": "token",
+      "id": "avernus_planet_token",
+      "name": "Avernus Planet Token",
+      "description": "A token representing the planet Avernus. Placed into a non-home system adjacent to a planet you control when you gain your Breakthrough."
+    },
+    {
+      "type": "legendary_planet_ability",
+      "id": "avernus_ability_card",
+      "name": "The Nucleus",
+      "effect": "ACTION: Exhaust this card to use the Embers of Muaat's STAR FORGE faction ability without spending a command token."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "The Inferno",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
+        {"id": "inferno_produce_cruiser", "name": "Forge Cruiser", "effect": "ACTION: Spend 1 token from your strategy pool to place 1 cruiser in this unit's system."}
+      ]
+    },
+    "mech": {
+      "name": "Ember Colossus",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
+        {"id": "ember_colossus_infantry", "name": "Star Forge Spawn", "effect": "When you use your STAR FORGE faction ability in this system or an adjacent system, you may place 1 infantry from your reinforcements with this unit."}
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": ["red", "yellow"],
+      "description": "Tus tecnologías rojas pueden usarse como amarillas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Stellar Genesis",
+      "effect": "When you gain this card, place the Avernus planet token into a non-home system that is adjacent to a planet you control; gain control of and ready it. After you move 1 of your war suns out of or through Avernus's system and into a non-home system, you may move the Avernus token with it."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Umbat",
+      "unlock": "At Game Start",
+      "ability": "ACTION: Exhaust this card to choose a player; that player may produce up to 2 units that each have a cost of 4 or less in a system that contains one of their war suns or their flagship."
+    },
+    "commander": {
+      "name": "Magmus",
+      "unlock": "Produce a War Sun.",
+      "ability": "After you spend a token from your strategy pool: You may gain 1 trade good."
+    },
+    "hero": {
+      "name": "Adjudicator Ba'al",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "NOVA SEED — After you move a war sun into a non-home system other than Mecatol Rex: You may destroy all other players' units in that system and replace that system tile with the Muaat supernova tile. If you do, purge this card and each planet card that corresponds to the replaced system tile."
+    }
+  }
+}
