@@ -1,0 +1,124 @@
+{
+  "id": "yssaril",
+  "name": "The Yssaril Tribes",
+  "set": "base",
+  "commodities": 3,
+  "homePlanets": ["Retillion", "Shalloq"],
+  "startingUnits": {
+    "carrier": 2,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 5,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": ["neural_motivator"],
+  "factionAbilities": [
+    {
+      "id": "stall_tactics",
+      "name": "STALL TACTICS",
+      "effect": "ACTION: Discard 1 action card from your hand."
+    },
+    {
+      "id": "scheming",
+      "name": "SCHEMING",
+      "effect": "When you draw 1 or more action cards, draw 1 additional action card. Then, choose and discard 1 action card from your hand."
+    },
+    {
+      "id": "crafty",
+      "name": "CRAFTY",
+      "effect": "You can have any number of action cards in your hand. Game effects cannot prevent you from using this ability."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Spy Net",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "At the start of your turn:",
+        "effect": "Look at the Yssaril player's hand of action cards. Choose 1 of those cards and add it to your hand. Then, return this card to the Yssaril player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "transparasteel_plating",
+      "name": "Transparasteel Plating",
+      "color": "yellow",
+      "prerequisites": [],
+      "effect": "During your turn of the action phase, players that have passed cannot play action cards."
+    },
+    {
+      "id": "mageon_implants",
+      "name": "Mageon Implants",
+      "color": "green",
+      "prerequisites": ["green", "green", "green"],
+      "exhaustable": true,
+      "effect": "ACTION: Exhaust this card to look at another player's hand of action cards. Choose 1 of those cards and add it to your hand."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "Y'sia Y'ssrila",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 2,
+      "capacity": 3,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "ysia_move_through",
+          "name": "Move Through",
+          "effect": "This ship can move through systems that contain other players' ships."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Blackshade Infiltrator",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "After you use your STALL TACTICS faction ability, you may place 1 mech on a planet you control.",
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": ["yellow", "green"],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Deepgloom Executable",
+      "effect": "You can allow other players to use your STALL TACTICS or SCHEMING faction abilities; when you do, you may resolve a transaction with that player. During the action phase, that transaction does not count against the once-per-player transactions limit for that turn."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Ssruu",
+      "unlock": "At Game Start",
+      "ability": "This card has the text ability of each other player's agent, even if that agent is exhausted."
+    },
+    "commander": {
+      "name": "So Ata",
+      "unlock": "Have 7 action cards.",
+      "ability": "After another player activates a system that contains your units: You may look at that player's action cards, promissory notes, or secret objectives."
+    },
+    "hero": {
+      "name": "Kyver, Blade and Key",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "GUILD OF SPIES — ACTION: Each other player shows you 1 action card from their hand. For each player, you may either take that card or force that player to discard 3 random action cards from their hand. Then, purge this card."
+    }
+  }
+}
