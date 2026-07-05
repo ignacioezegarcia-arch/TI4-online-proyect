@@ -1,0 +1,162 @@
+import { GameState } from "./types/GameState";
+import { GameAction, ActionResult, GameEvent } from "./types/Actions";
+import { PlayerId } from "./types/ids";
+import { RuleData } from "./types/RuleData";
+import { chooseStrategyCard } from "./phases/strategyPhase";
+import { activateSystem, moveShips } from "./phases/tacticalAction";
+import { pass, autoAdvancePhase } from "./phases/actionPhase";
+
+/**
+ * GameEngine is the "bot": the single referee both the web client and (later)
+ * any scheduled Supabase job talk to. It never touches Supabase, sockets,
+ * or React state directly — it's a pure function core so it can be unit
+ * tested with plain objects and, if we ever want an AI/practice opponent,
+ * reused as-is to generate that opponent's moves via getLegalActions().
+ *
+ * Call pattern from the app layer:
+ *   const result = GameEngine.applyAction(currentState, action);
+ *   if (!result.ok) return showError(result.error);
+ *   await supabase.from('games').update({ state: result.state }).eq('id', gameId);
+ *   await supabase.from('game_events').insert(result.events.map(e => ({ game_id: gameId, ...e })));
+ */
+export const GameEngine = {
+  /**
+   * Validate + apply a single action. Returns a *new* GameState (never
+   * mutates the input) plus the events that occurred, or an error and the
+   * original state is implicitly still valid.
+   *
+   * After a successful action, this always runs autoAdvancePhase so callers
+   * never have to remember to check "did everyone just pass?" themselves.
+   */
+  applyAction(state: GameState, action: GameAction, rules: RuleData): ActionResult {
+    if (state.phase === "ended") {
+      return { ok: false, error: "Game has already ended." };
+    }
+
+    const guard = guardTurnLegality(state, action);
+    if (guard) return { ok: false, error: guard };
+
+    let result: ActionResult;
+    switch (action.type) {
+      case "CHOOSE_STRATEGY_CARD":
+        result = chooseStrategyCard(state, action);
+        break;
+      case "PASS":
+        result = pass(state, action);
+        break;
+      case "ACTIVATE_SYSTEM":
+        result = activateSystem(state, action);
+        break;
+      case "MOVE_SHIPS":
+        result = moveShips(state, action, rules);
+        break;
+
+      // --- Not yet implemented. Each of these follows the exact same shape
+      // as the four cases above — see phases/README.md for the recipe.
+      case "USE_SPACE_CANNON_OFFENSE":
+      case "ANNOUNCE_RETREAT":
+      case "RESOLVE_COMBAT_ROUND":
+      case "ASSIGN_HITS":
+      case "BOMBARD":
+      case "COMMIT_GROUND_FORCES":
+      case "PRODUCE_UNITS":
+      case "RESOLVE_STRATEGY_PRIMARY":
+      case "RESOLVE_STRATEGY_SECONDARY":
+      case "PLAY_ACTION_CARD":
+      case "RESEARCH_TECHNOLOGY":
+      case "RESEARCH_UNIT_UPGRADE":
+      case "PROPOSE_TRANSACTION":
+      case "SCORE_OBJECTIVE":
+      case "CAST_VOTES":
+      case "REVEAL_AGENDA":
+      case "END_TURN_TIMEOUT":
+        return { ok: false, error: `${action.type} is not implemented yet.` };
+
+      default: {
+        const exhaustiveCheck: never = action;
+        return { ok: false, error: `Unknown action: ${JSON.stringify(exhaustiveCheck)}` };
+      }
+    }
+
+    if (!result.ok || !result.state) return result;
+
+    const { state: advancedState, events: advanceEvents } = autoAdvancePhase(result.state);
+    return {
+      ok: true,
+      state: advancedState,
+      events: [...(result.events ?? []), ...advanceEvents],
+    };
+  },
+
+  /**
+   * What can this player legally do right now? Drives which buttons the UI
+   * enables, and doubles as the move-generator for a future AI opponent.
+   * Deliberately conservative: it's fine for this to under-report edge cases
+   * (applyAction is still the source of truth and will reject anything
+   * illegal), but it should never suggest an action that's actually illegal.
+   */
+  getLegalActions(state: GameState, playerId: PlayerId): GameAction["type"][] {
+    const legal: GameAction["type"][] = [];
+    const player = state.players[playerId];
+    if (!player || player.eliminated) return legal;
+
+    if (state.phase === "strategy") {
+      const alreadyHasCard = player.strategyCards.length > 0;
+      const cardsNeeded = Object.keys(state.players).length <= 4 ? 2 : 1;
+      if (player.strategyCards.length < cardsNeeded && isPlayersStrategyTurn(state, playerId)) {
+        legal.push("CHOOSE_STRATEGY_CARD");
+      }
+      void alreadyHasCard;
+    }
+
+    if (state.phase === "action" && state.activePlayerId === playerId && !player.hasPassed) {
+      legal.push("PASS");
+      if (!state.pendingTacticalAction) {
+        legal.push("ACTIVATE_SYSTEM");
+      } else if (state.pendingTacticalAction.playerId === playerId) {
+        if (state.pendingTacticalAction.step === "movement") legal.push("MOVE_SHIPS");
+        // TODO: push the rest of TacticalStep-appropriate actions as they're implemented.
+      }
+    }
+
+    return legal;
+  },
+};
+
+/**
+ * Cross-cutting checks that apply no matter which action is being submitted:
+ * is it this player's turn, do they exist, are they mid-combat-response-only,
+ * etc. Kept separate from per-action validation so every handler in
+ * phases/* doesn't have to repeat "is this even your turn" logic.
+ */
+function guardTurnLegality(state: GameState, action: GameAction): string | null {
+  const playerId = "playerId" in action ? action.playerId : undefined;
+  if (playerId && !state.players[playerId]) {
+    return `Unknown player: ${playerId}`;
+  }
+  if (playerId && state.players[playerId].eliminated) {
+    return `RR 31: ${playerId} is eliminated and cannot act.`;
+  }
+  return null;
+}
+
+function isPlayersStrategyTurn(state: GameState, playerId: PlayerId): boolean {
+  // RR 73.1: starting with the speaker and proceeding clockwise through seatOrder,
+  // skipping anyone who already holds a strategy card for this round.
+  const cardsNeeded = Object.keys(state.players).length <= 4 ? 2 : 1;
+  for (const candidateId of rotateFromSpeaker(state)) {
+    const candidate = state.players[candidateId];
+    if (candidate.strategyCards.length < cardsNeeded) {
+      return candidateId === playerId;
+    }
+  }
+  return false;
+}
+
+function rotateFromSpeaker(state: GameState): PlayerId[] {
+  const speakerId = state.seatOrder.find((id) => state.players[id].isSpeaker);
+  const startIndex = speakerId ? state.seatOrder.indexOf(speakerId) : 0;
+  return [...state.seatOrder.slice(startIndex), ...state.seatOrder.slice(0, startIndex)];
+}
+
+export type { GameAction, GameEvent, ActionResult };
