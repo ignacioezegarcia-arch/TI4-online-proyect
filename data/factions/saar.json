@@ -19,10 +19,12 @@
   ],
   "factionAbilities": [
     {
+      "id": "scavenge",
       "name": "SCAVENGE",
       "effect": "After you gain control of a planet, gain 1 trade good."
     },
     {
+      "id": "nomadic",
       "name": "NOMADIC",
       "effect": "You can score objectives even if you do not control the planets in your home system."
     }

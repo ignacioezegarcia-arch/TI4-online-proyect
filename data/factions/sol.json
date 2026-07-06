@@ -19,10 +19,12 @@
   ],
   "factionAbilities": [
     {
+      "id": "orbital_drop",
       "name": "ORBITAL DROP",
       "effect": "ACTION: Spend 1 token from your strategy pool to place 2 infantry from your reinforcements on 1 planet you control."
     },
     {
+      "id": "versatile",
       "name": "VERSATILE",
       "effect": "When you gain command tokens during the status phase, gain 1 additional command token."
     }

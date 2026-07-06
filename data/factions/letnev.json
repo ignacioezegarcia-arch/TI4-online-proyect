@@ -21,10 +21,12 @@
   ],
   "factionAbilities": [
     {
+      "id": "munitions_reserves",
       "name": "MUNITIONS RESERVES",
       "effect": "At the start of each round of space combat, you may spend 2 trade goods; you may re-roll any number of your dice during that combat round."
     },
     {
+      "id": "armada",
       "name": "ARMADA",
       "effect": "The maximum number of non-fighter ships you can have in each system is equal to 2 more than the number of tokens in your fleet pool."
     }

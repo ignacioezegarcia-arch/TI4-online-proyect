@@ -21,14 +21,17 @@
   ],
   "factionAbilities": [
     {
+      "id": "masters_of_trade",
       "name": "MASTERS OF TRADE",
       "effect": "You do not have to spend a command token to resolve the secondary ability of the 'Trade' strategy card."
     },
     {
+      "id": "guild_ships",
       "name": "GUILD SHIPS",
       "effect": "You can negotiate transactions with players who are not your neighbor."
     },
     {
+      "id": "arbiters",
       "name": "ARBITERS",
       "effect": "When you are negotiating a transaction, action cards can be exchanged as part of that transaction."
     }
