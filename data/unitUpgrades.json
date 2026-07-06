@@ -23,7 +23,15 @@
       "expansion": 0,
       "unitType": "infantry",
       "exhaustable": false,
-      "effect": "Upgrades all your Infantry. Cost: 1(x2) | Combat: 7 | After this unit is destroyed, roll 1 die. On a 6, place this unit in your reinforcements instead of removing it from the board."
+      "effect": "Upgrades all your Infantry. Cost: 1(x2) | Combat: 7 | After this unit is destroyed, roll 1 die. On a 6, place this unit in your reinforcements instead of removing it from the board.",
+      "producesQuantity": 2,
+      "combat": 7,
+      "combatDiceCount": 1,
+      "move": null,
+      "capacity": 0,
+      "abilities": [],
+      "notes": "No tiene abilities de la lista estándar. Regla especial propia: después de que esta unidad sea destruida, tirá 1 dado; con un 6, la unidad se coloca en tus reinforcements en vez de ser removida del tablero (no aplica a la Infantry base, solo a la II).",
+      "cost": 1
     },
     {
       "id": "destroyer_2",
@@ -36,7 +44,25 @@
       "expansion": 0,
       "unitType": "destroyer",
       "exhaustable": false,
-      "effect": "Upgrades all your Destroyers. Cost: 1 | Combat: 9 | Move: 2 | Capacity: 1 | ANTI-FIGHTER BARRAGE x3 | SUSTAIN DAMAGE."
+      "effect": "Upgrades all your Destroyers. Cost: 1 | Combat: 9 | Move: 2 | Capacity: 1 | ANTI-FIGHTER BARRAGE x3 | SUSTAIN DAMAGE.",
+      "producesQuantity": 1,
+      "combat": 9,
+      "combatDiceCount": 1,
+      "move": 2,
+      "capacity": 1,
+      "abilities": [
+        {
+          "name": "Anti-Fighter Barrage",
+          "value": 9,
+          "diceCount": 3,
+          "text": "ANTI-FIGHTER BARRAGE 9 (x3): igual que la versión base, pero tirando 3 dados en vez de 2."
+        },
+        {
+          "name": "Sustain Damage",
+          "text": "SUSTAIN DAMAGE: el Destroyer base no tenía esta ability; la II la agrega."
+        }
+      ],
+      "cost": 1
     },
     {
       "id": "cruiser_2",
@@ -51,7 +77,14 @@
       "expansion": 0,
       "unitType": "cruiser",
       "exhaustable": false,
-      "effect": "Upgrades all your Cruisers. Cost: 2 | Combat: 6 | Move: 3 | Capacity: 3."
+      "effect": "Upgrades all your Cruisers. Cost: 2 | Combat: 6 | Move: 3 | Capacity: 3.",
+      "producesQuantity": 1,
+      "combat": 6,
+      "combatDiceCount": 1,
+      "move": 3,
+      "capacity": 3,
+      "abilities": [],
+      "cost": 2
     },
     {
       "id": "pds_2",
@@ -65,7 +98,24 @@
       "expansion": 0,
       "unitType": "pds",
       "exhaustable": false,
-      "effect": "Upgrades all your PDS. SPACE CANNON 5 | Your SPACE CANNON weapons may now be used against ships in adjacent systems."
+      "effect": "Upgrades all your PDS. SPACE CANNON 5 | Your SPACE CANNON weapons may now be used against ships in adjacent systems.",
+      "producesQuantity": 1,
+      "combat": null,
+      "move": null,
+      "capacity": 0,
+      "abilities": [
+        {
+          "name": "Space Cannon",
+          "value": 5,
+          "diceCount": 1,
+          "text": "SPACE CANNON 5 (x1): además, a diferencia del PDS base, esta ability puede usarse contra naves en sistemas ADYACENTES al sistema donde está este PDS, no solo en su propio sistema."
+        },
+        {
+          "name": "Planetary Shield",
+          "text": "PLANETARY SHIELD: sin cambios respecto al PDS base."
+        }
+      ],
+      "cost": null
     },
     {
       "id": "carrier_2",
@@ -79,7 +129,19 @@
       "expansion": 0,
       "unitType": "carrier",
       "exhaustable": false,
-      "effect": "Upgrades all your Carriers. Cost: 3 | Combat: 9 | Move: 2 | Capacity: 6 | SUSTAIN DAMAGE."
+      "effect": "Upgrades all your Carriers. Cost: 3 | Combat: 9 | Move: 2 | Capacity: 6 | SUSTAIN DAMAGE.",
+      "producesQuantity": 1,
+      "combat": 9,
+      "combatDiceCount": 1,
+      "move": 2,
+      "capacity": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "text": "SUSTAIN DAMAGE: el Carrier base no tenía esta ability; la II la agrega."
+        }
+      ],
+      "cost": 3
     },
     {
       "id": "dreadnought_2",
@@ -94,7 +156,25 @@
       "expansion": 0,
       "unitType": "dreadnought",
       "exhaustable": false,
-      "effect": "Upgrades all your Dreadnoughts. Cost: 4 | Combat: 5 | Move: 2 | Capacity: 1 | SUSTAIN DAMAGE | BOMBARDMENT 4 | After this unit moves, it may use BOMBARDMENT against each planet in the system it moved into."
+      "effect": "Upgrades all your Dreadnoughts. Cost: 4 | Combat: 5 | Move: 2 | Capacity: 1 | SUSTAIN DAMAGE | BOMBARDMENT 4 | After this unit moves, it may use BOMBARDMENT against each planet in the system it moved into.",
+      "producesQuantity": 1,
+      "combat": 5,
+      "combatDiceCount": 1,
+      "move": 2,
+      "capacity": 1,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "text": "SUSTAIN DAMAGE: sin cambios respecto al Dreadnought base."
+        },
+        {
+          "name": "Bombardment",
+          "value": 4,
+          "diceCount": 1,
+          "text": "BOMBARDMENT 4 (x1): además, a diferencia del Dreadnought base, esta unidad puede usar BOMBARDMENT contra cada planeta del sistema al que se movió, inmediatamente después de moverse (no solo durante el paso de Bombardeo de una invasión que él mismo activa)."
+        }
+      ],
+      "cost": 4
     },
     {
       "id": "fighter_2",
@@ -108,7 +188,15 @@
       "expansion": 0,
       "unitType": "fighter",
       "exhaustable": false,
-      "effect": "Upgrades all your Fighters. Cost: 1(x3) | Combat: 8 | Move: 2 | Capacity: 1."
+      "effect": "Upgrades all your Fighters. Cost: 1(x3) | Combat: 8 | Move: 2 | Capacity: 1.",
+      "producesQuantity": 3,
+      "combat": 8,
+      "combatDiceCount": 1,
+      "move": 2,
+      "capacity": 1,
+      "abilities": [],
+      "notes": "A diferencia del Fighter base (que no tiene valor de movimiento propio y depende de ser transportado), el Fighter II sí tiene Move 2 propio.",
+      "cost": 1
     },
     {
       "id": "space_dock_2",
@@ -120,9 +208,20 @@
       ],
       "level": 2,
       "expansion": 0,
-      "unitType": "spaceDock",
+      "unitType": "space_dock",
       "exhaustable": false,
-      "effect": "Upgrades all your Space Docks. PRODUCTION: (Planet resource value + 3) | Your PRODUCTION ability does not produce excess units."
+      "effect": "Upgrades all your Space Docks. PRODUCTION: (Planet resource value + 3) | Your PRODUCTION ability does not produce excess units.",
+      "producesQuantity": 1,
+      "combat": null,
+      "move": null,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Production",
+          "text": "PRODUCTION (planet resources + 3): igual que el Space Dock base pero sumando 3 en vez de 2. Además, tu ability de PRODUCTION nunca produce unidades en exceso de tus reinforcements disponibles."
+        }
+      ],
+      "cost": null
     },
     {
       "id": "war_sun",
@@ -138,8 +237,27 @@
       "expansion": 0,
       "exhaustable": false,
       "effect": "Unlocks the War Sun unit. Cost: 12 | Combat: 3(x3) | Move: 2 | Capacity: 6 | SUSTAIN DAMAGE | BOMBARDMENT 3(x3) | Your War Suns do not require PRODUCTION to be placed; instead, place them from your reinforcements.",
-      "unitType": "warSun",
-      "_note": "A diferencia de las demás unit upgrades, War Sun no mejora una unidad I existente: desbloquea la unidad War Sun desde cero (ninguna facción excepto Embers of Muaat la tiene impresa en su hoja inicial)."
+      "unitType": "war_sun",
+      "_note": "A diferencia de las demás unit upgrades, War Sun no mejora una unidad I existente: desbloquea la unidad War Sun desde cero (ninguna facción excepto Embers of Muaat la tiene impresa en su hoja inicial).",
+      "producesQuantity": 1,
+      "combat": 3,
+      "combatDiceCount": 3,
+      "move": 2,
+      "capacity": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "text": "SUSTAIN DAMAGE."
+        },
+        {
+          "name": "Bombardment",
+          "value": 3,
+          "diceCount": 3,
+          "text": "BOMBARDMENT 3 (x3): tirá 3 dados contra cada infantería enemiga en un planeta del sistema, durante el paso de Bombardeo."
+        }
+      ],
+      "notes": "Regla única: el War Sun NO se produce con la ability PRODUCTION de un space dock — se coloca directamente desde tus reinforcements (ver también unitAbilities.notes de space_dock). No viene impreso en ninguna hoja de facción salvo la de Embers of Muaat.",
+      "cost": 12
     }
   ]
 }
