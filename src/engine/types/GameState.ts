@@ -41,8 +41,16 @@ export interface PlanetState {
   exhausted: boolean;
   /** RR 12: exploration cards with an "Attach" header, e.g. Dyson Sphere. Stores the attachment card id. */
   attachmentIds: string[];
-  /** Ground forces and structures physically on the planet (RR 39, 74). Empty array if none. */
-  units: UnitStack[];
+  /**
+   * Ground forces and structures physically on the planet (RR 39, 74), keyed
+   * by owning player — mirrors SystemState.spaceUnitsByPlayer. Needs to be
+   * per-player (not a flat array) because during the Invasion step (RR 44)
+   * an attacker's just-landed ground forces and the defender's original
+   * ground forces are BOTH present on the same planet simultaneously, before
+   * ground combat resolves them down to one side. A flat array can't tell
+   * them apart.
+   */
+  unitsByPlayer: Partial<Record<PlayerId, UnitStack[]>>;
   /** TE p.11 COEXIST: a second player whose units coexist here without triggering combat. Null outside Thunder's Edge. */
   coexistingPlayerId?: PlayerId | null;
   /** TE space stations (p.10) act like planets but can't hold ground forces/structures; flag so invasion logic can reject commits here. */
@@ -56,7 +64,8 @@ export interface SystemState {
   /** Ships and fighters in the space area, per owning player. */
   spaceUnitsByPlayer: Partial<Record<PlayerId, UnitStack[]>>;
   wormholes: WormholeType[];
-  anomaly: AnomalyType | null;
+  /** RR 9.5: a system can combine more than one anomaly type (e.g. tile 82, "Asteroid Field / Alpha Wormhole"). Empty array = not an anomaly. */
+  anomalies: AnomalyType[];
   /** TE p.9 Ingress/Egress tokens linking to The Fracture. Empty outside Thunder's Edge / before it's rolled into play. */
   ingressToken?: boolean;
   egressToken?: boolean;
