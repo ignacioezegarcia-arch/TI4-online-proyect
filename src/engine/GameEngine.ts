@@ -4,7 +4,9 @@ import { PlayerId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
+import { announceRetreat, resolveSpaceCombatRound, assignHits } from "./phases/spaceCombat";
 import { pass, autoAdvancePhase } from "./phases/actionPhase";
+import { playersWithShipsInSystem } from "./rules/combat";
 
 /**
  * GameEngine is the "bot": the single referee both the web client and (later)
@@ -50,13 +52,19 @@ export const GameEngine = {
       case "MOVE_SHIPS":
         result = moveShips(state, action, rules);
         break;
+      case "ANNOUNCE_RETREAT":
+        result = announceRetreat(state, action);
+        break;
+      case "RESOLVE_COMBAT_ROUND":
+        result = resolveSpaceCombatRound(state, action, rules);
+        break;
+      case "ASSIGN_HITS":
+        result = assignHits(state, action, rules);
+        break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
-      // as the four cases above — see phases/README.md for the recipe.
+      // as the cases above — see phases/README.md for the recipe.
       case "USE_SPACE_CANNON_OFFENSE":
-      case "ANNOUNCE_RETREAT":
-      case "RESOLVE_COMBAT_ROUND":
-      case "ASSIGN_HITS":
       case "BOMBARD":
       case "COMMIT_GROUND_FORCES":
       case "PRODUCE_UNITS":
@@ -116,6 +124,19 @@ export const GameEngine = {
       } else if (state.pendingTacticalAction.playerId === playerId) {
         if (state.pendingTacticalAction.step === "movement") legal.push("MOVE_SHIPS");
         // TODO: push the rest of TacticalStep-appropriate actions as they're implemented.
+      }
+    }
+
+    if (state.pendingTacticalAction?.step === "spaceCombat") {
+      const inCombat = playersWithShipsInSystem(state, state.pendingTacticalAction.systemId).includes(playerId);
+      const owesHits = (state.pendingTacticalAction.pendingHits?.[playerId] ?? 0) > 0;
+      const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
+      if (owesHits) legal.push("ASSIGN_HITS");
+      else if (inCombat && noPendingHits) {
+        legal.push("RESOLVE_COMBAT_ROUND");
+        if (!state.pendingTacticalAction.retreating?.some((r) => r.playerId === playerId)) {
+          legal.push("ANNOUNCE_RETREAT");
+        }
       }
     }
 
