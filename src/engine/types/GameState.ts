@@ -193,8 +193,17 @@ export interface PendingTacticalAction {
   step: TacticalStep;
   /** Round number of an in-progress space or ground combat (RR 67.3–67.8 / 38), reset to 1 when combat starts. */
   combatRound?: number;
-  /** Players who have announced a retreat this combat round but not yet executed it (RR 67.4). */
-  retreatingPlayerIds?: PlayerId[];
+  /** Players who have announced a retreat this combat round but not yet executed it (RR 67.4), and where to. */
+  retreating?: { playerId: PlayerId; toSystemId: SystemId }[];
+  /**
+   * RR 67.6/38.2: hits scored against each player in the current combat
+   * round that they still need to assign (destroy/flip units for) via
+   * ASSIGN_HITS. Populated by RESOLVE_COMBAT_ROUND, entries removed as each
+   * affected player submits their assignment — the round only advances
+   * (check for a winner, start the next round, or move on) once this is
+   * empty again.
+   */
+  pendingHits?: Partial<Record<PlayerId, number>>;
 }
 
 export interface PendingAgendaVote {

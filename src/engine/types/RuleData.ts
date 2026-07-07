@@ -21,6 +21,8 @@ export interface UnitStats {
   unitType: UnitType;
   cost: number;
   combat: number | null; // null for structures with no combat value (e.g. space dock)
+  /** How many dice this unit rolls in *normal* combat (space or ground — both use this same stat). Undefined/1 when `combat` is set and the unit doesn't say otherwise; irrelevant when combat is null. Distinct from abilityValues' AFB/Bombardment/Space Cannon dice counts, which are separate sub-mechanics with their own dice pools. */
+  combatDiceCount?: number;
   move: number | null;
   capacity: number | null;
   abilities: UnitAbility[];

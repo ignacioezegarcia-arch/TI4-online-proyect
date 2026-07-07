@@ -51,9 +51,41 @@ export type GameAction =
       transportedFighters?: { fromSystemId: SystemId; count: number }[];
     }
   | { type: "USE_SPACE_CANNON_OFFENSE"; playerId: PlayerId; assignHitsTo: { unitType: UnitType }[] } // RR 66.2 — TODO
-  | { type: "ANNOUNCE_RETREAT"; playerId: PlayerId; toSystemId: SystemId } // RR 67.4 — TODO
-  | { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId } // rolls dice for both sides per RR 67.5 / 38.1 — TODO
-  | { type: "ASSIGN_HITS"; playerId: PlayerId; destroyedUnitTypes: UnitType[] } // RR 67.6 / 38.2 — TODO
+  | { type: "ANNOUNCE_RETREAT"; playerId: PlayerId; toSystemId: SystemId } // RR 67.4
+  | {
+      type: "RESOLVE_COMBAT_ROUND";
+      playerId: PlayerId;
+      /**
+       * Pre-rolled 1-10 values, one per die, in a fixed order: iterate
+       * playerIds as returned by playersWithShipsInSystem (seat order isn't
+       * used here, just whatever that function returns), then that
+       * player's UnitStacks in the order GameState.systems[...].
+       * spaceUnitsByPlayer[...] happens to list them, `combatDiceCount`
+       * dice per unit in the stack. The engine re-derives this same order
+       * when checking length, so a mismatched count is rejected outright,
+       * but a *correctly-sized* array in the wrong order would silently
+       * mis-assign hits — this is why diceRolls always come from the
+       * trusted Edge Function's own re-derivation of the entries, never
+       * taken as-is from a client-submitted action. RR 67.5 / 38.1.
+       */
+      diceRolls: number[];
+    }
+  | {
+      type: "ASSIGN_HITS";
+      playerId: PlayerId;
+      /**
+       * One entry per hit owed (or per remaining unit, if hits exceed units
+       * left — RR 67.6: excess hits beyond total units are simply lost).
+       * The player chooses, per hit, which unit absorbs it and how:
+       * "destroy" removes it outright; "flip" uses Sustain Damage instead
+       * (only legal for a unit with that ability that isn't already
+       * damaged). This is a real choice, not automatic — e.g. a player may
+       * prefer to destroy a cheap fighter and leave an undamaged
+       * Sustain-Damage dreadnought completely untouched (banking its flip
+       * for a worse hit later) rather than flip it now. RR 67.6 / 38.2.
+       */
+      assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
+    }
   | { type: "BOMBARD"; playerId: PlayerId; targetPlanetId: PlanetId } // RR 44.1 / 15 — TODO
   | { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; count: number } // RR 44.2 — TODO
   | { type: "PRODUCE_UNITS"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] } // RR 58 / 59 — TODO
@@ -98,6 +130,11 @@ export type GameEvent =
   | { type: "PLAYER_PASSED"; playerId: PlayerId }
   | { type: "SYSTEM_ACTIVATED"; playerId: PlayerId; systemId: SystemId }
   | { type: "SHIPS_MOVED"; playerId: PlayerId; toSystemId: SystemId }
+  | { type: "RETREAT_ANNOUNCED"; playerId: PlayerId; toSystemId: SystemId }
+  | { type: "COMBAT_ROUND_RESOLVED"; systemId: SystemId; round: number; hitsScoredByPlayer: Partial<Record<PlayerId, number>> }
+  | { type: "UNITS_DESTROYED"; playerId: PlayerId; systemId: SystemId; unitType: UnitType; count: number }
+  | { type: "UNIT_SUSTAINED_DAMAGE"; playerId: PlayerId; systemId: SystemId; unitType: UnitType; count: number }
+  | { type: "SPACE_COMBAT_ENDED"; systemId: SystemId; survivingPlayerId: PlayerId | null }
   | { type: "PHASE_CHANGED"; from: string; to: string; round: number }
   | { type: "ROUND_STARTED"; round: number }
   | { type: "GAME_ENDED"; winnerId: PlayerId };
