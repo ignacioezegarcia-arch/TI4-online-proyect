@@ -26,20 +26,33 @@ export interface RawUnitEntry {
   combatDiceCount?: number;
   move: number | null;
   capacity: number;
-  abilities: { name: string; effect: string }[];
+  /** Matches data/units.json's & unitUpgrades.json's actual shape: value/diceCount are present for abilities with a numeric effect (AFB, Bombardment, Space Cannon); absent for flat abilities (Sustain Damage, Planetary Shield, Production). NOTE: earlier version of this file assumed a free-text `effect` field that doesn't exist in the real data, silently dropping these numbers — see anomalies.ts-adjacent combat work for why this was caught now. */
+  abilities: { name: string; value?: number; diceCount?: number; text?: string }[];
 }
 
 export function unitEntryToStats(raw: Partial<RawUnitEntry>, unitType: UnitType): UnitStats {
-  const abilities = (raw.abilities ?? [])
-    .map((a) => ABILITY_NAME_TO_ENUM[a.name])
-    .filter((a): a is UnitAbility => Boolean(a));
+  const rawAbilities = raw.abilities ?? [];
+  const abilities = rawAbilities.map((a) => ABILITY_NAME_TO_ENUM[a.name]).filter((a): a is UnitAbility => Boolean(a));
+
+  const abilityValues: Partial<Record<UnitAbility, { value: number; dice: number }>> = {};
+  for (const a of rawAbilities) {
+    const key = ABILITY_NAME_TO_ENUM[a.name];
+    if (key && a.value !== undefined && a.diceCount !== undefined) {
+      abilityValues[key] = { value: a.value, dice: a.diceCount };
+    }
+  }
 
   return {
     unitType,
     cost: typeof raw.cost === "number" ? raw.cost : 0,
     combat: raw.combat ?? null,
+    // Standard TI4 rule: every unit with a combat value rolls exactly 1 die
+    // in normal combat unless the data says otherwise (no base/upgrade unit
+    // currently overrides this, but faction/tech content down the line might).
+    combatDiceCount: raw.combat != null ? (raw.combatDiceCount ?? 1) : undefined,
     move: raw.move ?? null,
     capacity: raw.capacity ?? null,
     abilities,
+    abilityValues: Object.keys(abilityValues).length > 0 ? abilityValues : undefined,
   };
 }
