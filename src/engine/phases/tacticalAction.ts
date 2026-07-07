@@ -1,8 +1,9 @@
-import { GameState, Player, SystemState, UnitStack } from "../types/GameState";
+import { GameState, Player, SystemState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
 import { PlayerId, SystemId } from "../types/ids";
 import { RuleData, getUnitStats } from "../types/RuleData";
-import { getAdjacentSystems } from "../rules/adjacency";
+import { canShipReachSystem } from "../rules/movement";
+import { playersWithShipsInSystem } from "../rules/combat";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -63,18 +64,17 @@ export function activateSystem(
 }
 
 /**
- * RR 78 STEP 2 — MOVEMENT (RR 49.4 for the per-ship legality rules).
+ * RR 78 STEP 2 — MOVEMENT (RR 58.4 for the per-ship legality rules).
  * Validates and applies ship movement into the active system in one shot
- * (all of a player's moved ships move simultaneously per RR 49.6, so there's
+ * (all of a player's moved ships move simultaneously per RR 58.6, so there's
  * no reason to split this into per-ship actions).
  *
- * Deliberately NOT yet implemented: RR 49.4 bullet "the ship cannot move
- * through a system that contains non-fighter ships controlled by another
- * player" — that requires pathfinding across boardAdjacency to enumerate the
- * systems actually crossed, not just checked as a single origin/destination
- * hop. Flagged with a TODO below rather than silently ignored, since
- * shipping this without it would let a player illegally move through a
- * blockading fleet.
+ * Reachability (enemy-fleet blocking, RR 9 anomaly entry/pass-through rules,
+ * Nebula's move-value clamp, Gravity Rift's move-value bonus) is delegated
+ * to rules/movement.ts's canShipReachSystem — see that file for the exact
+ * rules it enforces and the one thing it deliberately doesn't (Gravity
+ * Rift's destruction die roll, parked pending an RNG-in-pure-engine design
+ * decision shared with combat resolution).
  */
 export function moveShips(
   state: GameState,
@@ -114,16 +114,10 @@ export function moveShips(
       return { ok: false, error: `${move.unitType} has no move value and cannot move.` };
     }
 
-    // Simplification for this pass: treats reachability as "adjacent within
-    // `stats.move` hops via a naive adjacency check" rather than full
-    // shortest-path routing (gravity rifts' +1 bonus, nebula's move=1 clamp,
-    // and asteroid/supernova blocking are also not yet applied here — see
-    // TODO above). Good enough to unblock UI wiring; must be hardened
-    // before this ships to real games.
-    if (!isWithinRange(workingState, move.fromSystemId, activeSystemId, stats.move)) {
+    if (!canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, stats.move)) {
       return {
         ok: false,
-        error: `RR 49.3/49.4: ${move.unitType} at ${move.fromSystemId} cannot reach ${activeSystemId} (move value ${stats.move}).`,
+        error: `RR 58.4: ${move.unitType} at ${move.fromSystemId} cannot reach ${activeSystemId} (move value ${stats.move}) — blocked by an anomaly, an enemy fleet along the way, or simply out of range.`,
       };
     }
 
@@ -156,39 +150,6 @@ export function moveShips(
 }
 
 // --- helpers -------------------------------------------------------------
-
-function isWithinRange(state: GameState, from: SystemId, to: SystemId, moveValue: number): boolean {
-  if (from === to) return true;
-  if (moveValue <= 0) return false;
-  const visited = new Set<SystemId>([from]);
-  let frontier = [from];
-  for (let hop = 0; hop < moveValue; hop++) {
-    const next: SystemId[] = [];
-    for (const sys of frontier) {
-      for (const neighbor of getNeighbors(state, sys)) {
-        if (neighbor === to) return true;
-        if (!visited.has(neighbor)) {
-          visited.add(neighbor);
-          next.push(neighbor);
-        }
-      }
-    }
-    frontier = next;
-  }
-  return false;
-}
-
-function getNeighbors(state: GameState, systemId: SystemId): SystemId[] {
-  return getAdjacentSystems(state, systemId);
-}
-
-function playersWithShipsInSystem(state: GameState, systemId: SystemId): PlayerId[] {
-  const system = state.systems[systemId];
-  if (!system) return [];
-  return Object.entries(system.spaceUnitsByPlayer)
-    .filter(([, stacks]) => (stacks as UnitStack[]).some((s) => s.count > 0))
-    .map(([playerId]) => playerId as PlayerId);
-}
 
 function removeFromSystem(
   state: GameState,
