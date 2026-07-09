@@ -52,7 +52,28 @@ export function unitEntryToStats(raw: Partial<RawUnitEntry>, unitType: UnitType)
     combatDiceCount: raw.combat != null ? (raw.combatDiceCount ?? 1) : undefined,
     move: raw.move ?? null,
     capacity: raw.capacity ?? null,
+    producesQuantity: raw.producesQuantity ?? 1,
     abilities,
     abilityValues: Object.keys(abilityValues).length > 0 ? abilityValues : undefined,
   };
+}
+
+/** data/tiles.json's planet name -> lowercase-underscore id, matching PlanetId's own convention (e.g. "Mecatol Rex" -> "mecatol_rex"). */
+export function planetNameToId(name: string): string {
+  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+export interface RawTilesFile {
+  tiles: { planets?: { name: string; resources: number; influence: number }[] }[];
+}
+
+/** Shared by both loaders (browser + Edge Function) — builds the resources/influence lookup RuleData.planets needs, straight from data/tiles.json. */
+export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<string, { resources: number; influence: number }> {
+  const planets: Record<string, { resources: number; influence: number }> = {};
+  for (const tile of tilesFile.tiles) {
+    for (const planet of tile.planets ?? []) {
+      planets[planetNameToId(planet.name)] = { resources: planet.resources, influence: planet.influence };
+    }
+  }
+  return planets;
 }
