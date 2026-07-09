@@ -46,8 +46,8 @@ export type GameAction =
         unitType: UnitType;
         count: number;
       }[];
-      /** Fighters/ground forces picked up along the way per RR 84.1 — kept separate from ship moves because capacity is checked against these, not against ships. */
-      transportedGroundForces?: { fromSystemId: SystemId; count: number }[];
+      /** Ground forces picked up along the way per RR 84.1 — kept separate from ship moves because capacity is checked against these, not against ships. Must come from the same fromSystemId as one of the `moves` entries above (multi-hop pickup along the path isn't supported yet — flagged in moveShips). */
+      transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
       transportedFighters?: { fromSystemId: SystemId; count: number }[];
     }
   | { type: "USE_SPACE_CANNON_OFFENSE"; playerId: PlayerId; assignHitsTo: { unitType: UnitType }[] } // RR 66.2 — TODO
@@ -86,8 +86,33 @@ export type GameAction =
        */
       assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
     }
-  | { type: "BOMBARD"; playerId: PlayerId; targetPlanetId: PlanetId } // RR 44.1 / 15 — TODO
-  | { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; count: number } // RR 44.2 — TODO
+  | {
+      type: "BOMBARD";
+      playerId: PlayerId;
+      targetPlanetId: PlanetId;
+      /** Pre-rolled dice, same trusted-RNG convention as RESOLVE_COMBAT_ROUND — see that action's doc comment. Order: iterate the bombarding player's bombardment-capable ship stacks in the order they appear in the system's spaceUnitsByPlayer, abilityValues.bombardment.dice dice per unit in the stack. RR 44.1 / 15. */
+      diceRolls: number[];
+    }
+  | {
+      type: "ASSIGN_BOMBARDMENT_HITS";
+      playerId: PlayerId;
+      targetPlanetId: PlanetId;
+      /** Same destroy/flip-per-unit shape as ASSIGN_HITS (ground forces have no Sustain Damage except Mechs) — RR 44.1 / 76. */
+      assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
+    }
+  | {
+      type: "COMMIT_GROUND_FORCES";
+      playerId: PlayerId;
+      targetPlanetId: PlanetId;
+      units: { unitType: UnitType; count: number }[];
+    } // RR 44.2: moves ground forces from the active system's space area onto a planet there.
+  | { type: "FINISH_INVASION_COMMITS"; playerId: PlayerId } // RR 44.2: attacker signals no more planets will be invaded this tactical action.
+  | {
+      type: "START_GROUND_COMBAT";
+      playerId: PlayerId;
+      targetPlanetId: PlanetId;
+      /** RR 44.4: the active player picks which contested planet resolves next, each time — independent of commit order, and independent of any previous pick. */
+    }
   | { type: "PRODUCE_UNITS"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] } // RR 58 / 59 — TODO
 
   // --- Strategy card primary/secondary abilities (RR 71) ---
@@ -131,10 +156,14 @@ export type GameEvent =
   | { type: "SYSTEM_ACTIVATED"; playerId: PlayerId; systemId: SystemId }
   | { type: "SHIPS_MOVED"; playerId: PlayerId; toSystemId: SystemId }
   | { type: "RETREAT_ANNOUNCED"; playerId: PlayerId; toSystemId: SystemId }
-  | { type: "COMBAT_ROUND_RESOLVED"; systemId: SystemId; round: number; hitsScoredByPlayer: Partial<Record<PlayerId, number>> }
-  | { type: "UNITS_DESTROYED"; playerId: PlayerId; systemId: SystemId; unitType: UnitType; count: number }
-  | { type: "UNIT_SUSTAINED_DAMAGE"; playerId: PlayerId; systemId: SystemId; unitType: UnitType; count: number }
+  | { type: "COMBAT_ROUND_RESOLVED"; systemId: SystemId; planetId?: PlanetId; round: number; hitsScoredByPlayer: Partial<Record<PlayerId, number>> }
+  | { type: "UNITS_DESTROYED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
+  | { type: "UNIT_SUSTAINED_DAMAGE"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
   | { type: "SPACE_COMBAT_ENDED"; systemId: SystemId; survivingPlayerId: PlayerId | null }
+  | { type: "GROUND_FORCES_COMMITTED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId }
+  | { type: "BOMBARDMENT_RESOLVED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number }
+  | { type: "GROUND_COMBAT_ENDED"; systemId: SystemId; planetId: PlanetId; survivingPlayerId: PlayerId | null }
+  | { type: "PLANET_CONTROL_ESTABLISHED"; systemId: SystemId; planetId: PlanetId; playerId: PlayerId }
   | { type: "PHASE_CHANGED"; from: string; to: string; round: number }
   | { type: "ROUND_STARTED"; round: number }
   | { type: "GAME_ENDED"; winnerId: PlayerId };

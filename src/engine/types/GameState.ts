@@ -204,6 +204,17 @@ export interface PendingTacticalAction {
    * empty again.
    */
   pendingHits?: Partial<Record<PlayerId, number>>;
+  /** RR 44: which planet is currently having ground combat resolved (a system can have multiple contested planets; they resolve one at a time, in whatever order the attacker committed forces). Undefined = no ground combat active right now. */
+  currentInvasionPlanetId?: PlanetId;
+  /**
+   * RR 44.2/44.4: contested planets (2+ players' ground forces) still
+   * awaiting ground combat, as an unordered set — NOT a queue. The active
+   * player picks which one resolves next via START_GROUND_COMBAT each
+   * time, independent of the order they were committed in.
+   */
+  remainingInvasionPlanetIds?: PlanetId[];
+  /** RR 44.2: true once the active player has signaled they're done committing ground forces this invasion step (FINISH_INVASION_COMMITS) — after that, no more COMMIT_GROUND_FORCES, and START_GROUND_COMBAT becomes available. */
+  invasionCommitsFinished?: boolean;
 }
 
 export interface PendingAgendaVote {
