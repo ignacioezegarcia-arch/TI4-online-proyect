@@ -1,6 +1,6 @@
 import { GameState, PlanetState, UnitStack } from "../types/GameState";
-import { PlayerId, SystemId } from "../types/ids";
-import { GROUND_FORCE_TYPES, SHIP_TYPES } from "../types/enums";
+import { PlayerId, SystemId, FactionId, UnitUpgradeId } from "../types/ids";
+import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus } from "./anomalies";
 
@@ -162,3 +162,146 @@ export function buildSpaceCombatEntries(
   return entries;
 }
 
+/**
+ * RR 38 GROUND COMBAT entries for one planet. No anomaly-style modifier
+ * here — Nebula's defender bonus is space-combat-only. Same "exactly 2
+ * players" and "no action cards/tech/faction abilities yet" limits as
+ * buildSpaceCombatEntries above.
+ */
+export function buildGroundCombatEntries(state: GameState, rules: RuleData, planet: PlanetState): CombatUnitEntry[] {
+  const playerIds = playersWithGroundForces(planet);
+  if (playerIds.length !== 2) {
+    throw new Error(
+      `RR 38: se esperan exactamente 2 jugadores en combate terrestre en ${planet.planetId}, hay ${playerIds.length}.`,
+    );
+  }
+
+  const entries: CombatUnitEntry[] = [];
+  for (const playerId of playerIds) {
+    const player = state.players[playerId];
+    const stacks = (planet.unitsByPlayer[playerId] ?? []) as UnitStack[];
+    for (const stack of stacks) {
+      if (!GROUND_FORCE_TYPES.includes(stack.unitType) || stack.count <= 0) continue;
+      const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+      if (!stats || stats.combat == null) continue;
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1), hitOn: stats.combat });
+    }
+  }
+  return entries;
+}
+
+/**
+ * RR 44.1 / 15 BOMBARDMENT — the attacker's own bombardment-capable ships
+ * firing at a planet, single-sided (unlike space/ground combat's mutual
+ * fire). Doesn't check Planetary Shield here — that's the caller's job
+ * (see planetHasShield), since whether Bombardment is even legal against
+ * this planet is a precondition, not something this function should decide.
+ */
+export function buildBombardmentEntries(
+  state: GameState,
+  rules: RuleData,
+  systemId: SystemId,
+  attackerId: PlayerId,
+): CombatUnitEntry[] {
+  const system = state.systems[systemId];
+  if (!system) return [];
+  const player = state.players[attackerId];
+  const stacks = (system.spaceUnitsByPlayer[attackerId] ?? []) as UnitStack[];
+
+  const entries: CombatUnitEntry[] = [];
+  for (const stack of stacks) {
+    if (stack.count <= 0) continue;
+    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+    const bombardment = stats?.abilityValues?.bombardment;
+    if (!bombardment) continue;
+    entries.push({ playerId: attackerId, diceCount: stack.count * bombardment.dice, hitOn: bombardment.value });
+  }
+  return entries;
+}
+
+/** RR 15/44.1: true if `defenderId` has an undamaged, un-destroyed Planetary Shield unit (a PDS, normally) on this planet — Bombardment can't target it at all while true. */
+export function planetHasShield(
+  planet: PlanetState,
+  defenderId: PlayerId,
+  defenderFactionId: FactionId,
+  defenderUnitUpgrades: UnitUpgradeId[],
+  rules: RuleData,
+): boolean {
+  const stacks = (planet.unitsByPlayer[defenderId] ?? []) as UnitStack[];
+  return stacks.some((s) => {
+    if (s.count <= 0) return false;
+    const stats = getUnitStats(rules, defenderFactionId, s.unitType, defenderUnitUpgrades);
+    return stats?.abilities.includes("planetaryShield") ?? false;
+  });
+}
+
+// ---------------------------------------------------------------------
+// RR 67.6 / 38.2 / 44.1 — hit assignment, shared by space combat, ground
+// combat, and bombardment (they only differ in which UnitStack[] the hits
+// come out of and who owns it).
+// ---------------------------------------------------------------------
+
+export interface HitAssignment {
+  unitType: UnitType;
+  outcome: "destroy" | "flip";
+}
+
+export type ApplyHitAssignmentsResult =
+  | { ok: true; stacks: UnitStack[]; destroyed: Map<UnitType, number>; flipped: Map<UnitType, number> }
+  | { ok: false; error: string };
+
+/**
+ * Applies a player's chosen hit assignments to their own stacks. This is
+ * where Sustain Damage's flip-vs-destroy is a REAL per-unit choice the
+ * caller (the player) makes — see ASSIGN_HITS's own doc comment for why
+ * that matters (an earlier version of this auto-flipped, which silently
+ * took away a real decision).
+ */
+export function applyHitAssignments(
+  stacks: UnitStack[],
+  assignments: HitAssignment[],
+  hitsOwed: number,
+  factionId: FactionId,
+  ownedUnitUpgrades: UnitUpgradeId[],
+  rules: RuleData,
+): ApplyHitAssignmentsResult {
+  const updated = stacks.map((s) => ({ ...s }));
+  const unitsLeft = updated.reduce((sum, s) => sum + s.count, 0);
+  // RR 67.6/38.2: if hits exceed the units left, every remaining unit is
+  // destroyed/flipped and the extra hits are simply lost.
+  const required = Math.min(hitsOwed, unitsLeft);
+  if (assignments.length !== required) {
+    return {
+      ok: false,
+      error: `${hitsOwed} hit(s) owed, ${unitsLeft} unit(s) left — expected ${required} assignment(s), got ${assignments.length}.`,
+    };
+  }
+
+  const destroyed = new Map<UnitType, number>();
+  const flipped = new Map<UnitType, number>();
+
+  for (const { unitType, outcome } of assignments) {
+    const stack = updated.find((s) => s.unitType === unitType && s.count > 0);
+    if (!stack) return { ok: false, error: `No ${unitType} left to assign a hit to.` };
+
+    if (outcome === "flip") {
+      const stats = getUnitStats(rules, factionId, unitType, ownedUnitUpgrades);
+      if (!stats?.abilities.includes("sustainDamage")) {
+        return { ok: false, error: `RR 76: ${unitType} doesn't have Sustain Damage.` };
+      }
+      if (stack.damagedCount >= stack.count) {
+        return { ok: false, error: `RR 76: every ${unitType} in this stack is already damaged — this hit must destroy one.` };
+      }
+      stack.damagedCount += 1;
+      flipped.set(unitType, (flipped.get(unitType) ?? 0) + 1);
+    } else {
+      // Prefer removing an already-damaged unit first — it was one hit from
+      // death anyway, so this preserves the stack's remaining sustain buffer.
+      if (stack.damagedCount > 0) stack.damagedCount -= 1;
+      stack.count -= 1;
+      destroyed.set(unitType, (destroyed.get(unitType) ?? 0) + 1);
+    }
+  }
+
+  return { ok: true, stacks: updated.filter((s) => s.count > 0), destroyed, flipped };
+}
