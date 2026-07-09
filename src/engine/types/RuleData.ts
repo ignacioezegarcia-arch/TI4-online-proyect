@@ -1,4 +1,4 @@
-import { FactionId, TechId, UnitUpgradeId } from "./ids";
+import { FactionId, PlanetId, TechId, UnitUpgradeId } from "./ids";
 import { UnitAbility, UnitType } from "./enums";
 
 /**
@@ -25,6 +25,8 @@ export interface UnitStats {
   combatDiceCount?: number;
   move: number | null;
   capacity: number | null;
+  /** RR 58: how many units one "produce" action yields for `cost` (e.g. Fighter/Infantry = 2 per token). Defaults to 1 when the data doesn't say otherwise. */
+  producesQuantity?: number;
   abilities: UnitAbility[];
   /** e.g. Anti-Fighter Barrage X(Y) -> {value: X, dice: Y}; Bombardment 5 -> {value:5, dice:1}. Keyed by ability for units with more than one. */
   abilityValues?: Partial<Record<UnitAbility, { value: number; dice: number }>>;
@@ -42,9 +44,16 @@ export interface UnitUpgradeStats {
   stats: UnitStats;
 }
 
+export interface PlanetStaticData {
+  resources: number;
+  influence: number;
+}
+
 export interface RuleData {
   factionUnits: Record<FactionId, FactionUnitStats>;
   unitUpgrades: Record<UnitUpgradeId, UnitUpgradeStats>;
+  /** Static resources/influence per planet (data/tiles.json), keyed by the same lowercase-underscore id as PlanetId (e.g. "jord", "mecatol_rex"). */
+  planets: Record<PlanetId, PlanetStaticData>;
   // TODO as later phases need them: technologies (prerequisites/effects),
   // actionCards, agendas, objectives, explorationCards, relics,
   // promissoryNotes, strategyCard primary/secondary text, faction

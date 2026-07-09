@@ -113,7 +113,8 @@ export type GameAction =
       targetPlanetId: PlanetId;
       /** RR 44.4: the active player picks which contested planet resolves next, each time — independent of commit order, and independent of any previous pick. */
     }
-  | { type: "PRODUCE_UNITS"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] } // RR 58 / 59 — TODO
+  | { type: "PRODUCE_UNITS"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] }
+  | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
   // --- Strategy card primary/secondary abilities (RR 71) ---
   | { type: "RESOLVE_STRATEGY_PRIMARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown } // TODO, one payload shape per card
@@ -164,6 +165,7 @@ export type GameEvent =
   | { type: "BOMBARDMENT_RESOLVED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number }
   | { type: "GROUND_COMBAT_ENDED"; systemId: SystemId; planetId: PlanetId; survivingPlayerId: PlayerId | null }
   | { type: "PLANET_CONTROL_ESTABLISHED"; systemId: SystemId; planetId: PlanetId; playerId: PlayerId }
+  | { type: "UNITS_PRODUCED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; unitType: UnitType; count: number; totalCost: number }
   | { type: "PHASE_CHANGED"; from: string; to: string; round: number }
   | { type: "ROUND_STARTED"; round: number }
   | { type: "GAME_ENDED"; winnerId: PlayerId };
