@@ -82,6 +82,8 @@ export function moveShips(
     type: "MOVE_SHIPS";
     playerId: PlayerId;
     moves: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; count: number }[];
+    transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
+    transportedFighters?: { fromSystemId: SystemId; count: number }[];
   },
   rules: RuleData,
 ): ActionResult {
@@ -131,10 +133,55 @@ export function moveShips(
     workingState = addToSystem(workingState, activeSystemId, player.id, move.unitType, move.count);
   }
 
+  // RR 84.1 — cargo (ground forces + fighters) riding along with the moving
+  // ships. Simplification, flagged rather than silently wrong: each cargo
+  // entry must originate from the SAME system as one of this action's own
+  // `moves` entries — picking up cargo at an intermediate hop mid-path (RR
+  // 84.1 technically allows this) isn't supported yet. Capacity (total
+  // cargo can't exceed the sum of capacity across the ships actually
+  // making this move) also isn't enforced yet — flagged, not silently
+  // ignored, same as the retreat/AFB/action-card gaps elsewhere in this
+  // file's neighborhood.
+  const moveOrigins = new Set(action.moves.map((m) => m.fromSystemId));
+
+  for (const cargo of action.transportedGroundForces ?? []) {
+    if (!moveOrigins.has(cargo.fromSystemId)) {
+      return {
+        ok: false,
+        error: `RR 84.1: transported ground forces must come from a system this action is already moving ships from (${cargo.fromSystemId} isn't one of them).`,
+      };
+    }
+    const originStack = workingState.systems[cargo.fromSystemId]?.spaceUnitsByPlayer[player.id]?.find(
+      (s) => s.unitType === cargo.unitType,
+    );
+    if (!originStack || originStack.count < cargo.count) {
+      return { ok: false, error: `Not enough ${cargo.unitType} at ${cargo.fromSystemId} to transport ${cargo.count}.` };
+    }
+    workingState = removeFromSystem(workingState, cargo.fromSystemId, player.id, cargo.unitType, cargo.count);
+    workingState = addToSystem(workingState, activeSystemId, player.id, cargo.unitType, cargo.count);
+  }
+
+  for (const cargo of action.transportedFighters ?? []) {
+    if (!moveOrigins.has(cargo.fromSystemId)) {
+      return {
+        ok: false,
+        error: `RR 84.1: transported fighters must come from a system this action is already moving ships from (${cargo.fromSystemId} isn't one of them).`,
+      };
+    }
+    const originStack = workingState.systems[cargo.fromSystemId]?.spaceUnitsByPlayer[player.id]?.find(
+      (s) => s.unitType === "fighter",
+    );
+    if (!originStack || originStack.count < cargo.count) {
+      return { ok: false, error: `Not enough fighters at ${cargo.fromSystemId} to transport ${cargo.count}.` };
+    }
+    workingState = removeFromSystem(workingState, cargo.fromSystemId, player.id, "fighter", cargo.count);
+    workingState = addToSystem(workingState, activeSystemId, player.id, "fighter", cargo.count);
+  }
+
   // RR 78.2 bullet: after moving, space cannon offense may fire, then space
   // combat resolves if 2+ players have ships in the active system (RR 78.3).
-  // For this first pass we skip straight to whichever comes next; those
-  // steps are the next TODOs in this file's neighborhood.
+  // Space Cannon Offense isn't implemented yet (TODO, same as Space Cannon
+  // Defense during Invasion) — skipping straight past it for now.
   const nextStep = playersWithShipsInSystem(workingState, activeSystemId).length > 1 ? "spaceCombat" : "invasion";
 
   workingState = {

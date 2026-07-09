@@ -2,9 +2,14 @@ import { GameState, PendingTacticalAction, SystemState, UnitStack } from "../typ
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, SystemId } from "../types/ids";
 import { UnitType } from "../types/enums";
-import { RuleData, getUnitStats } from "../types/RuleData";
+import { RuleData } from "../types/RuleData";
 import { isAdjacent } from "../rules/adjacency";
-import { playersWithShipsInSystem, buildSpaceCombatEntries, resolveCombatRound } from "../rules/combat";
+import {
+  playersWithShipsInSystem,
+  buildSpaceCombatEntries,
+  resolveCombatRound,
+  applyHitAssignments,
+} from "../rules/combat";
 
 /**
  * RR 78 STEP 3 — SPACE COMBAT (RR 67).
@@ -145,61 +150,23 @@ export function assignHits(
   const systemId = pending.systemId;
   const system = state.systems[systemId];
   const player = state.players[action.playerId];
-  const stacks: UnitStack[] = (system.spaceUnitsByPlayer[action.playerId] ?? []).map((s) => ({ ...s }));
+  const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  // RR 67.6: if hits exceed the units left, every remaining unit is
-  // destroyed/flipped and the extra hits are simply lost — the player only
-  // needs to cover as many assignments as they actually have units.
-  const unitsLeft = stacks.reduce((sum, s) => sum + s.count, 0);
-  const requiredAssignments = Math.min(hitsOwed, unitsLeft);
-  if (action.assignments.length !== requiredAssignments) {
-    return {
-      ok: false,
-      error: `RR 67.6: ${hitsOwed} hit(s) owed, ${unitsLeft} unit(s) left — expected ${requiredAssignments} assignment(s), got ${action.assignments.length}.`,
-    };
-  }
+  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  if (!result.ok) return { ok: false, error: `RR 67.6: ${result.error}` };
 
-  const destroyedCounts = new Map<UnitType, number>();
-  const flippedCounts = new Map<UnitType, number>();
-
-  for (const { unitType, outcome } of action.assignments) {
-    const stack = stacks.find((s) => s.unitType === unitType && s.count > 0);
-    if (!stack) {
-      return { ok: false, error: `No ${unitType} left in ${systemId} for this player to assign a hit to.` };
-    }
-
-    if (outcome === "flip") {
-      const stats = getUnitStats(rules, player.factionId, unitType, player.unitUpgrades);
-      if (!stats?.abilities.includes("sustainDamage")) {
-        return { ok: false, error: `RR 76: ${unitType} doesn't have Sustain Damage.` };
-      }
-      if (stack.damagedCount >= stack.count) {
-        return { ok: false, error: `RR 76: every ${unitType} in this stack is already damaged — this hit must destroy one instead.` };
-      }
-      stack.damagedCount += 1;
-      flippedCounts.set(unitType, (flippedCounts.get(unitType) ?? 0) + 1);
-    } else {
-      // Prefer removing an already-damaged unit first — it was one hit from
-      // death anyway, so this preserves the stack's remaining sustain buffer.
-      if (stack.damagedCount > 0) stack.damagedCount -= 1;
-      stack.count -= 1;
-      destroyedCounts.set(unitType, (destroyedCounts.get(unitType) ?? 0) + 1);
-    }
-  }
-
-  const survivingStacks = stacks.filter((s) => s.count > 0);
   const events: GameEvent[] = [
-    ...Array.from(destroyedCounts.entries()).map(
+    ...Array.from(result.destroyed.entries()).map(
       ([unitType, count]): GameEvent => ({ type: "UNITS_DESTROYED", playerId: action.playerId, systemId, unitType, count }),
     ),
-    ...Array.from(flippedCounts.entries()).map(
+    ...Array.from(result.flipped.entries()).map(
       ([unitType, count]): GameEvent => ({ type: "UNIT_SUSTAINED_DAMAGE", playerId: action.playerId, systemId, unitType, count }),
     ),
   ];
 
   const updatedSystem: SystemState = {
     ...system,
-    spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: survivingStacks },
+    spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: result.stacks },
   };
 
   const remainingPendingHits = { ...pending.pendingHits };
