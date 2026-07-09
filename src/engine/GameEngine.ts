@@ -15,6 +15,7 @@ import {
   assignGroundCombatHits,
 } from "./phases/invasion";
 import { pass, autoAdvancePhase } from "./phases/actionPhase";
+import { produceUnits, finishTacticalAction } from "./phases/production";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -91,11 +92,16 @@ export const GameEngine = {
       case "START_GROUND_COMBAT":
         result = startGroundCombat(state, action);
         break;
+      case "PRODUCE_UNITS":
+        result = produceUnits(state, action, rules);
+        break;
+      case "FINISH_TACTICAL_ACTION":
+        result = finishTacticalAction(state, action);
+        break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
       // as the cases above — see phases/README.md for the recipe.
       case "USE_SPACE_CANNON_OFFENSE":
-      case "PRODUCE_UNITS":
       case "RESOLVE_STRATEGY_PRIMARY":
       case "RESOLVE_STRATEGY_SECONDARY":
       case "PLAY_ACTION_CARD":
@@ -160,6 +166,9 @@ export const GameEngine = {
           } else if ((state.pendingTacticalAction.remainingInvasionPlanetIds ?? []).length > 0) {
             legal.push("START_GROUND_COMBAT");
           }
+        }
+        if (state.pendingTacticalAction.step === "production") {
+          legal.push("PRODUCE_UNITS", "FINISH_TACTICAL_ACTION");
         }
       }
     }
