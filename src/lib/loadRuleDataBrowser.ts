@@ -9,9 +9,10 @@
 import { RuleData, FactionUnitStats } from "../engine/types/RuleData";
 import { FactionId, asFactionId } from "../engine/types/ids";
 import { UnitType } from "../engine/types/enums";
-import { unitEntryToStats, RawUnitEntry } from "../engine/rules/ruleDataMapping";
+import { unitEntryToStats, RawUnitEntry, buildPlanetsLookup, RawTilesFile } from "../engine/rules/ruleDataMapping";
 
 import unitsFile from "../../data/units.json";
+import tilesFile from "../../data/tiles.json";
 
 // Vite-friendly way to "dynamically" import one of many known JSON files:
 // eagerly globs all faction files at build time, keyed by their path, then
@@ -54,5 +55,5 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
 
   // See supabase/functions/_shared/ruleData.ts gap #2 — unit upgrades are
   // intentionally left unresolved client-side too, for the same reason.
-  return { factionUnits, unitUpgrades: {} };
+  return { factionUnits, unitUpgrades: {}, planets: buildPlanetsLookup(tilesFile as RawTilesFile) };
 }
