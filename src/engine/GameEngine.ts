@@ -5,8 +5,17 @@ import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
 import { announceRetreat, resolveSpaceCombatRound, assignHits } from "./phases/spaceCombat";
+import {
+  bombard,
+  assignBombardmentHits,
+  commitGroundForces,
+  finishInvasionCommits,
+  startGroundCombat,
+  resolveGroundCombatRound,
+  assignGroundCombatHits,
+} from "./phases/invasion";
 import { pass, autoAdvancePhase } from "./phases/actionPhase";
-import { playersWithShipsInSystem } from "./rules/combat";
+import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
  * GameEngine is the "bot": the single referee both the web client and (later)
@@ -56,17 +65,36 @@ export const GameEngine = {
         result = announceRetreat(state, action);
         break;
       case "RESOLVE_COMBAT_ROUND":
-        result = resolveSpaceCombatRound(state, action, rules);
+        result =
+          state.pendingTacticalAction?.step === "invasion"
+            ? resolveGroundCombatRound(state, action, rules)
+            : resolveSpaceCombatRound(state, action, rules);
         break;
       case "ASSIGN_HITS":
-        result = assignHits(state, action, rules);
+        result =
+          state.pendingTacticalAction?.step === "invasion"
+            ? assignGroundCombatHits(state, action, rules)
+            : assignHits(state, action, rules);
+        break;
+      case "BOMBARD":
+        result = bombard(state, action, rules);
+        break;
+      case "ASSIGN_BOMBARDMENT_HITS":
+        result = assignBombardmentHits(state, action, rules);
+        break;
+      case "COMMIT_GROUND_FORCES":
+        result = commitGroundForces(state, action);
+        break;
+      case "FINISH_INVASION_COMMITS":
+        result = finishInvasionCommits(state, action);
+        break;
+      case "START_GROUND_COMBAT":
+        result = startGroundCombat(state, action);
         break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
       // as the cases above — see phases/README.md for the recipe.
       case "USE_SPACE_CANNON_OFFENSE":
-      case "BOMBARD":
-      case "COMMIT_GROUND_FORCES":
       case "PRODUCE_UNITS":
       case "RESOLVE_STRATEGY_PRIMARY":
       case "RESOLVE_STRATEGY_SECONDARY":
@@ -123,7 +151,16 @@ export const GameEngine = {
         legal.push("ACTIVATE_SYSTEM");
       } else if (state.pendingTacticalAction.playerId === playerId) {
         if (state.pendingTacticalAction.step === "movement") legal.push("MOVE_SHIPS");
-        // TODO: push the rest of TacticalStep-appropriate actions as they're implemented.
+        if (state.pendingTacticalAction.step === "invasion" && !state.pendingTacticalAction.currentInvasionPlanetId) {
+          const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
+          if (!noPendingHits) {
+            legal.push("ASSIGN_BOMBARDMENT_HITS");
+          } else if (!state.pendingTacticalAction.invasionCommitsFinished) {
+            legal.push("BOMBARD", "COMMIT_GROUND_FORCES", "FINISH_INVASION_COMMITS");
+          } else if ((state.pendingTacticalAction.remainingInvasionPlanetIds ?? []).length > 0) {
+            legal.push("START_GROUND_COMBAT");
+          }
+        }
       }
     }
 
@@ -138,6 +175,16 @@ export const GameEngine = {
           legal.push("ANNOUNCE_RETREAT");
         }
       }
+    }
+
+    if (state.pendingTacticalAction?.step === "invasion" && state.pendingTacticalAction.currentInvasionPlanetId) {
+      const { systemId, currentInvasionPlanetId } = state.pendingTacticalAction;
+      const planet = state.systems[systemId]?.planets.find((p) => p.planetId === currentInvasionPlanetId);
+      const inCombat = planet ? playersWithGroundForces(planet).includes(playerId) : false;
+      const owesHits = (state.pendingTacticalAction.pendingHits?.[playerId] ?? 0) > 0;
+      const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
+      if (owesHits) legal.push("ASSIGN_HITS");
+      else if (inCombat && noPendingHits) legal.push("RESOLVE_COMBAT_ROUND");
     }
 
     return legal;
