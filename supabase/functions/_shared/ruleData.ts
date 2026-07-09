@@ -28,7 +28,7 @@
 import { RuleData, FactionUnitStats, UnitUpgradeStats } from "./engine/types/RuleData.ts";
 import { FactionId, UnitUpgradeId, asFactionId } from "./engine/types/ids.ts";
 import { UnitType } from "./engine/types/enums.ts";
-import { unitEntryToStats, RawUnitEntry } from "./engine/rules/ruleDataMapping.ts";
+import { unitEntryToStats, RawUnitEntry, buildPlanetsLookup, RawTilesFile } from "./engine/rules/ruleDataMapping.ts";
 
 interface RawFactionFile {
   id: string;
@@ -89,5 +89,7 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
     );
   }
 
-  return { factionUnits, unitUpgrades };
+  const tilesFile = JSON.parse(await Deno.readTextFile(new URL("./data/tiles.json", import.meta.url)));
+
+  return { factionUnits, unitUpgrades, planets: buildPlanetsLookup(tilesFile as RawTilesFile) };
 }
