@@ -1,0 +1,108 @@
+{
+  "id": "naaz_rokha",
+  "name": "The Naaz‑Rokha Alliance",
+  "set": "pok",
+  "commodities": 3,
+  "homePlanets": ["Naazir", "Rokha"],
+  "startingUnits": {
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 4,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": ["ai_development_algorithm"],
+  "factionAbilities": [
+    {
+      "id": "datalink_protocols",
+      "name": "DATALINK PROTOCOLS",
+      "effect": "After you gain control of a planet, you may place 1 mech from your reinforcements on that planet."
+    },
+    {
+      "id": "supercharge",
+      "name": "SUPERCHARGE",
+      "effect": "After you produce units, you may exhaust this card to place 1 mech from your reinforcements in the produced units' system."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Research Agreement",
+    "versions": [
+      {
+        "version": "original",
+        "source": "pok",
+        "timing": "When you research a technology:",
+        "effect": "Gain 1 technology that the Naaz‑Rokha player owns that is not a unit upgrade. Then, return this card to the Naaz‑Rokha player.",
+        "placeInPlayArea": true
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "nanoforge",
+      "name": "Nanoforge",
+      "color": "red",
+      "prerequisites": ["red"],
+      "effect": "ACTION: Exhaust this card and choose 1 planet you control; that planet gains +3 resources until the end of the round."
+    },
+    {
+      "id": "supercharge_tech",
+      "name": "Supercharge",
+      "color": "yellow",
+      "prerequisites": ["yellow"],
+      "effect": "After you produce units, you may place 1 mech from your reinforcements in the produced units' system."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "Visz El Vir",
+      "cost": 8,
+      "combat": 5,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" },
+        {
+          "name": "Mech Deployment",
+          "effect": "After you activate this system, you may place 1 mech from your reinforcements in this system."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Rokha Sentinel",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "When you gain control of a planet, you may place this unit on that planet.",
+      "abilities": [
+        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" }
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": ["green", "blue"],
+      "description": "Tus tecnologías verdes pueden usarse como azules para prerrequisitos, y viceversa."
+    },
+    "ability": {
+      "name": "Datalink Surge",
+      "effect": "ACTION: Exhaust this card to place 1 mech from your reinforcements on a planet you control."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Rokha T’lak",
+      "unlock": "At Game Start",
+      "ability": "When you produce units: You may exhaust this card to place 1 mech from your reinforcements in the produced units' system."
+    },
+    "commander": {
+      "name": "Naazir K’tekk",
+      "unlock": "Have 3 mechs on the game board.",
+      "ability": "During production, you may produce 1 additional mech in a system that contains your space dock."
+    },
+    "hero": {
+      "name": "The Alloy Ascendant",
+      "unlock": "Have 3 Scored Objectives",
+      "ability": "ACTION: Purge this card to place 1 mech from your reinforcements on each planet you control."
+    }
+  }
+}
