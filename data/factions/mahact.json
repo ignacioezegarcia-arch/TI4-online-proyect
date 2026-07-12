@@ -1,0 +1,139 @@
+{
+  "id": "mahact_gene_sorcerers",
+  "name": "The Mahact Gene‑Sorcerers",
+  "set": "pok",
+  "commodities": 3,
+  "homePlanets": ["Ixth"],
+  "startingUnits": {
+    "dreadnought": 1,
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 3,
+    "spaceDock": 1
+  },
+  "startingTechnologies": ["bio_stims", "predictive_intelligence"],
+  "factionAbilities": [
+    {
+      "id": "edict",
+      "name": "EDICT",
+      "effect": "When you win a combat, place 1 command token from your opponent's reinforcements in your fleet pool if it does not already contain 1 of that player's tokens; other player's tokens in your fleet pool increase your fleet limit but cannot be redistributed."
+    },
+    {
+      "id": "imperia",
+      "name": "IMPERIA",
+      "effect": "While another player's command token is in your fleet pool, you can use the ability of that player's commander, if it is unlocked."
+    },
+    {
+      "id": "hubris",
+      "name": "HUBRIS",
+      "effect": "During setup, purge your \"Alliance\" promissory note. Other players cannot give you their \"Alliance\" promissory note."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Scepter of Dominion",
+    "versions": [
+      {
+        "version": "original",
+        "source": "pok",
+        "timing": "At the start of the strategy phase:",
+        "effect": "Choose 1 non-home system that contains your units; each other player who has a token on the Mahact player's command sheet places a token from their reinforcements in that system. Then, return this card to the Mahact player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "genetic_recombination",
+      "name": "Genetic Recombination",
+      "color": "yellow",
+      "prerequisites": [],
+      "effect": "You may exhaust this card before a player casts votes; that player must cast at least 1 vote for an outcome of your choice or remove 1 token from their fleet pool and return it to their reinforcements."
+    }
+  ],
+  "units": {
+    "infantry": {
+      "name": "Crimson Legionnaire",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Crimson Legionnaire I",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 8,
+          "abilities": [
+            {
+              "name": "Commodity Conversion",
+              "effect": "After this unit is destroyed, gain 1 commodity or convert 1 of your commodities to a trade good."
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Crimson Legionnaire II",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 7,
+          "abilities": [
+            {
+              "name": "Commodity Conversion",
+              "effect": "After this unit is destroyed, gain 1 commodity or convert 1 of your commodities to a trade good. Then, place the unit on this card. At the start of your next turn, place each unit that is on this card on a planet you control in your home system."
+            }
+          ],
+          "techPrerequisite": "genetic_recombination"
+        }
+      ]
+    },
+    "flagship": {
+      "name": "Arvicon Rex",
+      "cost": 8,
+      "combat": 5,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" },
+        {
+          "name": "Fleet Dominance",
+          "effect": "During combat against an opponent whose command token is not in your fleet pool, apply +2 to the results of this unit's combat rolls."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Starlancer",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "After a player whose command token is in your fleet pool activates this system, you may spend their token from your fleet pool to end their turn; they gain that token.",
+      "abilities": [
+        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" }
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": ["yellow", "green"],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa."
+    },
+    "ability": {
+      "name": "Vaults of the Heir",
+      "effect": "ACTION: Exhaust this card and purge 1 of your technologies to gain 1 relic."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Jaemer Kha",
+      "unlock": "At Game Start",
+      "ability": "When you would spend a command token during the secondary ability of a strategic action: You may exhaust this card to remove 1 of the active player's command tokens from the board and use it instead."
+    },
+    "commander": {
+      "name": "Il Na",
+      "unlock": "Have 2 other factions' command tokens in your fleet pool.",
+      "ability": "During your tactical actions, you can activate systems that contain your units even if they contain other players' ships."
+    },
+    "hero": {
+      "name": "Siirss",
+      "unlock": "Have 3 Scored Objectives",
+      "ability": "ACTION: Purge this card to place any number of your ships from any systems into any number of other systems that contain your command tokens and no other players' ships."
+    }
+  }
+}
