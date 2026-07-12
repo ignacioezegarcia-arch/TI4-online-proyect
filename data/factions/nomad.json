@@ -1,0 +1,93 @@
+{
+  "id": "nomad",
+  "name": "The Nomad",
+  "set": "pok",
+  "commodities": 3,
+  "homePlanets": ["Arcturus"],
+  "startingUnits": {
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 4,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": ["ai_development_algorithm"],
+  "factionAbilities": [
+    {
+      "id": "temporal_command",
+      "name": "TEMPORAL COMMAND",
+      "effect": "During the action phase, you may remove 1 command token from your fleet pool to place 1 command token from your reinforcements in any system that contains 1 or more of your units."
+    },
+    {
+      "id": "future_space",
+      "name": "FUTURE SPACE",
+      "effect": "During the status phase, you may place 1 command token from your reinforcements in a system that contains 1 or more of your units."
+    }
+  ],
+  "promissoryNote": {
+    "name": "The Company",
+    "versions": [
+      {
+        "version": "original",
+        "source": "pok",
+        "timing": "ACTION:",
+        "effect": "Place this card face up in your play area. When you activate a system that contains 1 or more of the Nomad player's units, you may place 1 command token from your reinforcements in that system. Then, return this card to the Nomad player.",
+        "placeInPlayArea": true
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "temporal_flux",
+      "name": "Temporal Flux",
+      "color": "blue",
+      "prerequisites": ["blue"],
+      "effect": "After you activate a system, you may place 1 command token from your reinforcements in that system."
+    },
+    {
+      "id": "supercharge_thrusters",
+      "name": "Supercharge Thrusters",
+      "color": "yellow",
+      "prerequisites": ["yellow"],
+      "effect": "During movement, you may apply +1 to the move value of each of your ships that begins its movement in a system that contains 1 or more of your command tokens."
+    }
+  ],
+  "units": {
+    "flagship": {
+      "name": "Memoria",
+      "cost": 8,
+      "combat": 5,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" },
+        {
+          "name": "Temporal Jump",
+          "effect": "After you activate this system, you may remove 1 command token from your fleet pool to place 1 command token from your reinforcements in this system."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Chrono Legionnaire",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "After you activate a system, you may place this unit in that system.",
+      "abilities": [
+        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" }
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": ["yellow", "green"],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa."
+    },
+    "ability": {
+      "name": "Temporal Shift",
+      "effect": "ACTION: Exhaust this card to place 1 command token from your reinforcements in any system that contains 1 or more of your units."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "The Conductor",
