@@ -3,6 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
+import { getEffectivePlanetStats } from "../rules/planetStats";
 import { advanceActivePlayer } from "./actionPhase";
 
 /**
@@ -20,7 +21,8 @@ import { advanceActivePlayer } from "./actionPhase";
  *    resourcesAvailable/influenceAvailable as "derived cache — not
  *    authoritative"; that derivation doesn't exist yet either). Until it
  *    does, this just decrements the cached numbers directly.
- *  - Production limit for a Space Dock = that planet's resources + 2 (RR
+ *  - Production limit for a Space Dock = that planet's EFFECTIVE resources
+ *    (base + exploration attachments, see rules/planetStats.ts) + 2 (RR
  *    58's base formula). Doesn't yet special-case Space Dock II or any
  *    other producer with a different formula/value — there's currently
  *    only the one Production-granting unit in the data, so there's nothing
@@ -77,9 +79,8 @@ export function executeProduction(
     if (stack.count <= 0) continue;
     const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
     if (stats?.abilities.includes("production")) {
-      const planetData = rules.planets[planetId];
-      if (!planetData) return { ok: false, error: `No static resource data for planet ${planetId}.` };
-      productionLimit = planetData.resources + 2;
+      const planetStats = getEffectivePlanetStats(planet, planetId, rules);
+      productionLimit = planetStats.resources + 2;
       break;
     }
   }
