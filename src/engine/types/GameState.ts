@@ -2,6 +2,7 @@ import {
   AbilityId,
   ActionCardId,
   AgendaId,
+  ExplorationCardId,
   FactionId,
   LeaderId,
   ObjectiveId,
@@ -41,6 +42,8 @@ export interface PlanetState {
   exhausted: boolean;
   /** RR 12: exploration cards with an "Attach" header, e.g. Dyson Sphere. Stores the attachment card id. */
   attachmentIds: string[];
+  /** RR 35: has this planet been explored yet (drawn its trait's exploration card)? Re-exploring normally isn't allowed except via specific tech (e.g. Scanlink Drone Network) — not modeled as an override yet, just this one flag. */
+  explored: boolean;
   /**
    * Ground forces and structures physically on the planet (RR 39, 74), keyed
    * by owning player — mirrors SystemState.spaceUnitsByPlayer. Needs to be
@@ -119,6 +122,10 @@ export interface Player {
 
   leaders: { leaderId: LeaderId; locked: boolean; exhausted: boolean }[]; // PoK/TE agents/commanders/heroes
   relics: RelicId[];
+  /** RR 35.9: purge 3 of the same type (Unknown fragments substitute for any one type) to gain a Relic. */
+  relicFragments: { cultural: number; industrial: number; hazardous: number; unknown: number };
+  /** Exploration cards with `keepInPlayArea` (e.g. "Enigmatic Device") — sit face-up in front of the player until purged, distinct from actionCards/promissoryNotes. */
+  explorationCardsInPlayArea: ExplorationCardId[];
 
   /** Faction- or breakthrough-granted ability ids this player currently has, e.g. "genesis", "versatile", "red_yellow_synergy".
    *  This is the hook point for `player.hasAbility(id)` referenced throughout faction JSON. */
@@ -183,6 +190,15 @@ export interface GameState {
   actionCardDeck?: ActionCardId[];
   /** RR 52.13: remaining shuffled secret objective ids — drawn via the Imperial strategy card (and, later, other sources). Empty-until-seeded, same caveat as the other two decks above. */
   secretObjectiveDeck?: ObjectiveId[];
+  /** RR 35: remaining shuffled exploration card ids per deck, top of deck = index 0. Empty-until-seeded, same caveat as the other decks above. */
+  explorationDecks?: {
+    cultural: ExplorationCardId[];
+    industrial: ExplorationCardId[];
+    hazardous: ExplorationCardId[];
+    frontier: ExplorationCardId[];
+  };
+  /** RR 35.9: remaining shuffled relic ids. */
+  relicDeck?: RelicId[];
   /**
    * RR 70.1: per-player scoring state for the status phase currently in
    * progress — reset when the action phase ends and this phase begins.
