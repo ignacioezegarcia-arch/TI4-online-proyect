@@ -19,6 +19,7 @@ import { produceUnits, finishTacticalAction } from "./phases/production";
 import { revealAgenda, castVotes } from "./phases/agendaPhase";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
+import { explorePlanet, exploreFrontier, purgeRelicFragments } from "./phases/exploration";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -125,6 +126,15 @@ export const GameEngine = {
       case "RESEARCH_UNIT_UPGRADE":
         result = researchUnitUpgrade(state, action.playerId, action.upgradeId, action.cost, action.exhaustPlanetIdsForResources, rules);
         break;
+      case "EXPLORE_PLANET":
+        result = explorePlanet(state, action, rules);
+        break;
+      case "EXPLORE_FRONTIER":
+        result = exploreFrontier(state, action, rules);
+        break;
+      case "PURGE_RELIC_FRAGMENTS":
+        result = purgeRelicFragments(state, action);
+        break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
       // as the cases above — see phases/README.md for the recipe.
@@ -156,6 +166,13 @@ export const GameEngine = {
    * Deliberately conservative: it's fine for this to under-report edge cases
    * (applyAction is still the source of truth and will reject anything
    * illegal), but it should never suggest an action that's actually illegal.
+   *
+   * NOTE: EXPLORE_PLANET/EXPLORE_FRONTIER/PURGE_RELIC_FRAGMENTS aren't
+   * listed here yet — they work fine via applyAction directly, but properly
+   * checking "is there actually an unexplored controlled planet / reachable
+   * frontier token / enough fragments" is real per-case work not done yet.
+   * Under-reporting these (vs. suggesting something illegal) is the safe
+   * side of that gap per this function's own contract above.
    */
   getLegalActions(state: GameState, playerId: PlayerId): GameAction["type"][] {
     const legal: GameAction["type"][] = [];
