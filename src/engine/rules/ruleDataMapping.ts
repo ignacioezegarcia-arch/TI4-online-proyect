@@ -98,6 +98,69 @@ export function buildUnitUpgradeTechDataLookup(unitUpgradesFile: {
   return out;
 }
 
+/** Aggregates every faction's factionTechnologies ids across however many faction files are passed in — for "own N faction techs" objective checks (Player.technologies doesn't distinguish faction vs. generic). */
+export function buildFactionTechIds(factionFiles: { factionTechnologies?: { id: string }[] }[]): Set<string> {
+  const ids = new Set<string>();
+  for (const file of factionFiles) {
+    for (const tech of file.factionTechnologies ?? []) ids.add(tech.id);
+  }
+  return ids;
+}
+
+/** Shared by both loaders — RR 35 exploration card mechanics (data/explorationCards.json), keyed by card id across all 4 decks. */
+export function buildExplorationCardsLookup(explorationCardsFile: {
+  decks: Record<
+    "cultural" | "industrial" | "hazardous" | "frontier",
+    {
+      cards: {
+        id: string;
+        attach?: boolean;
+        isRelicFragment?: boolean;
+        fragmentType?: "cultural" | "industrial" | "hazardous" | "any";
+        keepInPlayArea?: boolean;
+        resourceBonus?: number;
+        influenceBonus?: number;
+        techSpecialtyBonus?: string;
+        fallbackResourceBonus?: number;
+        fallbackInfluenceBonus?: number;
+      }[];
+    }
+  >;
+}) {
+  const out: Record<
+    string,
+    {
+      deck: "cultural" | "industrial" | "hazardous" | "frontier";
+      isRelicFragment: boolean;
+      fragmentType?: "cultural" | "industrial" | "hazardous" | "any";
+      attach: boolean;
+      keepInPlayArea: boolean;
+      resourceBonus?: number;
+      influenceBonus?: number;
+      techSpecialtyBonus?: string;
+      fallbackResourceBonus?: number;
+      fallbackInfluenceBonus?: number;
+    }
+  > = {};
+  for (const [deckName, deck] of Object.entries(explorationCardsFile.decks)) {
+    for (const c of deck.cards) {
+      out[c.id] = {
+        deck: deckName as "cultural" | "industrial" | "hazardous" | "frontier",
+        isRelicFragment: c.isRelicFragment ?? false,
+        fragmentType: c.fragmentType,
+        attach: c.attach ?? false,
+        keepInPlayArea: c.keepInPlayArea ?? false,
+        resourceBonus: c.resourceBonus,
+        influenceBonus: c.influenceBonus,
+        techSpecialtyBonus: c.techSpecialtyBonus,
+        fallbackResourceBonus: c.fallbackResourceBonus,
+        fallbackInfluenceBonus: c.fallbackInfluenceBonus,
+      };
+    }
+  }
+  return out;
+}
+
 export interface RawTilesFile {
   tiles: {
     homeFaction?: string;
@@ -135,17 +198,28 @@ export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<
   return planets;
 }
 
-/** Shared by both loaders — the points + checkType/checkParams RuleData.objectives needs, from data/objectives.json's publicObjectives (stageI/stageII) and secretObjectives (all 3 phases). */
+/** Shared by both loaders — the points + checkType/checkParams/timing RuleData.objectives needs, from data/objectives.json's publicObjectives (stageI/stageII) and secretObjectives (all 3 phases). */
 export function buildObjectivesLookup(objectivesFile: {
-  publicObjectives: Record<string, { id: string; points: number; checkType: string; checkParams: Record<string, unknown> }[]>;
-  secretObjectives: Record<string, { id: string; points: number; checkType: string; checkParams: Record<string, unknown> }[]>;
-}): Record<string, { points: number; checkType: string; checkParams: Record<string, unknown> }> {
+  publicObjectives: Record<string, { id: string; points: number; checkType: string; checkParams: Record<string, unknown>; timing?: string }[]>;
+  secretObjectives: Record<
+    "actionPhase" | "statusPhase" | "agendaPhase",
+    { id: string; points: number; checkType: string; checkParams: Record<string, unknown> }[]
+  >;
+}): Record<string, { points: number; checkType: string; checkParams: Record<string, unknown>; timing: "actionPhase" | "statusPhase" | "agendaPhase" }> {
   const objectives: ReturnType<typeof buildObjectivesLookup> = {};
-  for (const group of [objectivesFile.publicObjectives, objectivesFile.secretObjectives]) {
-    for (const list of Object.values(group)) {
-      for (const o of list) {
-        objectives[o.id] = { points: o.points, checkType: o.checkType, checkParams: o.checkParams };
-      }
+  for (const list of Object.values(objectivesFile.publicObjectives)) {
+    for (const o of list) {
+      objectives[o.id] = { points: o.points, checkType: o.checkType, checkParams: o.checkParams, timing: "statusPhase" };
+    }
+  }
+  for (const [timing, list] of Object.entries(objectivesFile.secretObjectives)) {
+    for (const o of list) {
+      objectives[o.id] = {
+        points: o.points,
+        checkType: o.checkType,
+        checkParams: o.checkParams,
+        timing: timing as "actionPhase" | "statusPhase" | "agendaPhase",
+      };
     }
   }
   return objectives;
