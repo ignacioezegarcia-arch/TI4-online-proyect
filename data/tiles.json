@@ -335,6 +335,13 @@
           "influence": 3,
           "traits": [],
           "tech": []
+        },
+        {
+          "name": "Archon tau",
+          "resources": 1,
+          "influence": 1,
+          "traits": [],
+          "tech": []
         }
       ],
       "anomalies": [],
@@ -862,8 +869,8 @@
       "planets": [
         {
           "name": "Arnor",
-          "resources": 2,
-          "influence": 1,
+          "resources": 1,
+          "influence": 2,
           "traits": [
             "industrial"
           ],
@@ -871,8 +878,8 @@
         },
         {
           "name": "Lor",
-          "resources": 1,
-          "influence": 2,
+          "resources": 2,
+          "influence": 1,
           "traits": [
             "industrial"
           ],
@@ -1090,32 +1097,6 @@
     },
     {
       "id": 52,
-      "name": "Empyrean",
-      "set": "pok",
-      "tileColor": "green",
-      "planets": [
-        {
-          "name": "Siig",
-          "resources": 0,
-          "influence": 3,
-          "traits": [],
-          "tech": []
-        },
-        {
-          "name": "Abaddon",
-          "resources": 1,
-          "influence": 0,
-          "traits": [],
-          "tech": []
-        }
-      ],
-      "anomalies": [],
-      "wormholes": [],
-      "isHomeSystem": true,
-      "homeFaction": "empyrean"
-    },
-    {
-      "id": 53,
       "name": "Mahact",
       "set": "pok",
       "tileColor": "green",
@@ -1134,13 +1115,89 @@
       "homeFaction": "mahact"
     },
     {
-      "id": 54,
-      "name": "Naaz-Rokha",
+      "id": 53,
+      "name": "Nomad",
       "set": "pok",
       "tileColor": "green",
       "planets": [
         {
-          "name": "Naazir",
+          "name": "Arcturus",
+          "resources": 4,
+          "influence": 4,
+          "traits": [],
+          "tech": []
+        }
+      ],
+      "anomalies": [],
+      "wormholes": [],
+      "isHomeSystem": true,
+      "homeFaction": "nomad"
+    },
+    {
+      "id": 54,
+      "name": "Vuil'raith",
+      "set": "pok",
+      "tileColor": "green",
+      "planets": [
+        {
+          "name": "Acheron",
+          "resources": 4,
+          "influence": 0,
+          "traits": [],
+          "tech": []
+        }
+      ],
+      "anomalies": [],
+      "wormholes": [],
+      "isHomeSystem": true,
+      "homeFaction": "vuilraith"
+    },
+    {
+      "id": 55,
+      "name": "Titans",
+      "set": "pok",
+      "tileColor": "green",
+      "planets": [
+        {
+          "name": "Elysium",
+          "resources": 4,
+          "influence": 1,
+          "traits": [],
+          "tech": []
+        }
+      ],
+      "anomalies": [],
+      "wormholes": [],
+      "isHomeSystem": true,
+      "homeFaction": "titans"
+    },
+    {
+      "id": 56,
+      "name": "Empyrean",
+      "set": "pok",
+      "tileColor": "green",
+      "planets": [
+        {
+          "name": "The Dark",
+          "resources": 3,
+          "influence": 4,
+          "traits": [],
+          "tech": []
+        }
+      ],
+      "anomalies": ["nebula"],
+      "wormholes": [],
+      "isHomeSystem": true,
+      "homeFaction": "empyrean"
+    },
+    {
+       "id": 57,
+      "name": "Naaz-rokha",
+      "set": "pok",
+      "tileColor": "green",
+      "planets": [
+        {
+          "name": "Naaz",
           "resources": 2,
           "influence": 1,
           "traits": [],
@@ -1160,33 +1217,28 @@
       "homeFaction": "naazrokha"
     },
     {
-      "id": 55,
-      "name": "Nomad",
+       "id": 58,
+      "name": "Argent-Flight",
       "set": "pok",
       "tileColor": "green",
       "planets": [
         {
-          "name": "Arcturus",
-          "resources": 4,
-          "influence": 3,
+          "name": "Valk",
+          "resources": 2,
+          "influence": 0,
           "traits": [],
           "tech": []
-        }
-      ],
-      "anomalies": [],
-      "wormholes": [],
-      "isHomeSystem": true,
-      "homeFaction": "nomad"
-    },
-    {
-      "id": 56,
-      "name": "Titans",
-      "set": "pok",
-      "tileColor": "green",
-      "planets": [
+        },
         {
-          "name": "Elysium",
-          "resources": 4,
+          "name": "Yur",
+          "resources": 0,
+          "influence": 2,
+          "traits": [],
+          "tech": []
+        },
+        {
+          "name": "Avar",
+          "resources": 1,
           "influence": 1,
           "traits": [],
           "tech": []
@@ -1195,29 +1247,10 @@
       "anomalies": [],
       "wormholes": [],
       "isHomeSystem": true,
-      "homeFaction": "titans"
+      "homeFaction": "argentflight"
     },
     {
-      "id": 57,
-      "name": "Vuil'raith",
-      "set": "pok",
-      "tileColor": "green",
-      "planets": [
-        {
-          "name": "Acheron",
-          "resources": 4,
-          "influence": 0,
-          "traits": [],
-          "tech": []
-        }
-      ],
-      "anomalies": [],
-      "wormholes": [],
-      "isHomeSystem": true,
-      "homeFaction": "vuulraith"
-    },
-    {
-      "id": 58,
+      "id": 130,
       "name": "Keleres",
       "set": "pok",
       "tileColor": "green",
@@ -1714,6 +1747,40 @@
     },
     {
       "id": 79,
+      "name": "Asteroid Field / Wormhole Alpha",
+      "set": "base",
+      "tileColor": "red",
+      "planets": [],
+      "anomalies": [
+        "asteroidField"
+      ],
+      "wormholes": [ "alpha" ]
+    },
+    {
+      "id": 80,
+      "name": "Supernova",
+      "set": "pok",
+      "tileColor": "red",
+      "planets": [],
+      "anomalies": [
+        "supernova"
+      ],
+      "wormholes": []
+    },
+    {
+      "id": 81,
+      "name": "Muaat Supernova",
+      "set": "pok",
+      "tileColor": "red",
+      "planets": [],
+      "anomalies": [
+        "supernova"
+      ],
+      "wormholes": [],
+      "notes": "Tile especial para la habilidad del Héroe de Muaat (Stellar Transformer). No entra al tablero durante el setup normal."
+    },
+    {
+      "id": 82,
       "name": "Wormhole Nexus",
       "set": "pok",
       "tileColor": "red",
@@ -1747,42 +1814,6 @@
         "gamma"
       ],
       "notes": "Off-map. Empieza inactivo (solo gamma). Se gira a activo (alpha+beta+gamma) cuando un jugador mueve/coloca unidades en él por primera vez."
-    },
-    {
-      "id": 80,
-      "name": "Supernova",
-      "set": "pok",
-      "tileColor": "red",
-      "planets": [],
-      "anomalies": [
-        "supernova"
-      ],
-      "wormholes": []
-    },
-    {
-      "id": 81,
-      "name": "Muaat Supernova",
-      "set": "pok",
-      "tileColor": "red",
-      "planets": [],
-      "anomalies": [
-        "supernova"
-      ],
-      "wormholes": [],
-      "notes": "Tile especial para la habilidad del Héroe de Muaat (Stellar Transformer). No entra al tablero durante el setup normal."
-    },
-    {
-      "id": 82,
-      "name": "Asteroid Field / Alpha Wormhole",
-      "set": "pok",
-      "tileColor": "red",
-      "planets": [],
-      "anomalies": [
-        "asteroidField"
-      ],
-      "wormholes": [
-        "alpha"
-      ]
     },
     {
       "id": 83,
@@ -1885,11 +1916,9 @@
       "planets": [
         {
           "name": "Ordinian",
-          "resources": 2,
+          "resources": 0,
           "influence": 0,
-          "traits": [
-            "cultural"
-          ],
+          "traits": [],
           "tech": [],
           "isLegendary": true,
           "legendaryAbility": {
@@ -1901,15 +1930,10 @@
           "name": "Revelation",
           "resources": 1,
           "influence": 2,
-          "traits": [
-            "cultural"
-          ],
+          "traits": [],
           "tech": [],
-          "isLegendary": true,
-          "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
-          }
+          "isLegendary": false
+          "isSpaceStation": true
         }
       ],
       "anomalies": [
@@ -1921,6 +1945,44 @@
     },
     {
       "id": 93,
+      "name": "Ral Nel",
+      "set": "thundersEdge",
+      "tileColor": "green",
+      "planets": [
+        {
+          "name": "Mez Lo Orz Pei Zsha",
+          "resources": 2,
+          "influence": 1,
+          "traits": [],
+          "tech": [],
+        },
+        {
+          "name": "Rep Lo Orz Oet",
+          "resources": 1,
+          "influence": 3,
+          "traits": [],
+          "tech": [],
+        }
+      ],
+      "anomalies": [],
+      "wormholes": [],
+      "isHomeSystem": true,
+      "homeFaction": "ralnel"
+    },
+     {
+      "id": 94,
+      "name": "The Sorrow / Crimson rebellion gate system",
+      "set": "thundersEdge",
+      "tileColor": "green",
+      "planets": [],
+      "anomalies": [],
+      "wormholes": [
+        "epsilon"
+      ],
+      "notes": "Puerta de entrada al sistema home de Crimson rebellion."
+    },
+    {
+      "id": 95,
       "name": "Deepwrought",
       "set": "thundersEdge",
       "tileColor": "green",
@@ -1928,10 +1990,9 @@
         {
           "name": "Ikatena",
           "resources": 4,
-          "influence": 2,
+          "influence": 4,
           "traits": [],
           "tech": [],
-          "_note": "Valores de wiki, no confirmados en PDF"
         }
       ],
       "anomalies": [],
@@ -1940,7 +2001,7 @@
       "homeFaction": "deepwrought"
     },
     {
-      "id": 94,
+      "id": 96,
       "name": "Firmament",
       "set": "thundersEdge",
       "tileColor": "green",
