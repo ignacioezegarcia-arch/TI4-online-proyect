@@ -117,8 +117,8 @@ export type GameAction =
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
   // --- Strategy card primary/secondary abilities (RR 71) ---
-  | { type: "RESOLVE_STRATEGY_PRIMARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown } // TODO, one payload shape per card
-  | { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown } // TODO
+  | { type: "RESOLVE_STRATEGY_PRIMARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown } // one payload shape per card — see phases/strategyCardAbilities.ts
+  | { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown }
 
   // --- Component actions (RR 21) ---
   | { type: "PLAY_ACTION_CARD"; playerId: PlayerId; cardId: ActionCardId; payload: unknown } // TODO
@@ -137,6 +137,15 @@ export type GameAction =
       cost: number;
       exhaustPlanetIdsForResources: PlanetId[];
     } // RR 90/86
+  | { type: "EXPLORE_PLANET"; playerId: PlayerId; planetId: PlanetId } // RR 35 — PoK only (rejected in Base-only games)
+  | { type: "EXPLORE_FRONTIER"; playerId: PlayerId; systemId: SystemId } // RR 35 — PoK only
+  | {
+      type: "PURGE_RELIC_FRAGMENTS";
+      playerId: PlayerId;
+      fragmentType: "cultural" | "industrial" | "hazardous";
+      useCount: number;
+      useUnknownCount: number;
+    } // RR 35.9 — PoK only
 
   // --- Transactions (RR 83) ---
   | {
@@ -211,6 +220,9 @@ export type GameEvent =
   | { type: "AGENDA_RESOLVED"; agendaId: AgendaId; outcome: string; becameLaw: boolean }
   | { type: "PHASE_CHANGED"; from: string; to: string; round: number }
   | { type: "ROUND_STARTED"; round: number }
+  | { type: "EXPLORATION_CARD_DRAWN"; playerId: PlayerId; cardId: string; deck: "cultural" | "industrial" | "hazardous" | "frontier" }
+  | { type: "RELIC_FRAGMENT_GAINED"; playerId: PlayerId; fragmentType: "cultural" | "industrial" | "hazardous" | "any" }
+  | { type: "RELIC_GAINED"; playerId: PlayerId; relicId: string }
   | { type: "GAME_ENDED"; winnerId: PlayerId };
 
 export type ActionResult =
