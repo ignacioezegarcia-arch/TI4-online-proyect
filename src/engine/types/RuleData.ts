@@ -60,6 +60,8 @@ export interface ObjectiveStaticData {
   /** "manual" = not validated by the engine yet, caller/player is trusted — see data/objectives.json's own note on why (event-history-dependent or too bespoke to be worth a one-off checkType). */
   checkType: string;
   checkParams: Record<string, unknown>;
+  /** RR 52.3: when this objective can legally be scored — most secrets are "statusPhase" like public objectives, but several score opportunistically during "actionPhase" or "agendaPhase" instead. */
+  timing: "actionPhase" | "statusPhase" | "agendaPhase";
 }
 
 export interface RuleData {
@@ -77,6 +79,24 @@ export interface RuleData {
   factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }>;
   /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned, and is still an unresolved gap per this project's own notes); this is just enough to validate RR 90.7 prerequisites before letting a player research one. */
   unitUpgradeTechData: Record<UnitUpgradeId, { color: string | null; prerequisites: string[] }>;
+  /** Every tech id that's a FACTION technology (data/factions/*.json's factionTechnologies) for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. */
+  factionTechIds: Set<string>;
+  /** RR 35: exploration card mechanics (data/explorationCards.json) — attach bonuses are structured (see that file's own note), but a plain one-time `effect` isn't applied, same deferred-content pattern as action/agenda cards. */
+  explorationCards: Record<
+    string,
+    {
+      deck: "cultural" | "industrial" | "hazardous" | "frontier";
+      isRelicFragment: boolean;
+      fragmentType?: "cultural" | "industrial" | "hazardous" | "any";
+      attach: boolean;
+      keepInPlayArea: boolean;
+      resourceBonus?: number;
+      influenceBonus?: number;
+      techSpecialtyBonus?: string;
+      fallbackResourceBonus?: number;
+      fallbackInfluenceBonus?: number;
+    }
+  >;
   // TODO as later phases need them: technologies (prerequisites/effects),
   // actionCards, agendas, objectives, explorationCards, relics,
   // promissoryNotes, strategyCard primary/secondary text, faction
