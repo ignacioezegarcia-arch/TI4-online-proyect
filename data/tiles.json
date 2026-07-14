@@ -1923,7 +1923,7 @@
           "isLegendary": true,
           "legendaryAbility": {
             "name": "4X41D Hyperion VI",
-            "_note": "You may exhaust this card when you pass to draw 1 action card and gain 1 command token."
+            "effect": "You may exhaust this card when you pass to draw 1 action card and gain 1 command token."
           }
         },
         {
@@ -1954,7 +1954,7 @@
           "resources": 2,
           "influence": 1,
           "traits": [],
-          "tech": [],
+          "tech": []
         },
         {
           "name": "Rep Lo Orz Oet",
@@ -2002,75 +2002,54 @@
     },
     {
       "id": 96,
-      "name": "Firmament",
+      "name": "Firmament / Obsidian",
       "set": "thundersEdge",
       "tileColor": "green",
-      "planets": [
-        {
-          "name": "Elnath",
-          "resources": 3,
-          "influence": 4,
-          "traits": [],
-          "tech": [],
-          "_note": "Valores de wiki, no confirmados en PDF"
-        }
-      ],
-      "anomalies": [],
-      "wormholes": [],
-      "isHomeSystem": true,
-      "homeFaction": "firmament"
-    },
-    {
-      "id": 95,
-      "name": "Obscured",
-      "set": "thundersEdge",
-      "tileColor": "green",
-      "planets": [
+      "tileType": "dualHomeSystem",
+
+      "currentSides": "firmament",
+
+      "side": {
+        "firmament": {
+          "planets": [
         {
           "name": "Cronos",
-          "resources": 3,
+          "resources": 2,
           "influence": 1,
           "traits": [],
-          "tech": [],
-          "_note": "Valores de wiki, no confirmados en PDF"
+          "tech": []
         },
         {
           "name": "Tallin",
           "resources": 1,
-          "influence": 3,
+          "influence": 2,
           "traits": [],
-          "tech": [],
-          "_note": "Valores de wiki, no confirmados en PDF"
+          "tech": []
         }
-      ],
+      ]
+      },
+        "obsidian": {
+          "planets": [
+        {
+          "name": "Cronos Hollow",
+          "resources": 3,
+          "influence": 0,
+          "traits": [],
+          "tech": []
+        },
+        {
+          "name": "Tallin Hollow",
+          "resources": 3,
+          "influence": 0,
+          "traits": [],
+          "tech": []
+        }
+      ]
+      },
       "anomalies": [],
       "wormholes": [],
       "isHomeSystem": true,
-      "homeFaction": "obscured"
-    },
-    {
-      "id": 96,
-      "name": "Emelpar",
-      "set": "thundersEdge",
-      "tileColor": "blue",
-      "planets": [
-        {
-          "name": "Emelpar",
-          "resources": 0,
-          "influence": 2,
-          "traits": [
-            "cultural"
-          ],
-          "tech": [],
-          "isLegendary": true,
-          "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
-          }
-        }
-      ],
-      "anomalies": [],
-      "wormholes": []
+      "homeFaction": "firmamentObsidian"
     },
     {
       "id": 97,
@@ -2085,11 +2064,13 @@
           "traits": [
             "cultural"
           ],
-          "tech": [],
+          "tech": [
+            "green"
+          ],
           "isLegendary": true,
           "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
+            "name": "Maxis Central Control",
+            "effect": "You may exhaust this card when you pass to gain control of a non-home, non-legendary planet that contains no units and has no attachments."
           }
         }
       ],
@@ -2112,8 +2093,8 @@
           "tech": [],
           "isLegendary": true,
           "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
+            "name": "Dok 'N Pic's Salvage Yard",
+            "effect": "You may exhaust this card when you pass to place 1 action card from the discard pile faceup on this card; you can purge cards on this card to play them as if they were in your hand."
           }
         }
       ],
@@ -2122,6 +2103,30 @@
     },
     {
       "id": 99,
+      "name": "Emelpar",
+      "set": "thundersEdge",
+      "tileColor": "blue",
+      "planets": [
+        {
+          "name": "Emelpar",
+          "resources": 0,
+          "influence": 2,
+          "traits": [
+            "cultural"
+          ],
+          "tech": [],
+          "isLegendary": true,
+          "legendaryAbility": {
+            "name": "The Acropolis",
+            "effect": "You may exhaust this card at the end of your turn to ready another component that isn't a strategy card."
+          }
+        }
+      ],
+      "anomalies": [],
+      "wormholes": []
+    },
+    {
+      "id": 100,
       "name": "Tempesta",
       "set": "thundersEdge",
       "tileColor": "blue",
@@ -2133,11 +2138,13 @@
           "traits": [
             "hazardous"
           ],
-          "tech": [],
+          "tech": [
+            "blue"
+          ],
           "isLegendary": true,
           "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
+            "name": "Ionian Fuel Refinery",
+            "effect": "You may exhaust this card after you activate a system to apply +1 to the move value of 1 of your ships during this tactical action."
           }
         }
       ],
@@ -2145,45 +2152,23 @@
       "wormholes": []
     },
     {
-      "id": 100,
-      "name": "Industrex",
-      "set": "thundersEdge",
-      "tileColor": "blue",
-      "planets": [
-        {
-          "name": "Industrex",
-          "resources": 2,
-          "influence": 0,
-          "traits": [
-            "industrial"
-          ],
-          "tech": [],
-          "isLegendary": true,
-          "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
-          }
-        }
-      ],
-      "anomalies": [
-        "asteroidField"
-      ],
-      "wormholes": []
-    },
-    {
       "id": 101,
-      "name": "Capha",
+      "name": "Olergodt",
       "set": "thundersEdge",
       "tileColor": "blue",
       "planets": [
         {
-          "name": "Capha",
-          "resources": 3,
-          "influence": 0,
+          "name": "Olergodt",
+          "resources": 2,
+          "influence": 1,
           "traits": [
-            "hazardous"
+            "hazardous",
+            "cultural"
           ],
-          "tech": []
+          "tech": [
+            "yellow",
+            "red"
+          ]
         }
       ],
       "anomalies": [],
@@ -2191,43 +2176,39 @@
     },
     {
       "id": 102,
-      "name": "Kostboth / Cresius",
+      "name": "Andeada",
       "set": "thundersEdge",
-      "tileColor": "blue",
+      "tileColor": "red",
       "planets": [
         {
-          "name": "Kostboth",
-          "resources": 0,
+          "name": "Andeada",
+          "resources": 1,
           "influence": 1,
           "traits": [
-            "cultural"
+            "industrial"
           ],
-          "tech": []
-        },
-        {
-          "name": "Cresius",
-          "resources": 0,
-          "influence": 1,
-          "traits": [
-            "cultural"
-          ],
-          "tech": []
+          "tech": [
+            "blue"
+          ]
         }
       ],
       "anomalies": [],
-      "wormholes": []
+      "wormholes": [
+        "alpha"
+      ]
     },
-    {
+     {
       "id": 103,
-      "name": "Lazul Rex",
+      "name": "Vira-Pics III",
       "set": "thundersEdge",
       "tileColor": "blue",
       "planets": [
         {
-          "name": "Lazul Rex",
+          "name": "Vira-Pics III",
           "resources": 2,
-          "influence": 2,
+          "influence": 3,
           "traits": [
+            "hazardous",
             "cultural"
           ],
           "tech": []
@@ -2238,10 +2219,104 @@
     },
     {
       "id": 104,
-      "name": "Hercalor",
+      "name": "Lesab",
       "set": "thundersEdge",
       "tileColor": "blue",
       "planets": [
+        {
+          "name": "Lesab",
+          "resources": 2,
+          "influence": 1,
+          "traits": [
+            "hazardous",
+            "industrial"
+          ],
+          "tech": []
+        }
+      ],
+      "anomalies": [],
+      "wormholes": []
+    },
+    {
+      "id": 105,
+      "name": "New Terra / Tinnes",
+      "set": "thundersEdge",
+      "tileColor": "blue",
+      "planets": [
+        {
+          "name": "New Terra",
+          "resources": 1,
+          "influence": 1,
+          "traits": [
+            "industrial"
+          ],
+          "tech": [
+            "green"
+          ]
+        },
+        {
+          "name": "Tinnes",
+          "resources": 2,
+          "influence": 1,
+          "traits": [
+            "industrial",
+            "hazardous"
+          ],
+          "tech": [
+            "green"
+          ]
+        }
+      ],
+      "anomalies": [],
+      "wormholes": []
+    },
+    {
+      "id": 106,
+      "name": "Cresius / Lazul Rex",
+      "set": "thundersEdge",
+      "tileColor": "blue",
+      "planets": [
+        {
+          "name": "Cresius",
+          "resources": 0,
+          "influence": 1,
+          "traits": [
+            "hazardous"
+          ],
+          "tech": []
+        },
+        {
+          "name": "Lazul Rex",
+          "resources": 2,
+          "influence": 2,
+          "traits": [
+            "industrial",
+            "cultural"
+          ],
+          "tech": []
+        }
+      ],
+      "anomalies": [],
+      "wormholes": []
+    },
+    {
+      "id": 107,
+      "name": "Tiamat / Hercalor",
+      "set": "thundersEdge",
+      "tileColor": "blue",
+      "planets": [
+        {
+          "name": "Tiamat",
+          "resources": 1,
+          "influence": 2,
+          "traits": [
+            "cultural"
+          ],
+          "tech": [
+            "yellow",
+            "yellow"
+          ]
+        },
         {
           "name": "Hercalor",
           "resources": 1,
@@ -2256,43 +2331,24 @@
       "wormholes": []
     },
     {
-      "id": 105,
-      "name": "Tiamat",
+      "id": 108,
+      "name": "Kostboth / Capha",
       "set": "thundersEdge",
       "tileColor": "blue",
       "planets": [
         {
-          "name": "Tiamat",
-          "resources": 1,
-          "influence": 2,
+          "name": "Kostboth",
+          "resources": 0,
+          "influence": 1,
           "traits": [
             "cultural"
           ],
           "tech": []
-        }
-      ],
-      "anomalies": [],
-      "wormholes": []
-    },
-    {
-      "id": 106,
-      "name": "New Terra / Tinnes",
-      "set": "thundersEdge",
-      "tileColor": "blue",
-      "planets": [
-        {
-          "name": "New Terra",
-          "resources": 1,
-          "influence": 1,
-          "traits": [
-            "hazardous"
-          ],
-          "tech": []
         },
         {
-          "name": "Tinnes",
-          "resources": 2,
-          "influence": 1,
+          "name": "Capha",
+          "resources": 3,
+          "influence": 0,
           "traits": [
             "hazardous"
           ],
@@ -2303,7 +2359,7 @@
       "wormholes": []
     },
     {
-      "id": 107,
+      "id": 109,
       "name": "Bellatrix / Tsion Station",
       "set": "thundersEdge",
       "tileColor": "blue",
@@ -2321,9 +2377,7 @@
           "name": "Tsion Station",
           "resources": 1,
           "influence": 1,
-          "traits": [
-            "cultural"
-          ],
+          "traits": [],
           "tech": [],
           "isSpaceStation": true
         }
@@ -2332,37 +2386,36 @@
       "wormholes": []
     },
     {
-      "id": 108,
-      "name": "Tarana / Oluz Station",
+      "id": 115,
+      "name": "Industrex",
       "set": "thundersEdge",
       "tileColor": "blue",
       "planets": [
         {
-          "name": "Tarana",
-          "resources": 1,
-          "influence": 2,
+          "name": "Industrex",
+          "resources": 2,
+          "influence": 0,
           "traits": [
             "industrial"
           ],
-          "tech": []
-        },
-        {
-          "name": "Oluz Station",
-          "resources": 1,
-          "influence": 1,
-          "traits": [
-            "industrial"
+          "tech": [
+            "red"
           ],
-          "tech": [],
-          "isSpaceStation": true
+          "isLegendary": true,
+          "legendaryAbility": {
+            "name": "Aeurex Mechanica",
+            "effect": "You may exhaust this card when you pass to place 1 ship that matches a unit upgrade technology you own from your reinforcements into a system that contains your ships."
+          }
         }
       ],
-      "anomalies": [],
+      "anomalies": [
+        "asteroidField"
+      ],
       "wormholes": []
     },
     {
-      "id": 109,
-      "name": "Horizon / El'Nath",
+      "id": 110,
+      "name": "Horizon / El'Nath / Luthien VI",
       "set": "thundersEdge",
       "tileColor": "blue",
       "planets": [
@@ -2383,29 +2436,71 @@
             "hazardous"
           ],
           "tech": []
-        }
-      ],
-      "anomalies": [],
-      "wormholes": []
-    },
-    {
-      "id": 110,
-      "name": "Luthien VI",
-      "set": "thundersEdge",
-      "tileColor": "blue",
-      "planets": [
+        },
         {
           "name": "Luthien VI",
           "resources": 3,
           "influence": 1,
           "traits": [
-            "industrial"
+            "hazardous"
           ],
           "tech": []
         }
       ],
       "anomalies": [],
       "wormholes": []
+    },
+    {
+      "id": 111,
+      "name": "Tarana / Oluz Station",
+      "set": "thundersEdge",
+      "tileColor": "blue",
+      "planets": [
+        {
+          "name": "Tarana",
+          "resources": 1,
+          "influence": 2,
+          "traits": [
+            "industrial",
+            "cultural"
+          ],
+          "tech": []
+        },
+        {
+          "name": "Oluz Station",
+          "resources": 1,
+          "influence": 1,
+          "traits": [],
+          "tech": [],
+          "isSpaceStation": true
+        }
+      ],
+      "anomalies": [],
+      "wormholes": []
+    },
+    {
+      "id": 112,
+      "name": "Mecatol Rex",
+      "set": "ThundersEdge",
+      "tileColor": null,
+      "planets": [
+        {
+          "name": "Mecatol Rex",
+          "resources": 1,
+          "influence": 6,
+          "traits": [],
+          "tech": [],
+          "isMecatolRex": true,
+          "isLegendary": true,
+          "legendaryAbility": {
+            "name": "The Galactic Council",
+            "effect": "You may exhaust this card and discard 1 secret objective at the end of your turn to draw 1 secret objective."
+          }
+        }
+      ],
+      "anomalies": [],
+      "wormholes": [],
+      "isMecatolRex": true
     },
     {
       "id": 111,
