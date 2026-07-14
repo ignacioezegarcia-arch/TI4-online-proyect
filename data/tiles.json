@@ -1092,6 +1092,7 @@
       "wormholes": [
         "delta"
       ],
+      "isOffMap": true,
       "isHomeSystem": true,
       "homeFaction": "creuss"
     },
@@ -1871,7 +1872,7 @@
       "id": 88,
       "name": "Hyperlane A",
       "set": "pok",
-      "tileColor": "green",
+      "tileColor":,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
@@ -1882,7 +1883,7 @@
       "id": 89,
       "name": "Hyperlane B",
       "set": "pok",
-      "tileColor": "green",
+      "tileColor":,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
@@ -1892,7 +1893,7 @@
       "id": 90,
       "name": "Hyperlane C",
       "set": "pok",
-      "tileColor": "green",
+      "tileColor":,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
@@ -1902,7 +1903,7 @@
       "id": 91,
       "name": "Hyperlane D",
       "set": "pok",
-      "tileColor": "green",
+      "tileColor":,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
@@ -2554,205 +2555,128 @@
       "tileColor": "red",
       "planets": [
         {
-          "name": "Lemox",
-          "resources": 0,
-          "influence": 3,
-          "traits": [
-            "industrial"
-          ]
-          "tech": []
-        }
-      ],
-      "anomalies": [
-        "entropicScar"
-      ],
-      "wormholes": []
-    },
-    {
-      "id": 111,
-      "name": "Avernus",
-      "set": "thundersEdge",
-      "tileColor": "blue",
-      "planets": [
-        {
-          "name": "Avernus",
-          "resources": 2,
-          "influence": 0,
-          "traits": [
-            "hazardous"
-          ],
-          "tech": [],
-          "isLegendary": true,
-          "legendaryAbility": {
-            "name": "Embers of Muaat Stellar Genesis Breakthrough",
-            "_note": "Habilidad específica de Muaat. Texto exacto pendiente de confirmar."
-          }
-        }
-      ],
-      "anomalies": [],
-      "wormholes": []
-    },
-    {
-      "id": 112,
-      "name": "Andeara",
-      "set": "thundersEdge",
-      "tileColor": "blue",
-      "planets": [
-        {
-          "name": "Andeara",
-          "resources": 2,
+          "name": "The Watchtower",
+          "resources": 1,
           "influence": 1,
-          "traits": [
-            "industrial"
-          ],
-          "tech": []
-        }
-      ],
-      "anomalies": [],
-      "wormholes": [
-        "alpha"
-      ]
-    },
-    {
-      "id": 113,
-      "name": "Entropic Scar",
-      "set": "thundersEdge",
-      "tileColor": "red",
-      "planets": [],
-      "anomalies": [
-        "entropicScar"
-      ],
-      "wormholes": []
-    },
-    {
-      "id": 114,
-      "name": "Gravity Rift / Beta Wormhole",
-      "set": "thundersEdge",
-      "tileColor": "red",
-      "planets": [],
-      "anomalies": [
-        "gravityRift"
-      ],
-      "wormholes": [
-        "beta"
-      ]
-    },
-    {
-      "id": 115,
-      "name": "Lemox",
-      "set": "thundersEdge",
-      "tileColor": "red",
-      "planets": [
-        {
-          "name": "Lemox",
-          "resources": 2,
-          "influence": 1,
-          "traits": [
-            "industrial"
-          ],
-          "tech": []
-        }
-      ],
-      "anomalies": [
-        "entropicScar"
-      ],
-      "wormholes": []
-    },
-    {
-      "id": 116,
-      "name": "Watchtower",
-      "set": "thundersEdge",
-      "tileColor": "red",
-      "planets": [
-        {
-          "name": "Watchtower",
-          "resources": 0,
-          "influence": 0,
           "traits": [],
           "tech": [],
-          "isSpaceStation": true,
-          "spaceStationEffect": "The Watchtower Space Station."
+          "isSpaceStation": true
         }
       ],
       "anomalies": [
-        "gravityRift",
-        "asteroidField"
+        "asteroidField",
+        "gravityRift"
       ],
       "wormholes": []
-    },
-    {
-      "id": 117,
-      "name": "Empty Space",
-      "set": "thundersEdge",
-      "tileColor": "red",
-      "planets": [],
-      "anomalies": [],
-      "wormholes": [],
-      "isBlank": true
     },
     {
       "id": 118,
-      "name": "Empty Space",
+      "name": "Ahk Creuxx",
       "set": "thundersEdge",
-      "tileColor": "red",
-      "planets": [],
+      "tileColor": "green",
+      "planets": [
+        {
+          "name": "Ahk Creuxx",
+          "resources": 4,
+          "influence": 2,
+          "traits": [],
+          "tech": []
+        }
+      ],
       "anomalies": [],
-      "wormholes": [],
-      "isBlank": true
+      "wormholes": [
+        "epsilon"
+      ],
+      "isOffMap": true,
+      "isHomeSystem": true,
+      "homeFaction": "crimsonRebellion"
     },
     {
-      "id": 119,
-      "name": "Cocytus",
+      "id": 125,
+      "name": "Fracture A",
       "set": "thundersEdge",
       "tileColor": "fracture",
-      "planets": [
+      "tileType": "multiHex",
+
+      "hexes": [
+        {
+          "index": 1,
+          "planets": [
         {
           "name": "Cocytus",
           "resources": 3,
           "influence": 0,
-          "traits": [
-            "hazardous"
+          "traits": [],
+          "tech": [],
+          "specialRules": [
+            "When you gain control of this planet, gain 1 relic."
+          ]
+        }
           ],
-          "tech": []
+      "anomalies": [],
+      "wormholes": []
+        },
+        {
+          "index": 2,
+          "planets": [],
+          "anomalies": [],
+          "wormholes": [],
+          "egress": true
         }
       ],
-      "anomalies": [],
-      "wormholes": [],
+      
       "isOffMap": true,
       "isFracture": true,
       "neutralGuardians": {
         "cruisers": 2,
         "infantry": 2
       },
-      "notes": "Planeta de La Fractura. Guardado por 2 cruceros y 2 infantería neutrales."
+      "notes": "Tile ubicaddo a la izquierda superior del mapa con 2 hexagonos. egress + Planeta de La Fractura. Guardado por 2 cruceros y 2 infantería neutrales."
     },
     {
-      "id": 120,
-      "name": "Lethe / Phlegethon",
+      "id": 126,
+      "name": "Fracture B",
       "set": "thundersEdge",
       "tileColor": "fracture",
-      "planets": [
+      "tileType": "multiHex",
+
+      "hexes": [
+        {
+          "index": 1,
+          "planets": [],
+          "anomalies": [],
+          "wormholes": [],
+          "egress": true
+        },
+        {
+          "index": 2,
+          "planets": [
         {
           "name": "Lethe",
           "resources": 0,
           "influence": 2,
-          "traits": [
-            "cultural"
-          ],
-          "tech": []
+          "traits": [],
+          "tech": [],
+          "specialRules": [
+            "When you gain control of this planet, gain 1 relic."
+          ]
         },
-        {
-          "name": "Phlegethon",
+            {
+          "name": "Plegethon",
           "resources": 1,
           "influence": 2,
-          "traits": [
-            "cultural"
+          "traits": [],
+          "tech": [],
+          "specialRules": [
+            "When you gain control of this planet, gain 1 relic."
+          ]
+        }
           ],
-          "tech": []
+      "anomalies": [],
+      "wormholes": []
         }
       ],
-      "anomalies": [],
-      "wormholes": [],
+      
       "isOffMap": true,
       "isFracture": true,
       "neutralGuardians": {
@@ -2760,31 +2684,53 @@
         "fighters": 4,
         "infantry": 2
       },
-      "notes": "Dos planetas en un tile de La Fractura. Guardados por 1 carrier, 4 fighters y 2 infantería neutrales."
+      "notes": "Tile ubicaddo a la derecha superior del mapa con 2 hexagonos. egress + Dos planetas en un tile de La Fractura. Guardados por 1 carrier, 4 fighters y 2 infantería neutrales."
     },
     {
-      "id": 121,
-      "name": "Styx",
+      "id": 127,
+      "name": "Fracture C",
       "set": "thundersEdge",
       "tileColor": "fracture",
-      "planets": [
+      "tileType": "multiHex",
+
+      "hexes": [
+        {
+          "index": 1,
+          "planets": [],
+          "anomalies": [],
+          "wormholes": []
+        },
+        {
+          "index": 2,
+          "planets": [
         {
           "name": "Styx",
           "resources": 4,
           "influence": 0,
-          "traits": [
-            "hazardous"
-          ],
+          "traits": [],
           "tech": [],
           "isLegendary": true,
           "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
+            "name": "A Song Like Marrow",
+            "effect": "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point."
           }
+          "specialRules": [
+            "When you gain control of this planet, gain 1 relic."
+          ]
+        }
+          ],
+      "anomalies": [],
+      "wormholes": []
+        },
+        {
+          "index": 3,
+          "planets": [],
+          "anomalies": [],
+          "wormholes": []
         }
       ],
-      "anomalies": [],
-      "wormholes": [],
+        }
+      ],
       "isOffMap": true,
       "isFracture": true,
       "neutralGuardians": {
@@ -2792,7 +2738,7 @@
         "dreadnoughts": 2,
         "infantry": 3
       },
-      "notes": "Planeta legendario de La Fractura. El más fuertemente custodiado: 1 destroyer, 2 dreadnoughts y 3 infantería neutrales."
+      "notes": "Tile ubicao en el centro superior del mapa compuesto por 3 hex, dos empty + Planeta legendario de La Fractura. El más fuertemente custodiado: 1 destroyer, 2 dreadnoughts y 3 infantería neutrales."
     }
   ]
 }
