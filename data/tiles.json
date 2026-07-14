@@ -1922,8 +1922,8 @@
           "tech": [],
           "isLegendary": true,
           "legendaryAbility": {
-            "name": "Pending",
-            "_note": "Texto exacto pendiente de confirmar"
+            "name": "4X41D Hyperion VI",
+            "_note": "You may exhaust this card when you pass to draw 1 action card and gain 1 command token."
           }
         },
         {
@@ -1932,7 +1932,7 @@
           "influence": 2,
           "traits": [],
           "tech": [],
-          "isLegendary": false
+          "isLegendary": false,
           "isSpaceStation": true
         }
       ],
@@ -1961,7 +1961,7 @@
           "resources": 1,
           "influence": 3,
           "traits": [],
-          "tech": [],
+          "tech": []
         }
       ],
       "anomalies": [],
@@ -1992,7 +1992,7 @@
           "resources": 4,
           "influence": 4,
           "traits": [],
-          "tech": [],
+          "tech": []
         }
       ],
       "anomalies": [],
