@@ -2386,34 +2386,6 @@
       "wormholes": []
     },
     {
-      "id": 115,
-      "name": "Industrex",
-      "set": "thundersEdge",
-      "tileColor": "blue",
-      "planets": [
-        {
-          "name": "Industrex",
-          "resources": 2,
-          "influence": 0,
-          "traits": [
-            "industrial"
-          ],
-          "tech": [
-            "red"
-          ],
-          "isLegendary": true,
-          "legendaryAbility": {
-            "name": "Aeurex Mechanica",
-            "effect": "You may exhaust this card when you pass to place 1 ship that matches a unit upgrade technology you own from your reinforcements into a system that contains your ships."
-          }
-        }
-      ],
-      "anomalies": [
-        "asteroidField"
-      ],
-      "wormholes": []
-    },
-    {
       "id": 110,
       "name": "Horizon / El'Nath / Luthien VI",
       "set": "thundersEdge",
@@ -2501,6 +2473,100 @@
       "anomalies": [],
       "wormholes": [],
       "isMecatolRex": true
+    },
+    {
+      "id": 113,
+      "name": "Gravity Rift / Beta Whormhole",
+      "set": "thundersEdge",
+      "tileColor": "red",
+      "planets": [],
+      "anomalies": [
+        "gravityRift"
+      ],
+      "wormholes": [
+        "beta"
+      ]
+    },
+    {
+      "id": 114,
+      "name": "Entropic Scar",
+      "set": "thundersEdge",
+      "tileColor": "red",
+      "planets": [],
+      "anomalies": [
+        "entropicScar"
+      ],
+      "wormholes": []
+    },
+    {
+      "id": 115,
+      "name": "Industrex",
+      "set": "thundersEdge",
+      "tileColor": "blue",
+      "planets": [
+        {
+          "name": "Industrex",
+          "resources": 2,
+          "influence": 0,
+          "traits": [
+            "industrial"
+          ],
+          "tech": [
+            "red"
+          ],
+          "isLegendary": true,
+          "legendaryAbility": {
+            "name": "Aeurex Mechanica",
+            "effect": "You may exhaust this card when you pass to place 1 ship that matches a unit upgrade technology you own from your reinforcements into a system that contains your ships."
+          }
+        }
+      ],
+      "anomalies": [
+        "asteroidField"
+      ],
+      "wormholes": []
+    },
+    {
+      "id": 116,
+      "name": "Lemox / Entropic Scar",
+      "set": "thundersEdge",
+      "tileColor": "red",
+      "planets": [
+        {
+          "name": "Lemox",
+          "resources": 0,
+          "influence": 3,
+          "traits": [
+            "industrial"
+          ]
+          "tech": []
+        }
+      ],
+      "anomalies": [
+        "entropicScar"
+      ],
+      "wormholes": []
+    },
+    {
+      "id": 117,
+      "name": "The Watchtower / Gravity Rift / Asteroid Field",
+      "set": "thundersEdge",
+      "tileColor": "red",
+      "planets": [
+        {
+          "name": "Lemox",
+          "resources": 0,
+          "influence": 3,
+          "traits": [
+            "industrial"
+          ]
+          "tech": []
+        }
+      ],
+      "anomalies": [
+        "entropicScar"
+      ],
+      "wormholes": []
     },
     {
       "id": 111,
