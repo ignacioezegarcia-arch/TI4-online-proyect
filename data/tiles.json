@@ -1230,7 +1230,7 @@
           "tech": []
         },
         {
-          "name": "Yur",
+          "name": "Ylir",
           "resources": 0,
           "influence": 2,
           "traits": [],
@@ -1783,7 +1783,7 @@
       "id": 82,
       "name": "Wormhole Nexus",
       "set": "pok",
-      "tileColor": "red",
+      "tileColor": "null",
       "planets": [
         {
           "name": "Mallice",
