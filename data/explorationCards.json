@@ -25,6 +25,8 @@
           "name": "Dyson Sphere",
           "count": 1,
           "attach": true,
+          "resourceBonus": 2,
+          "influenceBonus": 1,
           "attachEffect": "This planet's resource value is increased by 2 and its influence value is increased by 1."
         },
         {
@@ -50,6 +52,7 @@
           "name": "Paradise World",
           "count": 1,
           "attach": true,
+          "influenceBonus": 2,
           "attachEffect": "This planet's influence value is increased by 2."
         },
         {
@@ -57,6 +60,7 @@
           "name": "Tomb of Emphidia",
           "count": 1,
           "attach": true,
+          "influenceBonus": 1,
           "attachEffect": "This planet's influence value is increased by 1. If the player who has the 'Crown of Emphidia' Relic has control of this planet, they can use that relic to gain 1 Victory Point."
         },
         {
@@ -84,6 +88,9 @@
           "name": "Biotic Research Facility",
           "count": 1,
           "attach": true,
+          "techSpecialtyBonus": "green",
+          "fallbackResourceBonus": 1,
+          "fallbackInfluenceBonus": 1,
           "attachEffect": "This planet has a green technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
         },
         {
@@ -91,6 +98,9 @@
           "name": "Cybernetic Research Facility",
           "count": 1,
           "attach": true,
+          "techSpecialtyBonus": "yellow",
+          "fallbackResourceBonus": 1,
+          "fallbackInfluenceBonus": 1,
           "attachEffect": "This planet has a yellow technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
         },
         {
@@ -110,6 +120,9 @@
           "name": "Propulsion Research Facility",
           "count": 1,
           "attach": true,
+          "techSpecialtyBonus": "blue",
+          "fallbackResourceBonus": 1,
+          "fallbackInfluenceBonus": 1,
           "attachEffect": "This planet has a blue technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
         },
         {
@@ -145,6 +158,8 @@
           "name": "Lazax Survivors",
           "count": 1,
           "attach": true,
+          "resourceBonus": 1,
+          "influenceBonus": 2,
           "attachEffect": "This planet's resource value is increased by 1 and its influence value is increased by 2."
         },
         {
@@ -152,6 +167,7 @@
           "name": "Mining World",
           "count": 1,
           "attach": true,
+          "resourceBonus": 2,
           "attachEffect": "This planet's resource value is increased by 2."
         },
         {
@@ -159,6 +175,7 @@
           "name": "Rich World",
           "count": 1,
           "attach": true,
+          "resourceBonus": 1,
           "attachEffect": "This planet's resource value is increased by 1."
         },
         {
@@ -173,6 +190,9 @@
           "name": "Warfare Research Facility",
           "count": 1,
           "attach": true,
+          "techSpecialtyBonus": "red",
+          "fallbackResourceBonus": 1,
+          "fallbackInfluenceBonus": 1,
           "attachEffect": "This planet has a red technology specialty; if this planet already has a technology specialty, this planet's resource and influence values are each increased by 1 instead."
         },
         {
