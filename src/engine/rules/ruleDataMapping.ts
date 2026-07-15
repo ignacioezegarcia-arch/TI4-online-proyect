@@ -26,19 +26,19 @@ export interface RawUnitEntry {
   combatDiceCount?: number;
   move: number | null;
   capacity: number;
-  /** Matches data/units.json's & unitUpgrades.json's actual shape: value/diceCount are present for abilities with a numeric effect (AFB, Bombardment, Space Cannon); absent for flat abilities (Sustain Damage, Planetary Shield, Production). NOTE: earlier version of this file assumed a free-text `effect` field that doesn't exist in the real data, silently dropping these numbers — see anomalies.ts-adjacent combat work for why this was caught now. */
-  abilities: { name: string; value?: number; diceCount?: number; text?: string }[];
+  /** Matches data/units.json's & unitUpgrades.json's actual shape: value/diceCount are present for abilities with a numeric effect (AFB, Bombardment, Space Cannon); absent for flat abilities (Sustain Damage, Planetary Shield, Production). */
+  abilities: { name: string; value?: number; diceCount?: number; rangesToAdjacent?: boolean; text?: string }[];
 }
 
 export function unitEntryToStats(raw: Partial<RawUnitEntry>, unitType: UnitType): UnitStats {
   const rawAbilities = raw.abilities ?? [];
   const abilities = rawAbilities.map((a) => ABILITY_NAME_TO_ENUM[a.name]).filter((a): a is UnitAbility => Boolean(a));
 
-  const abilityValues: Partial<Record<UnitAbility, { value: number; dice: number }>> = {};
+  const abilityValues: Partial<Record<UnitAbility, { value: number; dice: number; rangesToAdjacent?: boolean }>> = {};
   for (const a of rawAbilities) {
     const key = ABILITY_NAME_TO_ENUM[a.name];
     if (key && a.value !== undefined && a.diceCount !== undefined) {
-      abilityValues[key] = { value: a.value, dice: a.diceCount };
+      abilityValues[key] = { value: a.value, dice: a.diceCount, rangesToAdjacent: a.rangesToAdjacent };
     }
   }
 
