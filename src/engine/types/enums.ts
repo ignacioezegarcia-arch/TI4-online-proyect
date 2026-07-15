@@ -10,10 +10,11 @@ export type GameMode = "base" | "pok" | "pok_te";
 /** RR 36: A game round consists of these four phases, in order. */
 export type Phase = "setup" | "strategy" | "action" | "status" | "agenda" | "ended";
 
-/** RR 78: The five steps of a tactical action, in order. */
+/** RR 78: The steps of a tactical action, in order. */
 export type TacticalStep =
   | "activation"
   | "movement"
+  | "spaceCannonOffense"
   | "spaceCombat"
   | "invasion"
   | "production";
