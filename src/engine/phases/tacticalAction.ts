@@ -3,7 +3,7 @@ import { ActionResult } from "../types/Actions";
 import { PlayerId, SystemId } from "../types/ids";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
-import { playersWithShipsInSystem } from "../rules/combat";
+import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -181,15 +181,21 @@ export function moveShips(
     workingState = addToSystem(workingState, activeSystemId, player.id, "fighter", cargo.count);
   }
 
-  // RR 78.2 bullet: after moving, space cannon offense may fire, then space
-  // combat resolves if 2+ players have ships in the active system (RR 78.3).
-  // Space Cannon Offense isn't implemented yet (TODO, same as Space Cannon
-  // Defense during Invasion) — skipping straight past it for now.
-  const nextStep = playersWithShipsInSystem(workingState, activeSystemId).length > 1 ? "spaceCombat" : "invasion";
+  // RR 78.2: after moving, ANY player with a qualifying PDS may use Space
+  // Cannon Offense against the active player's ships before combat (RR
+  // 77) — not just this player's own units, and not gated on whether
+  // space combat will even happen (a lone PDS owner passing through with
+  // no stake in this system can still fire). If nobody qualifies, skip
+  // straight through to spaceCombat/invasion as before.
+  const spaceCannonResponders = getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
+  const afterSpaceCannonStep = playersWithShipsInSystem(workingState, activeSystemId).length > 1 ? "spaceCombat" : "invasion";
 
   workingState = {
     ...workingState,
-    pendingTacticalAction: { ...pending, step: nextStep },
+    pendingTacticalAction:
+      spaceCannonResponders.length > 0
+        ? { ...pending, step: "spaceCannonOffense", spaceCannonOffenseRespondersRemaining: spaceCannonResponders }
+        : { ...pending, step: afterSpaceCannonStep },
   };
 
   return {
@@ -240,4 +246,4 @@ function addToSystem(
     spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: updatedStacks },
   };
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
-}
+                                                           }
