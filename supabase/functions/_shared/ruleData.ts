@@ -37,12 +37,15 @@ import {
   buildObjectivesLookup,
   buildTechnologiesLookup,
   buildUnitUpgradeTechDataLookup,
+  buildFactionTechIds,
+  buildExplorationCardsLookup,
 } from "./engine/rules/ruleDataMapping.ts";
 
 interface RawFactionFile {
   id: string;
   commodities?: number;
   breakthrough?: { synergy?: { colors?: [string, string] } };
+  factionTechnologies?: { id: string }[];
   units?: Record<string, Partial<RawUnitEntry> & { name?: string }>;
   // factionSpecificUnits intentionally not consumed yet (see gap #2 above
   // for the same reason — its `versions[]` entries use the same
@@ -67,11 +70,13 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
 
   const factionUnits: Record<FactionId, FactionUnitStats> = {};
   const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
+  const usedFactionFiles: RawFactionFile[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile: RawFactionFile = JSON.parse(
       await Deno.readTextFile(new URL(`./data/factions/${rawFactionId}.json`, import.meta.url)),
     );
+    usedFactionFiles.push(factionFile);
     const synergyColors = factionFile.breakthrough?.synergy?.colors;
     factions[asFactionId(rawFactionId)] = {
       commoditiesMax: factionFile.commodities ?? 0,
@@ -111,6 +116,7 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
   const objectivesFile = JSON.parse(await Deno.readTextFile(new URL("./data/objectives.json", import.meta.url)));
   const technologiesFile = JSON.parse(await Deno.readTextFile(new URL("./data/technologies.json", import.meta.url)));
   const unitUpgradesFileRaw = JSON.parse(await Deno.readTextFile(new URL("./data/unitUpgrades.json", import.meta.url)));
+  const explorationCardsFile = JSON.parse(await Deno.readTextFile(new URL("./data/explorationCards.json", import.meta.url)));
 
   return {
     factionUnits,
@@ -123,5 +129,7 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
     unitUpgradeTechData: buildUnitUpgradeTechDataLookup(
       (unitUpgradesFileRaw as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
     ),
+    factionTechIds: buildFactionTechIds(usedFactionFiles),
+    explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
   };
-}
+    }
