@@ -50,7 +50,19 @@ export type GameAction =
       transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
       transportedFighters?: { fromSystemId: SystemId; count: number }[];
     }
-  | { type: "USE_SPACE_CANNON_OFFENSE"; playerId: PlayerId; assignHitsTo: { unitType: UnitType }[] } // RR 66.2 — TODO
+  | {
+      type: "USE_SPACE_CANNON_OFFENSE";
+      playerId: PlayerId;
+      /** Pre-rolled dice, same trusted-RNG convention as RESOLVE_COMBAT_ROUND — see that action's doc comment. Combines ALL of this player's qualifying PDS (in the active system, plus any with the PDS II `rangesToAdjacent` upgrade in an adjacent system) into one dice pool. RR 77. */
+      diceRolls: number[];
+    }
+  | { type: "SKIP_SPACE_CANNON_OFFENSE"; playerId: PlayerId } // RR 77: this player declines to fire, even though they had qualifying units
+  | {
+      type: "ASSIGN_SPACE_CANNON_OFFENSE_HITS";
+      playerId: PlayerId;
+      /** Always the ACTIVE player (whoever's ships got shot at) — same destroy/flip-per-unit shape as ASSIGN_HITS. RR 77/76. */
+      assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
+    }
   | { type: "ANNOUNCE_RETREAT"; playerId: PlayerId; toSystemId: SystemId } // RR 67.4
   | {
       type: "RESOLVE_COMBAT_ROUND";
@@ -202,6 +214,8 @@ export type GameEvent =
   | { type: "PLAYER_PASSED"; playerId: PlayerId }
   | { type: "SYSTEM_ACTIVATED"; playerId: PlayerId; systemId: SystemId }
   | { type: "SHIPS_MOVED"; playerId: PlayerId; toSystemId: SystemId }
+  | { type: "SPACE_CANNON_OFFENSE_FIRED"; playerId: PlayerId; systemId: SystemId; hits: number }
+  | { type: "SPACE_CANNON_OFFENSE_SKIPPED"; playerId: PlayerId }
   | { type: "RETREAT_ANNOUNCED"; playerId: PlayerId; toSystemId: SystemId }
   | { type: "COMBAT_ROUND_RESOLVED"; systemId: SystemId; planetId?: PlanetId; round: number; hitsScoredByPlayer: Partial<Record<PlayerId, number>> }
   | { type: "UNITS_DESTROYED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
