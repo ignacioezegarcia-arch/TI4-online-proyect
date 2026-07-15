@@ -3,6 +3,7 @@ import { PlayerId, SystemId, FactionId, UnitUpgradeId } from "../types/ids";
 import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus } from "./anomalies";
+import { getAdjacentSystems } from "./adjacency";
 
 /**
  * RR 61 (space combat) / RR 38 (ground combat) — presence queries.
@@ -305,3 +306,75 @@ export function applyHitAssignments(
 
   return { ok: true, stacks: updated.filter((s) => s.count > 0), destroyed, flipped };
 }
+
+// ---------------------------------------------------------------------
+// RR 77 SPACE CANNON OFFENSE — after movement, ANY player (not just the
+// active player's opponent — even one with no ships in this system at all)
+// may independently fire their qualifying PDS at the active player's ships.
+// Qualifying = a PDS physically on a planet in the target system, OR a PDS
+// with the PDS II upgrade's `rangesToAdjacent` flag on a planet in an
+// ADJACENT system. Both helpers below share the same per-player dice-pool
+// logic so "is this player eligible" and "here's their actual dice pool"
+// can never disagree with each other.
+// ---------------------------------------------------------------------
+
+function spaceCannonEntryForPlayer(
+  state: GameState,
+  rules: RuleData,
+  firingPlayerId: PlayerId,
+  targetSystemId: SystemId,
+): CombatUnitEntry | null {
+  const player = state.players[firingPlayerId];
+  if (!player) return null;
+
+  let diceCount = 0;
+  let hitOn: number | null = null;
+
+  const scanSystem = (systemId: SystemId, requireRangesToAdjacent: boolean) => {
+    const system = state.systems[systemId];
+    if (!system) return;
+    for (const planet of system.planets) {
+      const stacks = (planet.unitsByPlayer[firingPlayerId] ?? []) as UnitStack[];
+      for (const stack of stacks) {
+        if (stack.unitType !== "pds" || stack.count <= 0) continue;
+        const stats = getUnitStats(rules, player.factionId, "pds", player.unitUpgrades);
+        const sc = stats?.abilityValues?.spaceCannon;
+        if (!sc) continue;
+        if (requireRangesToAdjacent && !sc.rangesToAdjacent) continue;
+        diceCount += stack.count * sc.dice;
+        hitOn = sc.value; // every PDS shares the same faction/upgrade sheet, so this is consistent across stacks
+      }
+    }
+  };
+
+  scanSystem(targetSystemId, false);
+  for (const adjId of getAdjacentSystems(state, targetSystemId)) {
+    scanSystem(adjId, true);
+  }
+
+  if (diceCount === 0 || hitOn === null) return null;
+  return { playerId: firingPlayerId, diceCount, hitOn };
+}
+
+/** RR 77: every player (excluding the active player themselves) with at least one qualifying PDS — in the system, or PDS II range-upgraded in an adjacent one. */
+export function getSpaceCannonOffenseEligiblePlayers(
+  state: GameState,
+  rules: RuleData,
+  targetSystemId: SystemId,
+  activePlayerId: PlayerId,
+): PlayerId[] {
+  return Object.keys(state.players)
+    .filter((id): id is PlayerId => id !== activePlayerId && !state.players[id as PlayerId].eliminated)
+    .filter((id) => spaceCannonEntryForPlayer(state, rules, id, targetSystemId) !== null);
+}
+
+/** This one player's Space Cannon Offense dice pool, as a single-entry array (matches resolveCombatRound's expected input shape) — empty if they don't actually qualify. */
+export function buildSpaceCannonOffenseEntries(
+  state: GameState,
+  rules: RuleData,
+  firingPlayerId: PlayerId,
+  targetSystemId: SystemId,
+): CombatUnitEntry[] {
+  const entry = spaceCannonEntryForPlayer(state, rules, firingPlayerId, targetSystemId);
+  return entry ? [entry] : [];
+  }
