@@ -220,6 +220,22 @@ export interface GameState {
   lastPlayerToPass?: PlayerId;
   /** The most recently resolved agenda's winning outcome — needed for the "elected by an agenda" secret objective (drive_the_debate). Persists across rounds (not reset), since only the MOST RECENT resolution matters, not "this round's". */
   lastResolvedAgenda?: { agendaId: AgendaId; outcome: string };
+  /**
+   * RR 52-adjacent: a short rolling buffer of this game's own already-typed
+   * GameEvents (see Actions.ts), reused as-is rather than inventing a
+   * parallel "combat history" structure. Needed for actionPhase-timed
+   * secret objectives that check "did X just happen" (e.g. "win a combat
+   * in a system with an anomaly") — GameState otherwise only tracks
+   * CURRENT state, not what led to it.
+   *
+   * Cleared whenever a NEW tactical action starts (ACTIVATE_SYSTEM) — so
+   * it always reflects "what happened during the most recently active
+   * tactical action", which is the natural window these objectives expect
+   * ("immediately", per their card text) without needing to model turn
+   * ownership precisely. Also hard-capped at 200 entries as a safety net
+   * against unbounded growth in edge cases.
+   */
+  recentEvents?: import("./Actions").GameEvent[];
 
   winnerId: PlayerId | null;
 }
@@ -253,6 +269,17 @@ export interface PendingTacticalAction {
   remainingInvasionPlanetIds?: PlanetId[];
   /** RR 44.2: true once the active player has signaled they're done committing ground forces this invasion step (FINISH_INVASION_COMMITS) — after that, no more COMMIT_GROUND_FORCES, and START_GROUND_COMBAT becomes available. */
   invasionCommitsFinished?: boolean;
+  /**
+   * RR 77: after movement, ANY player (not just attacker/defender — even
+   * one with no ships in this combat at all) who has a PDS in the just-
+   * activated system, or a PDS with Space Cannon's `rangesToAdjacent`
+   * upgrade in an adjacent system, may independently choose to fire at the
+   * active player's ships before combat. This lists who still hasn't
+   * decided (fire or skip) — cleared entries as each responds, in no
+   * particular required order. Once empty (and no pendingHits left to
+   * assign), the tactical action moves on to spaceCombat/invasion.
+   */
+  spaceCannonOffenseRespondersRemaining?: PlayerId[];
 }
 
 export interface PendingAgendaVote {
