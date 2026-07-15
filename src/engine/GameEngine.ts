@@ -20,6 +20,7 @@ import { revealAgenda, castVotes } from "./phases/agendaPhase";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
 import { explorePlanet, exploreFrontier, purgeRelicFragments } from "./phases/exploration";
+import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -135,10 +136,18 @@ export const GameEngine = {
       case "PURGE_RELIC_FRAGMENTS":
         result = purgeRelicFragments(state, action);
         break;
+      case "USE_SPACE_CANNON_OFFENSE":
+        result = useSpaceCannonOffense(state, action, rules);
+        break;
+      case "SKIP_SPACE_CANNON_OFFENSE":
+        result = skipSpaceCannonOffense(state, action);
+        break;
+      case "ASSIGN_SPACE_CANNON_OFFENSE_HITS":
+        result = assignSpaceCannonOffenseHits(state, action, rules);
+        break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
       // as the cases above — see phases/README.md for the recipe.
-      case "USE_SPACE_CANNON_OFFENSE":
       case "PLAY_ACTION_CARD":
       case "PROPOSE_TRANSACTION":
       case "END_TURN_TIMEOUT":
@@ -219,6 +228,13 @@ export const GameEngine = {
           legal.push("PRODUCE_UNITS", "FINISH_TACTICAL_ACTION");
         }
       }
+    }
+
+    if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
+      const owesHits = (state.pendingTacticalAction.pendingHits?.[playerId] ?? 0) > 0;
+      const isResponder = state.pendingTacticalAction.spaceCannonOffenseRespondersRemaining?.includes(playerId);
+      if (owesHits) legal.push("ASSIGN_SPACE_CANNON_OFFENSE_HITS");
+      else if (isResponder) legal.push("USE_SPACE_CANNON_OFFENSE", "SKIP_SPACE_CANNON_OFFENSE");
     }
 
     if (state.pendingTacticalAction?.step === "spaceCombat") {
