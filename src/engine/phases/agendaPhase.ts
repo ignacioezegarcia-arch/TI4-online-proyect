@@ -145,6 +145,8 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
       ? { ...state.agendaDeck, lawsInPlay: [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: "common" as const }] }
       : { ...state.agendaDeck, discardIds: [...state.agendaDeck.discardIds, agendaId] },
     agendaPhaseAgendasResolved: (state.agendaPhaseAgendasResolved ?? 0) + 1,
+    // For the "elected by an agenda" secret objective (drive_the_debate) — only the most recent resolution matters, so this just overwrites each time.
+    lastResolvedAgenda: winner !== null ? { agendaId, outcome: winner } : state.lastResolvedAgenda,
   };
 
   const events: GameEvent[] = [{ type: "AGENDA_RESOLVED", agendaId, outcome: winner ?? "", becameLaw }];
