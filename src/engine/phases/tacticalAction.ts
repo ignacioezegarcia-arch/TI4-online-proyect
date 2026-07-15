@@ -54,6 +54,9 @@ export function activateSystem(
       systemId: action.systemId,
       step: "movement",
     },
+    // RR 52-adjacent: see GameState.ts's own doc comment on recentEvents —
+    // a new tactical action starting is the reset point for that buffer.
+    recentEvents: [],
   };
 
   return {
