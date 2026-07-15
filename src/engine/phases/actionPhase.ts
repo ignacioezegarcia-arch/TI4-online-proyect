@@ -36,6 +36,7 @@ export function pass(state: GameState, action: { type: "PASS"; playerId: PlayerI
   const nextState = advanceActivePlayer({
     ...state,
     players: { ...state.players, [player.id]: updatedPlayer },
+    lastPlayerToPass: action.playerId,
   });
 
   return { ok: true, state: nextState, events: [{ type: "PLAYER_PASSED", playerId: action.playerId }] };
@@ -133,11 +134,24 @@ export function scoreObjective(
   },
   rules: RuleData,
 ): ActionResult {
-  if (state.phase !== "status") {
-    return { ok: false, error: "RR 70.1: objectives can only be scored during the status phase." };
-  }
   const player = state.players[action.playerId];
   if (!player) return { ok: false, error: "Unknown player." };
+
+  const objectiveData = rules.objectives[action.objectiveId];
+  if (!objectiveData) return { ok: false, error: `No rule data for objective ${action.objectiveId}.` };
+
+  // RR 52.3: most objectives (all public ones, most secrets) can only be
+  // scored during the status phase — but several secrets score
+  // opportunistically during the action or agenda phase instead, per their
+  // own `timing`. Previously this was hardcoded to "status" for everything,
+  // which silently made those secrets unscoreable.
+  const expectedPhase = objectiveData.timing === "actionPhase" ? "action" : objectiveData.timing === "agendaPhase" ? "agenda" : "status";
+  if (state.phase !== expectedPhase) {
+    return {
+      ok: false,
+      error: `RR 52.3: this objective can only be scored during the ${objectiveData.timing} (currently in "${state.phase}").`,
+    };
+  }
 
   const publicMatch = state.objectives.find((o) => o.objectiveId === action.objectiveId && o.revealed);
   const isSecret = player.secretObjectives.includes(action.objectiveId);
@@ -146,29 +160,37 @@ export function scoreObjective(
     return { ok: false, error: "Objective isn't revealed (public) or held (secret) by this player." };
   }
 
+  // RR 70.1's "max 1 public + 1 secret per status phase" limit only applies
+  // to the status-phase scoring window — actionPhase/agendaPhase-timed
+  // secrets are opportunistic, no such cap on them.
   const scoring = state.statusPhaseScoring?.[action.playerId] ?? { scoredPublic: false, scoredSecret: false, done: false };
-  if (scoring.done) return { ok: false, error: "This player already finished scoring this status phase." };
-  if (kind !== "secret" && scoring.scoredPublic) {
-    return { ok: false, error: "RR 70.1: max 1 public objective per player per status phase." };
-  }
-  if (kind === "secret" && scoring.scoredSecret) {
-    return { ok: false, error: "RR 70.1: max 1 secret objective per player per status phase." };
+  if (objectiveData.timing === "statusPhase") {
+    if (scoring.done) return { ok: false, error: "This player already finished scoring this status phase." };
+    if (kind !== "secret" && scoring.scoredPublic) {
+      return { ok: false, error: "RR 70.1: max 1 public objective per player per status phase." };
+    }
+    if (kind === "secret" && scoring.scoredSecret) {
+      return { ok: false, error: "RR 70.1: max 1 secret objective per player per status phase." };
+    }
   }
 
   const core = scoreObjectiveCore(state, action.playerId, action.objectiveId, action.spend, rules);
   if (!core.ok) return core;
 
-  const nextState: GameState = {
-    ...core.state,
-    statusPhaseScoring: {
-      ...core.state.statusPhaseScoring,
-      [action.playerId]: {
-        ...scoring,
-        scoredPublic: scoring.scoredPublic || kind !== "secret",
-        scoredSecret: scoring.scoredSecret || kind === "secret",
+  let nextState: GameState = core.state;
+  if (objectiveData.timing === "statusPhase") {
+    nextState = {
+      ...nextState,
+      statusPhaseScoring: {
+        ...nextState.statusPhaseScoring,
+        [action.playerId]: {
+          ...scoring,
+          scoredPublic: scoring.scoredPublic || kind !== "secret",
+          scoredSecret: scoring.scoredSecret || kind === "secret",
+        },
       },
-    },
-  };
+    };
+  }
 
   return { ok: true, state: nextState, events: core.events };
 }
@@ -489,5 +511,6 @@ export function startNewRound(state: GameState): GameState {
     activePlayerId: null,
     initiativeOrder: [],
     unclaimedStrategyCards,
+    lastPlayerToPass: undefined,
   };
 }
