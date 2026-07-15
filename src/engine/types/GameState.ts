@@ -216,6 +216,10 @@ export interface GameState {
   pendingAgendaVote: PendingAgendaVote | null;
   /** RR 8: exactly 2 agendas get resolved per agenda phase (fewer if the deck runs out). Reset to 0 when the agenda phase begins. */
   agendaPhaseAgendasResolved?: number;
+  /** RR 3.3-ish: which player most recently passed this action phase — reset to undefined when a new round starts. Needed for the "last to pass" secret objective (prove_endurance); not used for any turn-legality check. */
+  lastPlayerToPass?: PlayerId;
+  /** The most recently resolved agenda's winning outcome — needed for the "elected by an agenda" secret objective (drive_the_debate). Persists across rounds (not reset), since only the MOST RECENT resolution matters, not "this round's". */
+  lastResolvedAgenda?: { agendaId: AgendaId; outcome: string };
 
   winnerId: PlayerId | null;
 }
