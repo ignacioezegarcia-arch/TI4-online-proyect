@@ -105,10 +105,11 @@
       "capacity": 0,
       "abilities": [
         {
-          "name": "Space Cannon",
-          "value": 5,
-          "diceCount": 1,
-          "text": "SPACE CANNON 5 (x1): además, a diferencia del PDS base, esta ability puede usarse contra naves en sistemas ADYACENTES al sistema donde está este PDS, no solo en su propio sistema."
+  "name": "Space Cannon",
+  "value": 5,
+  "diceCount": 1,
+  "rangesToAdjacent": true,
+  "text": "..."
         },
         {
           "name": "Planetary Shield",
