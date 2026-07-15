@@ -18,6 +18,8 @@ import {
   buildObjectivesLookup,
   buildTechnologiesLookup,
   buildUnitUpgradeTechDataLookup,
+  buildFactionTechIds,
+  buildExplorationCardsLookup,
 } from "../engine/rules/ruleDataMapping";
 
 import unitsFile from "../../data/units.json";
@@ -26,6 +28,7 @@ import agendasFile from "../../data/agendas.json";
 import objectivesFile from "../../data/objectives.json";
 import technologiesFile from "../../data/technologies.json";
 import unitUpgradesFile from "../../data/unitUpgrades.json";
+import explorationCardsFile from "../../data/explorationCards.json";
 
 // Vite-friendly way to "dynamically" import one of many known JSON files:
 // eagerly globs all faction files at build time, keyed by their path, then
@@ -38,6 +41,7 @@ const factionFiles = import.meta.glob("../../data/factions/*.json", { eager: tru
       id: string;
       commodities?: number;
       breakthrough?: { synergy?: { colors?: [string, string] } };
+      factionTechnologies?: { id: string }[];
       units?: Record<string, Partial<RawUnitEntry>>;
     };
   }
@@ -56,9 +60,11 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
 
   const factionUnits: Record<FactionId, FactionUnitStats> = {};
   const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
+  const usedFactionFiles: { factionTechnologies?: { id: string }[] }[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile = findFactionFile(rawFactionId);
+    usedFactionFiles.push(factionFile);
     const synergyColors = factionFile.breakthrough?.synergy?.colors;
     factions[asFactionId(rawFactionId)] = {
       commoditiesMax: factionFile.commodities ?? 0,
@@ -92,5 +98,7 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     unitUpgradeTechData: buildUnitUpgradeTechDataLookup(
       (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
     ),
+    factionTechIds: buildFactionTechIds(usedFactionFiles),
+    explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
   };
-}
+                                     }
