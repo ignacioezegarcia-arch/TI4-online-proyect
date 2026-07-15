@@ -6,8 +6,8 @@
 // instant optimistic UI updates, using the identical stats the Edge
 // Function will use to authoritatively validate the same action a moment
 // later.
-import { RuleData, FactionUnitStats } from "../engine/types/RuleData";
-import { FactionId, asFactionId } from "../engine/types/ids";
+import { RuleData, FactionUnitStats, UnitUpgradeStats } from "../engine/types/RuleData";
+import { FactionId, UnitUpgradeId, asFactionId, asUnitUpgradeId } from "../engine/types/ids";
 import { UnitType } from "../engine/types/enums";
 import {
   unitEntryToStats,
@@ -85,11 +85,25 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     };
   }
 
-  // See supabase/functions/_shared/ruleData.ts gap #2 — unit upgrades are
-  // intentionally left unresolved client-side too, for the same reason.
+  // Gap #2 is now closed: data/unitUpgrades.json's stats have been
+  // structured (not free-text) for a while — what was missing was this
+  // loader actually reading them. Same unitEntryToStats() the base
+  // units.json path already uses, since unitUpgrades.json entries match
+  // the same RawUnitEntry shape plus a top-level `unitType` saying which
+  // unit sheet this upgrade replaces (RR 86.4).
+  const unitUpgrades: Record<UnitUpgradeId, UnitUpgradeStats> = {};
+  for (const raw of (unitUpgradesFile as { unitUpgrades: (Parameters<typeof unitEntryToStats>[0] & { id: string; unitType: string })[] })
+    .unitUpgrades) {
+    unitUpgrades[asUnitUpgradeId(raw.id)] = {
+      id: asUnitUpgradeId(raw.id),
+      unitType: raw.unitType as UnitType,
+      stats: unitEntryToStats(raw, raw.unitType as UnitType),
+    };
+  }
+
   return {
     factionUnits,
-    unitUpgrades: {},
+    unitUpgrades,
     planets: buildPlanetsLookup(tilesFile as RawTilesFile),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
     objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
@@ -101,4 +115,4 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     factionTechIds: buildFactionTechIds(usedFactionFiles),
     explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
   };
-                                     }
+}
