@@ -28,8 +28,8 @@ export interface UnitStats {
   /** RR 58: how many units one "produce" action yields for `cost` (e.g. Fighter/Infantry = 2 per token). Defaults to 1 when the data doesn't say otherwise. */
   producesQuantity?: number;
   abilities: UnitAbility[];
-  /** e.g. Anti-Fighter Barrage X(Y) -> {value: X, dice: Y}; Bombardment 5 -> {value:5, dice:1}. Keyed by ability for units with more than one. */
-  abilityValues?: Partial<Record<UnitAbility, { value: number; dice: number }>>;
+  /** e.g. Anti-Fighter Barrage X(Y) -> {value: X, dice: Y}; Bombardment 5 -> {value:5, dice:1}. Keyed by ability for units with more than one. `rangesToAdjacent` is Space-Cannon-specific (RR: PDS II's own upgrade text) — true means this unit's Space Cannon can target ships in adjacent systems too, not just its own. */
+  abilityValues?: Partial<Record<UnitAbility, { value: number; dice: number; rangesToAdjacent?: boolean }>>;
 }
 
 export interface FactionUnitStats {
@@ -77,7 +77,7 @@ export interface RuleData {
   technologies: Record<TechId, { color: string | null; prerequisites: string[] }>;
   /** RR 34/TE breakthrough: commodities max, plus the pair of colors (if any) whose techs can substitute for each other when satisfying prerequisites — never both at once for the same requirement. */
   factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }>;
-  /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned, and is still an unresolved gap per this project's own notes); this is just enough to validate RR 90.7 prerequisites before letting a player research one. */
+  /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned); this is just enough to validate RR 90.7 prerequisites before letting a player research one. */
   unitUpgradeTechData: Record<UnitUpgradeId, { color: string | null; prerequisites: string[] }>;
   /** Every tech id that's a FACTION technology (data/factions/*.json's factionTechnologies) for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. */
   factionTechIds: Set<string>;
@@ -97,9 +97,8 @@ export interface RuleData {
       fallbackInfluenceBonus?: number;
     }
   >;
-  // TODO as later phases need them: technologies (prerequisites/effects),
-  // actionCards, agendas, objectives, explorationCards, relics,
-  // promissoryNotes, strategyCard primary/secondary text, faction
+  // TODO as later phases need them: actionCards, agendas/objectives effect
+  // text, promissoryNotes, strategyCard primary/secondary text, faction
   // abilityIds -> effect implementations.
 }
 
