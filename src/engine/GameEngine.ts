@@ -153,10 +153,20 @@ export const GameEngine = {
     if (!result.ok || !result.state) return result;
 
     const { state: advancedState, events: advanceEvents } = autoAdvancePhase(result.state);
+    const allEvents = [...(result.events ?? []), ...advanceEvents];
+
+    // See GameState.ts's own doc comment on recentEvents for why this
+    // lives here (one central place, so no handler has to remember it)
+    // and why it's capped rather than growing forever.
+    const finalState: GameState = {
+      ...advancedState,
+      recentEvents: [...(advancedState.recentEvents ?? []), ...allEvents].slice(-200),
+    };
+
     return {
       ok: true,
-      state: advancedState,
-      events: [...(result.events ?? []), ...advanceEvents],
+      state: finalState,
+      events: allEvents,
     };
   },
 
@@ -166,13 +176,6 @@ export const GameEngine = {
    * Deliberately conservative: it's fine for this to under-report edge cases
    * (applyAction is still the source of truth and will reject anything
    * illegal), but it should never suggest an action that's actually illegal.
-   *
-   * NOTE: EXPLORE_PLANET/EXPLORE_FRONTIER/PURGE_RELIC_FRAGMENTS aren't
-   * listed here yet — they work fine via applyAction directly, but properly
-   * checking "is there actually an unexplored controlled planet / reachable
-   * frontier token / enough fragments" is real per-case work not done yet.
-   * Under-reporting these (vs. suggesting something illegal) is the safe
-   * side of that gap per this function's own contract above.
    */
   getLegalActions(state: GameState, playerId: PlayerId): GameAction["type"][] {
     const legal: GameAction["type"][] = [];
