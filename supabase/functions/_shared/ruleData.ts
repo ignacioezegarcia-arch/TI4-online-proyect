@@ -5,26 +5,12 @@
 // — see that script for why they're copied here instead of imported from
 // the repo root).
 //
-// TWO KNOWN GAPS, called out here so they can't be silently wrong:
-//
-// 1. Faction abilities (data/factions/<id>.json → factionAbilities[]) only
-//    have `name` + `effect` today, no `id`. The engine's `AbilityId` /
-//    `player.hasAbility(id)` convention needs a stable snake_case id per
-//    ability (e.g. "orbital_drop", "versatile") to work at all. Until those
-//    ids are added to the faction files, hasAbility() has nothing to match
-//    against. Not blocking today's Edge Function work, but it's the very
-//    next data task.
-//
-// 2. data/unitUpgrades.json's numeric stats (cost/combat/move/capacity) are
-//    embedded in a free-text `effect` string ("Cost: 1(x2) | Combat: 7 | ...")
-//    rather than structured fields, the way data/units.json already does it.
-//    Parsing that string with a regex would be fragile and silently wrong
-//    the day the wording changes. So: unit upgrades are loaded with their
-//    id/unitType/prerequisites (useful for research eligibility later) but
-//    WITHOUT resolved stats — getUnitStats() below falls back to the base
-//    faction stats and logs a warning rather than guess. Fix: add the same
-//    structured cost/combat/combatDiceCount/move/capacity/abilities fields
-//    to unitUpgrades.json that units.json already uses.
+// Historical note: this file used to flag two data gaps here (faction
+// ability ids missing snake_case ids; unitUpgrades.json's stats being
+// free-text instead of structured). Both were fixed in the data a while
+// ago — this comment is what's left after actually wiring the loader code
+// up to read them, since the data being fixed doesn't help until the
+// loader stops assuming it's still broken.
 import { RuleData, FactionUnitStats, UnitUpgradeStats } from "./engine/types/RuleData.ts";
 import { FactionId, UnitUpgradeId, asFactionId } from "./engine/types/ids.ts";
 import { UnitType } from "./engine/types/enums.ts";
@@ -47,17 +33,9 @@ interface RawFactionFile {
   breakthrough?: { synergy?: { colors?: [string, string] } };
   factionTechnologies?: { id: string }[];
   units?: Record<string, Partial<RawUnitEntry> & { name?: string }>;
-  // factionSpecificUnits intentionally not consumed yet (see gap #2 above
-  // for the same reason — its `versions[]` entries use the same
-  // schema, but wiring "which version is currently active" needs
-  // researched-tech tracking on Player that isn't built yet either).
-}
-
-interface RawUnitUpgradeEntry {
-  id: string;
-  unitType: string;
-  level: number;
-  prerequisites: string[];
+  // factionSpecificUnits intentionally not consumed yet — its `versions[]`
+  // entries use the same schema, but wiring "which version is currently
+  // active" needs researched-tech tracking on Player that isn't built yet.
 }
 
 /**
@@ -101,21 +79,26 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
   }
 
   const unitUpgradesFile = JSON.parse(await Deno.readTextFile(new URL("./data/unitUpgrades.json", import.meta.url)));
+
+  // Gap #2 is now closed: data/unitUpgrades.json's stats have been
+  // structured (not free-text) for a while — what was missing was this
+  // loader actually reading them. Same unitEntryToStats() the base
+  // units.json path already uses, since unitUpgrades.json entries match
+  // the same RawUnitEntry shape plus a top-level `unitType` saying which
+  // unit sheet this upgrade replaces (RR 86.4).
   const unitUpgrades: Record<UnitUpgradeId, UnitUpgradeStats> = {};
-  for (const raw of unitUpgradesFile.unitUpgrades as RawUnitUpgradeEntry[]) {
-    // See gap #2: we deliberately do NOT populate `stats` with guessed
-    // numbers. getUnitStats() in RuleData.ts checks for this and falls back
-    // to the faction's base stats when `stats` is missing.
-    console.warn(
-      `unitUpgrades.json: "${raw.id}" has no structured stats yet (effect text isn't parsed) — falling back to base stats for ${raw.unitType} until the data is extended.`,
-    );
+  for (const raw of unitUpgradesFile.unitUpgrades as (RawUnitEntry & { unitType: string })[]) {
+    unitUpgrades[raw.id as UnitUpgradeId] = {
+      id: raw.id as UnitUpgradeId,
+      unitType: raw.unitType as UnitType,
+      stats: unitEntryToStats(raw, raw.unitType as UnitType),
+    };
   }
 
   const tilesFile = JSON.parse(await Deno.readTextFile(new URL("./data/tiles.json", import.meta.url)));
   const agendasFile = JSON.parse(await Deno.readTextFile(new URL("./data/agendas.json", import.meta.url)));
   const objectivesFile = JSON.parse(await Deno.readTextFile(new URL("./data/objectives.json", import.meta.url)));
   const technologiesFile = JSON.parse(await Deno.readTextFile(new URL("./data/technologies.json", import.meta.url)));
-  const unitUpgradesFileRaw = JSON.parse(await Deno.readTextFile(new URL("./data/unitUpgrades.json", import.meta.url)));
   const explorationCardsFile = JSON.parse(await Deno.readTextFile(new URL("./data/explorationCards.json", import.meta.url)));
 
   return {
@@ -127,9 +110,9 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
     technologies: buildTechnologiesLookup(technologiesFile as Parameters<typeof buildTechnologiesLookup>[0]),
     factions,
     unitUpgradeTechData: buildUnitUpgradeTechDataLookup(
-      (unitUpgradesFileRaw as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
+      (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
     ),
     factionTechIds: buildFactionTechIds(usedFactionFiles),
     explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
   };
-    }
+}
