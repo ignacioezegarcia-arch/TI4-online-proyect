@@ -65,6 +65,18 @@ export type GameAction =
     }
   | { type: "ANNOUNCE_RETREAT"; playerId: PlayerId; toSystemId: SystemId } // RR 67.4
   | {
+      type: "USE_ANTI_FIGHTER_BARRAGE";
+      playerId: PlayerId;
+      /** Same trusted-RNG convention as everywhere else. Mandatory (not skippable) for any combatant with an AFB-capable ship — RR 67.1. */
+      diceRolls: number[];
+    }
+  | {
+      type: "ASSIGN_ANTI_FIGHTER_BARRAGE_HITS";
+      playerId: PlayerId;
+      /** Same destroy/flip shape as ASSIGN_HITS, but every unitType here MUST be "fighter" — AFB can't hit anything else. RR 67.1/76. */
+      assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
+    }
+  | {
       type: "RESOLVE_COMBAT_ROUND";
       playerId: PlayerId;
       /**
@@ -124,6 +136,19 @@ export type GameAction =
       playerId: PlayerId;
       targetPlanetId: PlanetId;
       /** RR 44.4: the active player picks which contested planet resolves next, each time — independent of commit order, and independent of any previous pick. */
+    }
+  | {
+      type: "USE_SPACE_CANNON_DEFENSE";
+      playerId: PlayerId;
+      /** Same trusted-RNG convention as everywhere else. This is the DEFENDER's own optional choice — RR 44's Space Cannon Defense, fired at the attacker's just-committed ground forces on this planet, before ground combat starts. */
+      diceRolls: number[];
+    }
+  | { type: "SKIP_SPACE_CANNON_DEFENSE"; playerId: PlayerId } // RR 44: the defender declines to use it, even though they had qualifying units
+  | {
+      type: "ASSIGN_SPACE_CANNON_DEFENSE_HITS";
+      playerId: PlayerId;
+      /** Always the ATTACKER (whoever's ground forces got shot at) — same destroy/flip-per-unit shape as ASSIGN_HITS. RR 44/76. */
+      assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
     }
   | { type: "PRODUCE_UNITS"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] }
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
@@ -216,6 +241,9 @@ export type GameEvent =
   | { type: "SHIPS_MOVED"; playerId: PlayerId; toSystemId: SystemId }
   | { type: "SPACE_CANNON_OFFENSE_FIRED"; playerId: PlayerId; systemId: SystemId; hits: number }
   | { type: "SPACE_CANNON_OFFENSE_SKIPPED"; playerId: PlayerId }
+  | { type: "ANTI_FIGHTER_BARRAGE_FIRED"; playerId: PlayerId; systemId: SystemId; hits: number }
+  | { type: "SPACE_CANNON_DEFENSE_FIRED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number }
+  | { type: "SPACE_CANNON_DEFENSE_SKIPPED"; playerId: PlayerId }
   | { type: "RETREAT_ANNOUNCED"; playerId: PlayerId; toSystemId: SystemId }
   | { type: "COMBAT_ROUND_RESOLVED"; systemId: SystemId; planetId?: PlanetId; round: number; hitsScoredByPlayer: Partial<Record<PlayerId, number>> }
   | { type: "UNITS_DESTROYED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
