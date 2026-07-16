@@ -4,6 +4,7 @@ import { PlayerId } from "../types/ids";
 import { UnitType } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { buildSpaceCannonOffenseEntries, resolveCombatRound, applyHitAssignments, playersWithShipsInSystem } from "../rules/combat";
+import { computeSpaceCombatEntry } from "./spaceCombat";
 
 /**
  * RR 77 SPACE CANNON OFFENSE. Happens once, right after movement, before
@@ -64,7 +65,7 @@ export function useSpaceCannonOffense(
   };
 
   if (hits === 0 && remainingResponders.length === 0) {
-    const advanced = advanceFromSpaceCannonOffense(nextState);
+    const advanced = advanceFromSpaceCannonOffense(nextState, rules);
     return { ok: true, state: advanced.state, events: [...events, ...advanced.events] };
   }
 
@@ -74,6 +75,7 @@ export function useSpaceCannonOffense(
 export function skipSpaceCannonOffense(
   state: GameState,
   action: { type: "SKIP_SPACE_CANNON_OFFENSE"; playerId: PlayerId },
+  rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "spaceCannonOffense") {
@@ -92,7 +94,7 @@ export function skipSpaceCannonOffense(
   const events: GameEvent[] = [{ type: "SPACE_CANNON_OFFENSE_SKIPPED", playerId: action.playerId }];
 
   if (remainingResponders.length === 0 && Object.keys(pending.pendingHits ?? {}).length === 0) {
-    const advanced = advanceFromSpaceCannonOffense(nextState);
+    const advanced = advanceFromSpaceCannonOffense(nextState, rules);
     return { ok: true, state: advanced.state, events: [...events, ...advanced.events] };
   }
 
@@ -146,19 +148,21 @@ export function assignSpaceCannonOffenseHits(
 
   const respondersLeft = pending.spaceCannonOffenseRespondersRemaining ?? [];
   if (respondersLeft.length === 0 && Object.keys(remainingPendingHits).length === 0) {
-    const advanced = advanceFromSpaceCannonOffense(nextState);
+    const advanced = advanceFromSpaceCannonOffense(nextState, rules);
     return { ok: true, state: advanced.state, events: [...events, ...advanced.events] };
   }
 
   return { ok: true, state: nextState, events };
 }
 
-function advanceFromSpaceCannonOffense(state: GameState): { state: GameState; events: GameEvent[] } {
+function advanceFromSpaceCannonOffense(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingTacticalAction!;
-  const nextStep = playersWithShipsInSystem(state, pending.systemId).length > 1 ? "spaceCombat" : "invasion";
+  const willHaveCombat = playersWithShipsInSystem(state, pending.systemId).length > 1;
   const nextState: GameState = {
     ...state,
-    pendingTacticalAction: { playerId: pending.playerId, systemId: pending.systemId, step: nextStep },
+    pendingTacticalAction: willHaveCombat
+      ? { playerId: pending.playerId, systemId: pending.systemId, step: "spaceCombat", ...computeSpaceCombatEntry(state, rules, pending.systemId) }
+      : { playerId: pending.playerId, systemId: pending.systemId, step: "invasion" },
   };
   return { state: nextState, events: [] };
 }
