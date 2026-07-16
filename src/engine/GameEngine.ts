@@ -4,7 +4,7 @@ import { PlayerId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
-import { announceRetreat, resolveSpaceCombatRound, assignHits } from "./phases/spaceCombat";
+import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits } from "./phases/spaceCombat";
 import {
   bombard,
   assignBombardmentHits,
@@ -13,6 +13,9 @@ import {
   startGroundCombat,
   resolveGroundCombatRound,
   assignGroundCombatHits,
+  useSpaceCannonDefense,
+  skipSpaceCannonDefense,
+  assignSpaceCannonDefenseHits,
 } from "./phases/invasion";
 import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
@@ -95,7 +98,7 @@ export const GameEngine = {
         result = finishInvasionCommits(state, action);
         break;
       case "START_GROUND_COMBAT":
-        result = startGroundCombat(state, action);
+        result = startGroundCombat(state, action, rules);
         break;
       case "PRODUCE_UNITS":
         result = produceUnits(state, action, rules);
@@ -140,10 +143,25 @@ export const GameEngine = {
         result = useSpaceCannonOffense(state, action, rules);
         break;
       case "SKIP_SPACE_CANNON_OFFENSE":
-        result = skipSpaceCannonOffense(state, action);
+        result = skipSpaceCannonOffense(state, action, rules);
         break;
       case "ASSIGN_SPACE_CANNON_OFFENSE_HITS":
         result = assignSpaceCannonOffenseHits(state, action, rules);
+        break;
+      case "USE_ANTI_FIGHTER_BARRAGE":
+        result = useAntiFighterBarrage(state, action, rules);
+        break;
+      case "ASSIGN_ANTI_FIGHTER_BARRAGE_HITS":
+        result = assignAntiFighterBarrageHits(state, action, rules);
+        break;
+      case "USE_SPACE_CANNON_DEFENSE":
+        result = useSpaceCannonDefense(state, action, rules);
+        break;
+      case "SKIP_SPACE_CANNON_DEFENSE":
+        result = skipSpaceCannonDefense(state, action);
+        break;
+      case "ASSIGN_SPACE_CANNON_DEFENSE_HITS":
+        result = assignSpaceCannonDefenseHits(state, action, rules);
         break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
@@ -241,8 +259,13 @@ export const GameEngine = {
       const inCombat = playersWithShipsInSystem(state, state.pendingTacticalAction.systemId).includes(playerId);
       const owesHits = (state.pendingTacticalAction.pendingHits?.[playerId] ?? 0) > 0;
       const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
-      if (owesHits) legal.push("ASSIGN_HITS");
-      else if (inCombat && noPendingHits) {
+      const stillInAfbPhase = state.pendingTacticalAction.combatRound === undefined;
+      const afbPending = state.pendingTacticalAction.afbPendingPlayers?.includes(playerId);
+
+      if (owesHits && stillInAfbPhase) legal.push("ASSIGN_ANTI_FIGHTER_BARRAGE_HITS");
+      else if (owesHits) legal.push("ASSIGN_HITS");
+      else if (stillInAfbPhase && afbPending && noPendingHits) legal.push("USE_ANTI_FIGHTER_BARRAGE");
+      else if (inCombat && noPendingHits && !stillInAfbPhase) {
         legal.push("RESOLVE_COMBAT_ROUND");
         if (!state.pendingTacticalAction.retreating?.some((r) => r.playerId === playerId)) {
           legal.push("ANNOUNCE_RETREAT");
@@ -256,7 +279,12 @@ export const GameEngine = {
       const inCombat = planet ? playersWithGroundForces(planet).includes(playerId) : false;
       const owesHits = (state.pendingTacticalAction.pendingHits?.[playerId] ?? 0) > 0;
       const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
-      if (owesHits) legal.push("ASSIGN_HITS");
+
+      if (state.pendingTacticalAction.spaceCannonDefensePending) {
+        const defenderId = planet ? playersWithGroundForces(planet).find((id) => id !== state.pendingTacticalAction!.playerId) : undefined;
+        if (owesHits) legal.push("ASSIGN_SPACE_CANNON_DEFENSE_HITS");
+        else if (defenderId === playerId) legal.push("USE_SPACE_CANNON_DEFENSE", "SKIP_SPACE_CANNON_DEFENSE");
+      } else if (owesHits) legal.push("ASSIGN_HITS");
       else if (inCombat && noPendingHits) legal.push("RESOLVE_COMBAT_ROUND");
     }
 
