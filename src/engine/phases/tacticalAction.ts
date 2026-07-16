@@ -4,6 +4,7 @@ import { PlayerId, SystemId } from "../types/ids";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
 import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
+import { computeSpaceCombatEntry } from "./spaceCombat";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -188,14 +189,16 @@ export function moveShips(
   // no stake in this system can still fire). If nobody qualifies, skip
   // straight through to spaceCombat/invasion as before.
   const spaceCannonResponders = getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
-  const afterSpaceCannonStep = playersWithShipsInSystem(workingState, activeSystemId).length > 1 ? "spaceCombat" : "invasion";
+  const willHaveCombat = playersWithShipsInSystem(workingState, activeSystemId).length > 1;
 
   workingState = {
     ...workingState,
     pendingTacticalAction:
       spaceCannonResponders.length > 0
         ? { ...pending, step: "spaceCannonOffense", spaceCannonOffenseRespondersRemaining: spaceCannonResponders }
-        : { ...pending, step: afterSpaceCannonStep },
+        : willHaveCombat
+          ? { ...pending, step: "spaceCombat", ...computeSpaceCombatEntry(workingState, rules, activeSystemId) }
+          : { ...pending, step: "invasion" },
   };
 
   return {
@@ -246,4 +249,4 @@ function addToSystem(
     spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: updatedStacks },
   };
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
-                                                           }
+}
