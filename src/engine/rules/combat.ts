@@ -104,9 +104,6 @@ export function resolveCombatRound(entries: CombatUnitEntry[], diceRolls: number
  * picking one for you.
  *
  * NOT accounted for yet, flagged rather than silently wrong:
- *  - Anti-Fighter Barrage's separate pre-round dice pool (RR 67.1, round 1
- *    only, fighters only) — a unit's *normal* combat dice (this function)
- *    fire every round regardless.
  *  - Anything from action cards, technologies, or faction/leader abilities
  *    that modifies combat: extra dice (e.g. Jol-Nar's Spektral tech gear),
  *    reroll effects (Fighter Prototype), per-roll +/-1 modifiers (Sardakk
@@ -377,4 +374,75 @@ export function buildSpaceCannonOffenseEntries(
 ): CombatUnitEntry[] {
   const entry = spaceCannonEntryForPlayer(state, rules, firingPlayerId, targetSystemId);
   return entry ? [entry] : [];
+}
+
+// ---------------------------------------------------------------------
+// RR 67.1 ANTI-FIGHTER BARRAGE — mandatory (not a choice) for whichever
+// combatants have AFB-capable ships, fires once at the very start of a
+// space combat, targeting only fighters. The dice pool itself is built the
+// same way normal combat dice are (per-ship abilityValues), just using
+// `antiFighterBarrage` instead of `combat` — the "fighters only" part is
+// enforced at hit-ASSIGNMENT time (see phases/spaceCombat.ts), not here.
+// ---------------------------------------------------------------------
+
+/** Every combatant in this system with at least 1 AFB-capable ship. */
+export function getAntiFighterBarrageParticipants(state: GameState, rules: RuleData, systemId: SystemId): PlayerId[] {
+  return playersWithShipsInSystem(state, systemId).filter(
+    (playerId) => buildAntiFighterBarrageEntries(state, rules, playerId, systemId).length > 0,
+  );
+}
+
+/** This one player's AFB dice pool in this system (single-entry array, matching resolveCombatRound's input shape) — empty if none of their ships have the ability. */
+export function buildAntiFighterBarrageEntries(
+  state: GameState,
+  rules: RuleData,
+  firingPlayerId: PlayerId,
+  systemId: SystemId,
+): CombatUnitEntry[] {
+  const system = state.systems[systemId];
+  if (!system) return [];
+  const player = state.players[firingPlayerId];
+  const stacks = (system.spaceUnitsByPlayer[firingPlayerId] ?? []) as UnitStack[];
+
+  let diceCount = 0;
+  let hitOn: number | null = null;
+  for (const stack of stacks) {
+    if (stack.count <= 0) continue;
+    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+    const afb = stats?.abilityValues?.antiFighterBarrage;
+    if (!afb) continue;
+    diceCount += stack.count * afb.dice;
+    hitOn = afb.value;
   }
+
+  if (diceCount === 0 || hitOn === null) return [];
+  return [{ playerId: firingPlayerId, diceCount, hitOn }];
+}
+
+// ---------------------------------------------------------------------
+// RR 44 SPACE CANNON DEFENSE — the defender's own optional choice, before
+// ground combat starts, to fire their PDS on the invaded planet at the
+// attacker's just-committed ground forces. Only the PDS physically ON that
+// planet count — unlike Space Cannon Offense, this doesn't extend to
+// adjacent systems (PDS II's `rangesToAdjacent` is about firing at ships
+// from a planet, not about defending a different planet than the one it's on).
+// ---------------------------------------------------------------------
+
+/** The defender's Space Cannon dice pool for defending this one planet — empty if they have no qualifying PDS there. */
+export function buildSpaceCannonDefenseEntries(
+  state: GameState,
+  rules: RuleData,
+  defenderId: PlayerId,
+  planet: PlanetState,
+): CombatUnitEntry[] {
+  const player = state.players[defenderId];
+  if (!player) return [];
+  const stacks = (planet.unitsByPlayer[defenderId] ?? []) as UnitStack[];
+
+  let diceCount = 0;
+  let hitOn: number | null = null;
+  for (const stack of stacks) {
+    if (stack.unitType !== "pds" || stack.count <= 0) continue;
+    const stats = getUnitStats(rules, player.factionId, "pds", player.unitUpgrades);
+    const sc = stats?.abilityValues?.spaceCannon;
+    if (!sc) co
