@@ -7,6 +7,7 @@ import {
   playersWithGroundForces,
   buildBombardmentEntries,
   buildGroundCombatEntries,
+  buildSpaceCannonDefenseEntries,
   resolveCombatRound,
   applyHitAssignments,
   planetHasShield,
@@ -25,6 +26,10 @@ import {
  *     choice of which contested planet resolves next (RR 44.4). Not tied
  *     to commit order, not tied to any previous pick — called again after
  *     each planet's combat ends, for as long as contested planets remain.
+ *     If the defender on that planet has a qualifying PDS there, this
+ *     opens a Space Cannon Defense window (their own optional choice,
+ *     USE_SPACE_CANNON_DEFENSE / SKIP_SPACE_CANNON_DEFENSE) before ground
+ *     combat's dice start rolling; skipped automatically if they have none.
  *  5. Ground combat itself for whichever planet is current
  *     (RESOLVE_COMBAT_ROUND / ASSIGN_HITS, dispatched here instead of
  *     spaceCombat.ts based on `pendingTacticalAction.currentInvasionPlanetId`
@@ -32,10 +37,9 @@ import {
  *     have one).
  *
  * NOT implemented yet, flagged rather than silently skipped:
- *  - Space Cannon Defense (RR 44's own defender-side step, before ground
- *    forces land) — this is the DEFENDER's optional choice to fire PDS at
- *    the incoming invasion force, same "always a choice, never automatic"
- *    principle as Bombardment. Not wired in at all yet.
+ *  - A card/ability granting a Space Cannon Defense roll to a unit that
+ *    doesn't actually have the ability — same category of gap as
+ *    PLAY_ACTION_CARD not existing yet.
  *  - Action cards / technologies / faction abilities that modify any of
  *    this — same scope cut as combat.ts's own note on this.
  *  - Transport capacity enforcement (see moveShips' own TODO).
@@ -295,6 +299,7 @@ export function finishInvasionCommits(
 export function startGroundCombat(
   state: GameState,
   action: { type: "START_GROUND_COMBAT"; playerId: PlayerId; targetPlanetId: PlanetId },
+  rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.playerId !== action.playerId) {
@@ -311,51 +316,63 @@ export function startGroundCombat(
     return { ok: false, error: `RR 44.4: ${action.targetPlanetId} isn't a contested planet awaiting ground combat.` };
   }
 
+  // RR 44's Space Cannon Defense: before ground combat starts, the defender
+  // (if they have a qualifying PDS on THIS planet) gets the choice to fire
+  // at the attacker's just-committed ground forces. Only relevant if
+  // there's an actual defender with qualifying units — skip straight to
+  // ground combat otherwise.
+  const system = state.systems[pending.systemId];
+  const planet = system.planets.find((p) => p.planetId === action.targetPlanetId)!;
+  const defenderId = playersWithGroundForces(planet).find((id) => id !== action.playerId);
+  const defenderQualifies = defenderId ? buildSpaceCannonDefenseEntries(state, rules, defenderId, planet).length > 0 : false;
+
   return {
     ok: true,
     state: {
       ...state,
-      pendingTacticalAction: {
-        ...pending,
-        currentInvasionPlanetId: action.targetPlanetId,
-        remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
-        combatRound: 1,
-        pendingHits: {},
-      },
+      pendingTacticalAction: defenderQualifies
+        ? {
+            ...pending,
+            currentInvasionPlanetId: action.targetPlanetId,
+            remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+            spaceCannonDefensePending: true,
+            pendingHits: {},
+          }
+        : {
+            ...pending,
+            currentInvasionPlanetId: action.targetPlanetId,
+            remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+            combatRound: 1,
+            pendingHits: {},
+          },
     },
     events: [],
   };
 }
 
-export function resolveGroundCombatRound(
+export function useSpaceCannonDefense(
   state: GameState,
-  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[] },
+  action: { type: "USE_SPACE_CANNON_DEFENSE"; playerId: PlayerId; diceRolls: number[] },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
-    return { ok: false, error: "RR 38.1: no ground combat currently in progress." };
+    return { ok: false, error: "RR 44: no ground combat window currently open." };
   }
-  if (pending.pendingHits && Object.keys(pending.pendingHits).length > 0) {
-    return { ok: false, error: "RR 38.2: the previous round's hits haven't all been assigned yet." };
+  if (!pending.spaceCannonDefensePending) {
+    return { ok: false, error: "RR 44: no Space Cannon Defense window currently open for this planet." };
   }
 
   const systemId = pending.systemId;
   const planetId = pending.currentInvasionPlanetId;
-  const system = state.systems[systemId];
-  const planet = system.planets.find((p) => p.planetId === planetId)!;
-
-  const combatants = playersWithGroundForces(planet);
-  if (!combatants.includes(action.playerId)) {
-    return { ok: false, error: "RR 38.1: only a player with ground forces in this combat can submit its dice roll." };
+  const planet = state.systems[systemId].planets.find((p) => p.planetId === planetId)!;
+  const defenderId = playersWithGroundForces(planet).find((id) => id !== pending.playerId);
+  if (defenderId !== action.playerId) {
+    return { ok: false, error: "RR 44: only the defending player can use Space Cannon Defense here." };
   }
 
-  let entries;
-  try {
-    entries = buildGroundCombatEntries(state, rules, planet);
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
+  const entries = buildSpaceCannonDefenseEntries(state, rules, action.playerId, planet);
+  if (entries.length === 0) return { ok: false, error: "This player has no qualifying Space Cannon units on this planet." };
 
   let result;
   try {
@@ -363,37 +380,62 @@ export function resolveGroundCombatRound(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+  const hits = result.hitsScoredByPlayer[action.playerId] ?? 0;
+  const events: GameEvent[] = [{ type: "SPACE_CANNON_DEFENSE_FIRED", playerId: action.playerId, systemId, planetId, hits }];
 
-  const [a, b] = combatants;
-  const pendingHits: Partial<Record<PlayerId, number>> = {};
-  if (result.hitsScoredByPlayer[a]) pendingHits[b] = result.hitsScoredByPlayer[a];
-  if (result.hitsScoredByPlayer[b]) pendingHits[a] = result.hitsScoredByPlayer[b];
+  let nextState: GameState = {
+    ...state,
+    pendingTacticalAction: {
+      ...pending,
+      spaceCannonDefensePending: false,
+      pendingHits: hits > 0 ? { [pending.playerId]: hits } : {},
+    },
+  };
 
-  const round = pending.combatRound ?? 1;
-  let nextState: GameState = { ...state, pendingTacticalAction: { ...pending, combatRound: round, pendingHits } };
-  const events: GameEvent[] = [
-    { type: "COMBAT_ROUND_RESOLVED", systemId, planetId, round, hitsScoredByPlayer: result.hitsScoredByPlayer },
-  ];
-
-  if (Object.keys(pendingHits).length === 0) {
-    const wrap = wrapUpGroundCombat(nextState);
-    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
+  if (hits === 0) {
+    nextState = { ...nextState, pendingTacticalAction: { ...nextState.pendingTacticalAction!, combatRound: 1 } };
   }
+
   return { ok: true, state: nextState, events };
 }
 
-export function assignGroundCombatHits(
+export function skipSpaceCannonDefense(
   state: GameState,
-  action: { type: "ASSIGN_HITS"; playerId: PlayerId; assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },
+  action: { type: "SKIP_SPACE_CANNON_DEFENSE"; playerId: PlayerId },
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
+    return { ok: false, error: "RR 44: no ground combat window currently open." };
+  }
+  if (!pending.spaceCannonDefensePending) {
+    return { ok: false, error: "RR 44: no Space Cannon Defense window currently open for this planet." };
+  }
+
+  const planet = state.systems[pending.systemId].planets.find((p) => p.planetId === pending.currentInvasionPlanetId)!;
+  const defenderId = playersWithGroundForces(planet).find((id) => id !== pending.playerId);
+  if (defenderId !== action.playerId) {
+    return { ok: false, error: "RR 44: only the defending player can decide on Space Cannon Defense here." };
+  }
+
+  return {
+    ok: true,
+    state: { ...state, pendingTacticalAction: { ...pending, spaceCannonDefensePending: false, combatRound: 1 } },
+    events: [{ type: "SPACE_CANNON_DEFENSE_SKIPPED", playerId: action.playerId }],
+  };
+}
+
+export function assignSpaceCannonDefenseHits(
+  state: GameState,
+  action: { type: "ASSIGN_SPACE_CANNON_DEFENSE_HITS"; playerId: PlayerId; assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
-    return { ok: false, error: "RR 38.2: no ground combat currently in progress." };
+    return { ok: false, error: "RR 44: no ground combat window currently open." };
   }
   const hitsOwed = pending.pendingHits?.[action.playerId];
   if (!hitsOwed || hitsOwed <= 0) {
-    return { ok: false, error: "This player has no pending hits to assign right now." };
+    return { ok: false, error: "This player has no pending Space Cannon Defense hits to assign." };
   }
 
   const systemId = pending.systemId;
@@ -404,7 +446,7 @@ export function assignGroundCombatHits(
   const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
   const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
-  if (!result.ok) return { ok: false, error: `RR 38.2: ${result.error}` };
+  if (!result.ok) return { ok: false, error: `RR 44: ${result.error}` };
 
   const events: GameEvent[] = [
     ...Array.from(result.destroyed.entries()).map(
@@ -416,76 +458,10 @@ export function assignGroundCombatHits(
   ];
 
   const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: result.stacks } };
-  const updatedSystem: SystemState = {
-    ...system,
-    planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
-  };
+  const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
 
   const remainingPendingHits = { ...pending.pendingHits };
   delete remainingPendingHits[action.playerId];
 
-  let nextState: GameState = {
-    ...state,
-    systems: { ...state.systems, [systemId]: updatedSystem },
-    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
-  };
-
-  if (Object.keys(remainingPendingHits).length === 0) {
-    const wrap = wrapUpGroundCombat(nextState);
-    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
-  }
-  return { ok: true, state: nextState, events };
-}
-
-// --- helpers ---------------------------------------------------------------
-
-function wrapUpGroundCombat(state: GameState): { state: GameState; events: GameEvent[] } {
-  const pending = state.pendingTacticalAction!;
-  const systemId = pending.systemId;
-  const planetId = pending.currentInvasionPlanetId!;
-  const system = state.systems[systemId];
-  const planet = system.planets.find((p) => p.planetId === planetId)!;
-
-  const survivors = playersWithGroundForces(planet);
-  const events: GameEvent[] = [];
-  let nextState = state;
-
-  if (survivors.length <= 1) {
-    const winner = survivors[0] ?? null;
-    if (winner) {
-      nextState = setPlanetController(nextState, systemId, planetId, winner);
-      events.push({ type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
-    }
-    events.push({ type: "GROUND_COMBAT_ENDED", systemId, planetId, survivingPlayerId: winner });
-
-    const queue = pending.remainingInvasionPlanetIds ?? [];
-    nextState = {
-      ...nextState,
-      pendingTacticalAction:
-        queue.length > 0
-          ? { ...pending, currentInvasionPlanetId: undefined, combatRound: undefined, pendingHits: {} }
-          : { playerId: pending.playerId, systemId, step: "production" },
-    };
-    return { state: nextState, events };
-  }
-
-  // Both sides still standing — next round, no retreat option in ground combat (RR 38).
-  nextState = {
-    ...nextState,
-    pendingTacticalAction: { ...pending, combatRound: (pending.combatRound ?? 1) + 1, pendingHits: {} },
-  };
-  return { state: nextState, events };
-}
-
-function setPlanetController(state: GameState, systemId: SystemId, planetId: PlanetId, controllerId: PlayerId): GameState {
-  const system = state.systems[systemId];
-  const planet = system.planets.find((p) => p.planetId === planetId);
-  if (!planet || planet.controllerId === controllerId) return state;
-
-  const updatedPlanet: PlanetState = { ...planet, controllerId };
-  const updatedSystem: SystemState = {
-    ...system,
-    planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
-  };
-  return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
-}
+  const nextState: GameState = {
+    ..
