@@ -280,6 +280,23 @@ export interface PendingTacticalAction {
    * assign), the tactical action moves on to spaceCombat/invasion.
    */
   spaceCannonOffenseRespondersRemaining?: PlayerId[];
+  /**
+   * RR 67.1: Anti-Fighter Barrage — mandatory (not optional like Space
+   * Cannon Offense) for whichever combatants have AFB-capable ships, fires
+   * once at the start of round 1 only, targeting only fighters. Lists who
+   * still has to submit their roll; combatRound stays undefined while this
+   * is non-empty, becoming 1 once it's empty (whether because everyone
+   * fired or because nobody ever qualified).
+   */
+  afbPendingPlayers?: PlayerId[];
+  /**
+   * RR 44 Space Cannon Defense: the defender's own optional choice, before
+   * ground combat starts, to fire their planet's PDS at the attacker's
+   * just-committed ground forces. True while waiting on that decision for
+   * the current invasion planet; cleared (fired or skipped) before ground
+   * combat's combatRound is set to 1.
+   */
+  spaceCannonDefensePending?: boolean;
 }
 
 export interface PendingAgendaVote {
