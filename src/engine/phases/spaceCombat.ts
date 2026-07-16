@@ -9,19 +9,28 @@ import {
   buildSpaceCombatEntries,
   resolveCombatRound,
   applyHitAssignments,
+  getAntiFighterBarrageParticipants,
+  buildAntiFighterBarrageEntries,
 } from "../rules/combat";
 
 /**
  * RR 78 STEP 3 — SPACE COMBAT (RR 67).
- * Three actions cover a round: ANNOUNCE_RETREAT (optional, before dice),
- * RESOLVE_COMBAT_ROUND (rolls dice), ASSIGN_HITS (each affected player
- * spends their hits). The round loops (combatRound += 1) until one side has
- * no ships left or a retreat actually executes; then the tactical action
- * moves on to "invasion" per RR 78's step order.
+ * Sequence per this file: (once, if anyone qualifies) Anti-Fighter Barrage
+ * — ANNOUNCE_RETREAT (optional, before dice) — RESOLVE_COMBAT_ROUND (rolls
+ * dice) — ASSIGN_HITS (each affected player spends their hits). The round
+ * loops (combatRound += 1) until one side has no ships left or a retreat
+ * actually executes; then the tactical action moves on to "invasion" per
+ * RR 78's step order.
+ *
+ * Entering this step (from tacticalAction.ts's moveShips, or from
+ * phases/spaceCannonOffense.ts once that step clears) always goes through
+ * computeSpaceCombatEntry below, so AFB eligibility is checked exactly once
+ * in one place regardless of which step led here.
  *
  * NOT implemented yet, flagged rather than silently skipped:
- *  - Anti-Fighter Barrage's separate pre-round dice pool (RR 67.1, round 1
- *    only, fighters only).
+ *  - A card/ability granting an AFB roll to a unit that doesn't actually
+ *    have the ability — same category of gap as PLAY_ACTION_CARD not
+ *    existing yet.
  *  - Capacity overflow: if this destroys every ship that was carrying
  *    fighters/ground forces, those cargo units should be destroyed too
  *    (RR "Capacity") unless another surviving ship here has spare capacity.
@@ -31,6 +40,125 @@ import {
  *  - 3+ players' ships in one combat (buildSpaceCombatEntries already
  *    throws rather than guess which 2 fight first).
  */
+
+/** Called whenever a tactical action's pendingTacticalAction is about to become step "spaceCombat", from wherever that transition happens — so AFB eligibility is computed exactly once, consistently. */
+export function computeSpaceCombatEntry(
+  state: GameState,
+  rules: RuleData,
+  systemId: SystemId,
+): { combatRound?: number; afbPendingPlayers?: PlayerId[]; pendingHits: Record<string, number> } {
+  const afbEligible = getAntiFighterBarrageParticipants(state, rules, systemId);
+  if (afbEligible.length === 0) {
+    return { combatRound: 1, pendingHits: {} };
+  }
+  return { afbPendingPlayers: afbEligible, pendingHits: {} };
+}
+
+export function useAntiFighterBarrage(
+  state: GameState,
+  action: { type: "USE_ANTI_FIGHTER_BARRAGE"; playerId: PlayerId; diceRolls: number[] },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "spaceCombat") {
+    return { ok: false, error: "RR 67.1: not currently in space combat." };
+  }
+  const afbPending = pending.afbPendingPlayers ?? [];
+  if (!afbPending.includes(action.playerId)) {
+    return { ok: false, error: "This player has no pending Anti-Fighter Barrage roll (already fired, or doesn't qualify)." };
+  }
+  if (Object.keys(pending.pendingHits ?? {}).length > 0) {
+    return { ok: false, error: "RR 67.1: resolve the previous combatant's AFB hits before the next one fires." };
+  }
+
+  const entries = buildAntiFighterBarrageEntries(state, rules, action.playerId, pending.systemId);
+  if (entries.length === 0) return { ok: false, error: "This player has no AFB-capable ships." };
+
+  let result;
+  try {
+    result = resolveCombatRound(entries, action.diceRolls);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  const hits = result.hitsScoredByPlayer[action.playerId] ?? 0;
+
+  const combatants = playersWithShipsInSystem(state, pending.systemId);
+  const opponentId = combatants.find((id) => id !== action.playerId) ?? null;
+  const remainingAfbPending = afbPending.filter((id) => id !== action.playerId);
+  const events: GameEvent[] = [{ type: "ANTI_FIGHTER_BARRAGE_FIRED", playerId: action.playerId, systemId: pending.systemId, hits }];
+
+  let nextState: GameState = {
+    ...state,
+    pendingTacticalAction: {
+      ...pending,
+      afbPendingPlayers: remainingAfbPending,
+      pendingHits: hits > 0 && opponentId ? { [opponentId]: hits } : {},
+    },
+  };
+
+  if (hits === 0 && remainingAfbPending.length === 0) {
+    nextState = beginCombatRoundsAfterAFB(nextState);
+  }
+
+  return { ok: true, state: nextState, events };
+}
+
+export function assignAntiFighterBarrageHits(
+  state: GameState,
+  action: { type: "ASSIGN_ANTI_FIGHTER_BARRAGE_HITS"; playerId: PlayerId; assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "spaceCombat") {
+    return { ok: false, error: "RR 67.1: not currently in space combat." };
+  }
+  const hitsOwed = pending.pendingHits?.[action.playerId];
+  if (!hitsOwed || hitsOwed <= 0) {
+    return { ok: false, error: "This player has no pending Anti-Fighter Barrage hits to assign." };
+  }
+  if (action.assignments.some((a) => a.unitType !== "fighter")) {
+    return { ok: false, error: "RR 67.1: Anti-Fighter Barrage can only hit fighters." };
+  }
+
+  const systemId = pending.systemId;
+  const system = state.systems[systemId];
+  const player = state.players[action.playerId];
+  const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
+
+  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  if (!result.ok) return { ok: false, error: `RR 67.1: ${result.error}` };
+
+  const events: GameEvent[] = [
+    ...Array.from(result.destroyed.entries()).map(
+      ([unitType, count]): GameEvent => ({ type: "UNITS_DESTROYED", playerId: action.playerId, systemId, unitType, count }),
+    ),
+    ...Array.from(result.flipped.entries()).map(
+      ([unitType, count]): GameEvent => ({ type: "UNIT_SUSTAINED_DAMAGE", playerId: action.playerId, systemId, unitType, count }),
+    ),
+  ];
+
+  const updatedSystem: SystemState = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: result.stacks } };
+  const remainingPendingHits = { ...pending.pendingHits };
+  delete remainingPendingHits[action.playerId];
+
+  let nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
+  };
+
+  const afbPending = pending.afbPendingPlayers ?? [];
+  if (afbPending.length === 0 && Object.keys(remainingPendingHits).length === 0) {
+    nextState = beginCombatRoundsAfterAFB(nextState);
+  }
+
+  return { ok: true, state: nextState, events };
+}
+
+function beginCombatRoundsAfterAFB(state: GameState): GameState {
+  const pending = state.pendingTacticalAction!;
+  return { ...state, pendingTacticalAction: { ...pending, combatRound: 1, afbPendingPlayers: undefined } };
+}
 
 export function announceRetreat(
   state: GameState,
@@ -81,6 +209,9 @@ export function resolveSpaceCombatRound(
   if (!pending) return { ok: false, error: "RR 67.5: no tactical action in progress." };
   if (pending.step !== "spaceCombat") {
     return { ok: false, error: `RR 67.5: expected step "spaceCombat", got "${pending.step}".` };
+  }
+  if ((pending.afbPendingPlayers ?? []).length > 0) {
+    return { ok: false, error: "RR 67.1: resolve Anti-Fighter Barrage before rolling normal combat dice." };
   }
   if (pending.pendingHits && Object.keys(pending.pendingHits).length > 0) {
     return { ok: false, error: "RR 67.6: the previous round's hits haven't all been assigned yet." };
@@ -257,4 +388,4 @@ function mergeStacks(a: UnitStack[], b: UnitStack[]): UnitStack[] {
     }
   }
   return merged;
-}
+    }
