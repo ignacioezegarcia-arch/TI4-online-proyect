@@ -35,11 +35,11 @@ import { playersWithShipsInSystem } from "./combat";
  *    destruction die-roll that also happens is deliberately NOT applied
  *    here — see anomalies.ts's doc comment on destructionCheck for why.
  *
- * Does not account for: technologies that change these rules per-ship
- * (Antimass Deflectors past asteroid fields, Wormhole generators, etc.) —
- * those are a RuleData/per-unit concern layered on top later, same as the
- * TODO already flagged on rules/adjacency.ts for Thunder's Edge ingress/
- * egress adjacency.
+ * Antimass Deflectors (ignore asteroid fields, both entering and passing
+ * through) and Light Wave Deflector (ignore enemy-fleet blocking mid-path)
+ * are opted into via the `techs` param below — the caller (tacticalAction.ts's
+ * moveShips) is what actually checks the moving player's owned technologies
+ * and passes the right flags in; this function only applies them.
  */
 export function canShipReachSystem(
   state: GameState,
@@ -47,6 +47,7 @@ export function canShipReachSystem(
   from: SystemId,
   to: SystemId,
   baseMoveValue: number,
+  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean } = {},
 ): boolean {
   if (from === to) return true;
 
@@ -84,12 +85,13 @@ export function canShipReachSystem(
         const neighborAnomalies = state.systems[neighborId]?.anomalies ?? [];
 
         if (isDestination) {
-          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true })) continue;
+          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields: techs.ignoreAsteroidFields })) continue;
           return true;
         }
 
-        if (!canShipPassThroughTile(neighborAnomalies)) continue;
-        const blockedByEnemyFleet = playersWithShipsInSystem(state, neighborId).some((p) => p !== playerId);
+        if (!canShipPassThroughTile(neighborAnomalies, techs.ignoreAsteroidFields)) continue;
+        const blockedByEnemyFleet =
+          !techs.ignoreEnemyFleets && playersWithShipsInSystem(state, neighborId).some((p) => p !== playerId);
         if (blockedByEnemyFleet) continue;
 
         const riftUsed = current.riftUsed || hasGravityRift(neighborAnomalies);
