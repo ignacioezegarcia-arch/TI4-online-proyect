@@ -1,5 +1,5 @@
 import { GameState, PlanetState, UnitStack } from "../types/GameState";
-import { PlayerId, SystemId, FactionId, UnitUpgradeId } from "../types/ids";
+import { PlayerId, SystemId, FactionId, UnitUpgradeId, asTechId } from "../types/ids";
 import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus } from "./anomalies";
@@ -104,6 +104,9 @@ export function resolveCombatRound(entries: CombatUnitEntry[], diceRolls: number
  * picking one for you.
  *
  * NOT accounted for yet, flagged rather than silently wrong:
+ *  - Anti-Fighter Barrage's separate pre-round dice pool (RR 67.1, round 1
+ *    only, fighters only) — a unit's *normal* combat dice (this function)
+ *    fire every round regardless.
  *  - Anything from action cards, technologies, or faction/leader abilities
  *    that modifies combat: extra dice (e.g. Jol-Nar's Spektral tech gear),
  *    reroll effects (Fighter Prototype), per-roll +/-1 modifiers (Sardakk
@@ -200,11 +203,14 @@ export function buildBombardmentEntries(
   rules: RuleData,
   systemId: SystemId,
   attackerId: PlayerId,
+  /** RR "Plasma Scoring": which of the attacker's own Bombardment-capable unit types gets the +1 die — the player's own choice (matters when they have more than one qualifying type with different hitOn values), so the caller must supply it explicitly rather than this function guessing. Ignored if the player doesn't own the tech, or doesn't actually have that unit type bombarding here. */
+  plasmaScoringUnitType?: UnitType,
 ): CombatUnitEntry[] {
   const system = state.systems[systemId];
   if (!system) return [];
   const player = state.players[attackerId];
   const stacks = (system.spaceUnitsByPlayer[attackerId] ?? []) as UnitStack[];
+  const applyPlasmaScoringTo = player.technologies.includes(asTechId("plasma_scoring")) ? plasmaScoringUnitType : undefined;
 
   const entries: CombatUnitEntry[] = [];
   for (const stack of stacks) {
@@ -212,7 +218,11 @@ export function buildBombardmentEntries(
     const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
     const bombardment = stats?.abilityValues?.bombardment;
     if (!bombardment) continue;
-    entries.push({ playerId: attackerId, diceCount: stack.count * bombardment.dice, hitOn: bombardment.value });
+    let diceCount = stack.count * bombardment.dice;
+    if (applyPlasmaScoringTo === stack.unitType) {
+      diceCount += 1;
+    }
+    entries.push({ playerId: attackerId, diceCount, hitOn: bombardment.value });
   }
   return entries;
 }
@@ -315,17 +325,26 @@ export function applyHitAssignments(
 // can never disagree with each other.
 // ---------------------------------------------------------------------
 
-function spaceCannonEntryForPlayer(
+/**
+ * This one player's Space Cannon dice pools against a given target system,
+ * one CombatUnitEntry PER qualifying unit type (not combined into one) —
+ * Space Cannon isn't PDS-exclusive (some faction units carry it too, per
+ * their own sheet), and two different unit types can have different
+ * hitOn/dice values, so they can't share a single entry the way same-type
+ * PDS stacks can.
+ */
+function spaceCannonEntriesForPlayer(
   state: GameState,
   rules: RuleData,
   firingPlayerId: PlayerId,
   targetSystemId: SystemId,
-): CombatUnitEntry | null {
+  targetPlayerId: PlayerId,
+  plasmaScoringUnitType?: UnitType,
+): CombatUnitEntry[] {
   const player = state.players[firingPlayerId];
-  if (!player) return null;
+  if (!player) return [];
 
-  let diceCount = 0;
-  let hitOn: number | null = null;
+  const perType = new Map<UnitType, { diceCount: number; hitOn: number }>();
 
   const scanSystem = (systemId: SystemId, requireRangesToAdjacent: boolean) => {
     const system = state.systems[systemId];
@@ -333,13 +352,14 @@ function spaceCannonEntryForPlayer(
     for (const planet of system.planets) {
       const stacks = (planet.unitsByPlayer[firingPlayerId] ?? []) as UnitStack[];
       for (const stack of stacks) {
-        if (stack.unitType !== "pds" || stack.count <= 0) continue;
-        const stats = getUnitStats(rules, player.factionId, "pds", player.unitUpgrades);
+        if (stack.count <= 0) continue;
+        const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
         const sc = stats?.abilityValues?.spaceCannon;
         if (!sc) continue;
         if (requireRangesToAdjacent && !sc.rangesToAdjacent) continue;
-        diceCount += stack.count * sc.dice;
-        hitOn = sc.value; // every PDS shares the same faction/upgrade sheet, so this is consistent across stacks
+        const existing = perType.get(stack.unitType);
+        if (existing) existing.diceCount += stack.count * sc.dice;
+        else perType.set(stack.unitType, { diceCount: stack.count * sc.dice, hitOn: sc.value });
       }
     }
   };
@@ -349,11 +369,31 @@ function spaceCannonEntryForPlayer(
     scanSystem(adjId, true);
   }
 
-  if (diceCount === 0 || hitOn === null) return null;
-  return { playerId: firingPlayerId, diceCount, hitOn };
+  if (perType.size === 0) return [];
+
+  // RR "Antimass Deflectors": if the TARGET owns it, apply -1 to each
+  // attacking die (expressed here as +1 to the shooter's hitOn threshold —
+  // mathematically identical, and keeps resolveCombatRound's own dice-vs-
+  // threshold model the single source of truth for what counts as a hit).
+  const antimassBonus = state.players[targetPlayerId]?.technologies.includes(asTechId("antimass_deflectors")) ? 1 : 0;
+  // RR "Plasma Scoring": the FIRING player's own choice of which qualifying
+  // unit type gets the +1 die — matters whenever they have 2+ types with
+  // different hitOn values, so the caller must supply it explicitly (see
+  // this function's own callers) rather than guessing which one benefits most.
+  const applyPlasmaScoringTo = player.technologies.includes(asTechId("plasma_scoring")) ? plasmaScoringUnitType : undefined;
+
+  const entries: CombatUnitEntry[] = [];
+  for (const [unitType, { diceCount, hitOn }] of perType) {
+    entries.push({
+      playerId: firingPlayerId,
+      diceCount: diceCount + (applyPlasmaScoringTo === unitType ? 1 : 0),
+      hitOn: hitOn + antimassBonus,
+    });
+  }
+  return entries;
 }
 
-/** RR 77: every player (excluding the active player themselves) with at least one qualifying PDS — in the system, or PDS II range-upgraded in an adjacent one. */
+/** RR 77: every player (excluding the active player themselves) with at least one qualifying Space-Cannon-capable unit — in the system, or range-upgraded (e.g. PDS II) in an adjacent one. */
 export function getSpaceCannonOffenseEligiblePlayers(
   state: GameState,
   rules: RuleData,
@@ -362,18 +402,19 @@ export function getSpaceCannonOffenseEligiblePlayers(
 ): PlayerId[] {
   return Object.keys(state.players)
     .filter((id): id is PlayerId => id !== activePlayerId && !state.players[id as PlayerId].eliminated)
-    .filter((id) => spaceCannonEntryForPlayer(state, rules, id, targetSystemId) !== null);
+    .filter((id) => spaceCannonEntriesForPlayer(state, rules, id, targetSystemId, activePlayerId).length > 0);
 }
 
-/** This one player's Space Cannon Offense dice pool, as a single-entry array (matches resolveCombatRound's expected input shape) — empty if they don't actually qualify. */
+/** This one player's full Space Cannon Offense dice pool (rules.combat.ts) — see spaceCannonEntriesForPlayer for why this can be more than one entry. */
 export function buildSpaceCannonOffenseEntries(
   state: GameState,
   rules: RuleData,
   firingPlayerId: PlayerId,
   targetSystemId: SystemId,
+  targetPlayerId: PlayerId,
+  plasmaScoringUnitType?: UnitType,
 ): CombatUnitEntry[] {
-  const entry = spaceCannonEntryForPlayer(state, rules, firingPlayerId, targetSystemId);
-  return entry ? [entry] : [];
+  return spaceCannonEntriesForPlayer(state, rules, firingPlayerId, targetSystemId, targetPlayerId, plasmaScoringUnitType);
 }
 
 // ---------------------------------------------------------------------
@@ -434,15 +475,41 @@ export function buildSpaceCannonDefenseEntries(
   rules: RuleData,
   defenderId: PlayerId,
   planet: PlanetState,
+  attackerId: PlayerId,
+  plasmaScoringUnitType?: UnitType,
 ): CombatUnitEntry[] {
   const player = state.players[defenderId];
   if (!player) return [];
   const stacks = (planet.unitsByPlayer[defenderId] ?? []) as UnitStack[];
 
-  let diceCount = 0;
-  let hitOn: number | null = null;
+  const perType = new Map<UnitType, { diceCount: number; hitOn: number }>();
   for (const stack of stacks) {
-    if (stack.unitType !== "pds" || stack.count <= 0) continue;
-    const stats = getUnitStats(rules, player.factionId, "pds", player.unitUpgrades);
+    if (stack.count <= 0) continue;
+    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
     const sc = stats?.abilityValues?.spaceCannon;
-    if (!sc) co
+    if (!sc) continue;
+    const existing = perType.get(stack.unitType);
+    if (existing) existing.diceCount += stack.count * sc.dice;
+    else perType.set(stack.unitType, { diceCount: stack.count * sc.dice, hitOn: sc.value });
+  }
+
+  if (perType.size === 0) return [];
+  // RR "Antimass Deflectors": if the ATTACKER (whose ground forces are
+  // being fired at here) owns it, apply -1 to each attacking die
+  // (expressed as +1 to hitOn — see spaceCannonEntriesForPlayer's own note
+  // on why this is mathematically identical).
+  const antimassBonus = state.players[attackerId]?.technologies.includes(asTechId("antimass_deflectors")) ? 1 : 0;
+  // RR "Plasma Scoring": the DEFENDER's own choice of which qualifying
+  // unit type gets the +1 die — see spaceCannonEntriesForPlayer's own note.
+  const applyPlasmaScoringTo = player.technologies.includes(asTechId("plasma_scoring")) ? plasmaScoringUnitType : undefined;
+
+  const entries: CombatUnitEntry[] = [];
+  for (const [unitType, { diceCount, hitOn }] of perType) {
+    entries.push({
+      playerId: defenderId,
+      diceCount: diceCount + (applyPlasmaScoringTo === unitType ? 1 : 0),
+      hitOn: hitOn + antimassBonus,
+    });
+  }
+  return entries;
+}
