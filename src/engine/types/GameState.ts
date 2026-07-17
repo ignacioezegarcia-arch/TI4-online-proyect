@@ -119,7 +119,10 @@ export interface Player {
   unitUpgrades: UnitUpgradeId[]; // owned unit upgrades (RR 86)
 
   actionCards: ActionCardId[]; // hidden hand, max 7 (RR 2.4)
-  promissoryNotes: PromissoryNoteId[]; // hand of notes received from others, plus own unplayed ones conceptually always "available"
+  /** RR: notes currently in this player's HAND — tradeable (max 1 per transaction), hideable from other players. Includes this player's own not-yet-traded-away notes AND any received from others (received notes stay tradeable too, "including those from other players" — RR). Ownership (whose color/faction each note matches) is NOT this list; see GameState.promissoryNoteInstances for that. */
+  promissoryNotesInHand: PromissoryNoteId[];
+  /** RR: notes placed face-up when received — "Support for the Throne", "Alliance", and some faction-specific notes (per each note's own placeInPlayArea flag). These can no longer be traded; they sit here until their own trigger condition returns them to their original owner. */
+  promissoryNotesInPlayArea: PromissoryNoteId[];
   secretObjectives: ObjectiveId[]; // unscored secret objectives held, max 3 total incl. scored (RR 52.21)
 
   leaders: { leaderId: LeaderId; locked: boolean; exhausted: boolean }[]; // PoK/TE agents/commanders/heroes
@@ -201,6 +204,20 @@ export interface GameState {
   };
   /** RR 35.9: remaining shuffled relic ids. */
   relicDeck?: RelicId[];
+  /**
+   * RR: which player owns each promissory note in THIS game, and its
+   * display info — populated once at setup (see rules/promissoryNotes.ts's
+   * initializePromissoryNotes) from RuleData's generic templates + faction
+   * notes, combined with each player's actual assigned color/faction.
+   * Generic notes' concrete instance id is `${templateId}_${color}` (e.g.
+   * "ceasefire_red"); faction notes reuse their own id from
+   * RuleData.factionPromissoryNotes. Ownership never changes even if the
+   * owner is later eliminated (RR's elimination cleanup is a separate,
+   * not-yet-built concern) — this is just "whose color/faction was this
+   * printed for", not "who currently holds it" (see promissoryNotesInHand/
+   * promissoryNotesInPlayArea on Player for that).
+   */
+  promissoryNoteInstances?: Record<PromissoryNoteId, { ownerId: PlayerId; name: string; timing: string; effect: string; placeInPlayArea: boolean }>;
   /**
    * RR 70.1: per-player scoring state for the status phase currently in
    * progress — reset when the action phase ends and this phase begins.
