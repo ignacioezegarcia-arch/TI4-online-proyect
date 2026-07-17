@@ -20,6 +20,8 @@ import {
   buildUnitUpgradeTechDataLookup,
   buildFactionTechIds,
   buildExplorationCardsLookup,
+  buildGenericPromissoryNotesLookup,
+  buildFactionPromissoryNotesLookup,
 } from "../engine/rules/ruleDataMapping";
 
 import unitsFile from "../../data/units.json";
@@ -29,6 +31,7 @@ import objectivesFile from "../../data/objectives.json";
 import technologiesFile from "../../data/technologies.json";
 import unitUpgradesFile from "../../data/unitUpgrades.json";
 import explorationCardsFile from "../../data/explorationCards.json";
+import promissoryNotesFile from "../../data/promissoryNotes.json";
 
 // Vite-friendly way to "dynamically" import one of many known JSON files:
 // eagerly globs all faction files at build time, keyed by their path, then
@@ -42,6 +45,8 @@ const factionFiles = import.meta.glob("../../data/factions/*.json", { eager: tru
       commodities?: number;
       breakthrough?: { synergy?: { colors?: [string, string] } };
       factionTechnologies?: { id: string }[];
+      promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
+      promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
       units?: Record<string, Partial<RawUnitEntry>>;
     };
   }
@@ -60,7 +65,7 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
 
   const factionUnits: Record<FactionId, FactionUnitStats> = {};
   const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
-  const usedFactionFiles: { factionTechnologies?: { id: string }[] }[] = [];
+  const usedFactionFiles: (Parameters<typeof buildFactionPromissoryNotesLookup>[0][number] & { factionTechnologies?: { id: string }[] })[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile = findFactionFile(rawFactionId);
@@ -114,5 +119,9 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     ),
     factionTechIds: buildFactionTechIds(usedFactionFiles),
     explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
+    genericPromissoryNoteTemplates: buildGenericPromissoryNotesLookup(
+      promissoryNotesFile as Parameters<typeof buildGenericPromissoryNotesLookup>[0],
+    ),
+    factionPromissoryNotes: buildFactionPromissoryNotesLookup(usedFactionFiles),
   };
 }
