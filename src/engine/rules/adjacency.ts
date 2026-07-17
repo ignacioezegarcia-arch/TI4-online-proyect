@@ -1,5 +1,6 @@
 import { GameState } from "../types/GameState";
-import { SystemId } from "../types/ids";
+import { SystemId, asSystemId } from "../types/ids";
+import { RuleData } from "../types/RuleData";
 
 /**
  * RR 6 ADJACENCY.
@@ -32,4 +33,30 @@ export function getAdjacentSystems(state: GameState, systemId: SystemId): System
 
 export function isAdjacent(state: GameState, a: SystemId, b: SystemId): boolean {
   return getAdjacentSystems(state, a).includes(b);
+}
+
+/**
+ * RR PoK "Wormhole Nexus": starts inactive (gamma-only wormhole, so it's
+ * only adjacent to other gamma systems). The FIRST time a player moves or
+ * places a unit into it, OR gains control of its planet (Mallice) —
+ * whichever happens first — it flips active (alpha+beta+gamma), becoming
+ * adjacent to any system with any of those three wormhole types. Call this
+ * after either of those two triggers; it's a no-op if there's no Nexus in
+ * this game (Base-only, or already active).
+ *
+ * Deliberately just flips SystemState.wormholes — getAdjacentSystems above
+ * already re-reads that live on every query, so nothing else needs to
+ * change for the new adjacency to take effect immediately.
+ */
+export function maybeActivateWormholeNexus(state: GameState, rules: RuleData, triggeringSystemId: SystemId): GameState {
+  const nexusId = rules.wormholeNexusSystemId ? asSystemId(rules.wormholeNexusSystemId) : null;
+  if (!nexusId || triggeringSystemId !== nexusId) return state;
+
+  const system = state.systems[nexusId];
+  if (!system || system.wormholes.length > 1) return state; // no Nexus placed this game, or already active
+
+  return {
+    ...state,
+    systems: { ...state.systems, [nexusId]: { ...system, wormholes: ["alpha", "beta", "gamma"] } },
+  };
 }
