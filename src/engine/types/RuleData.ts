@@ -1,5 +1,5 @@
 import { FactionId, AgendaId, ObjectiveId, PlanetId, TechId, UnitUpgradeId } from "./ids";
-import { UnitAbility, UnitType } from "./enums";
+import { ObjectiveKind, UnitAbility, UnitType } from "./enums";
 
 /**
  * Static, game-content data the engine's pure functions read but never
@@ -62,6 +62,8 @@ export interface ObjectiveStaticData {
   checkParams: Record<string, unknown>;
   /** RR 52.3: when this objective can legally be scored — most secrets are "statusPhase" like public objectives, but several score opportunistically during "actionPhase" or "agendaPhase" instead. */
   timing: "actionPhase" | "statusPhase" | "agendaPhase";
+  /** RR 52.1: publicI/publicII/secret — needed at setup to split rules.objectives back out into the right starting decks (see setup/createGame.ts's shuffleAndSeedDecks). */
+  kind: ObjectiveKind;
 }
 
 export interface RuleData {
@@ -115,10 +117,23 @@ export interface RuleData {
   >;
   /** RR: each faction's own promissory note(s) (data/factions/*.json's promissoryNote field) — usually 1 per faction, 2 for Empyrean. Unlike generic notes, the faction's name is already baked into the text literally (no placeholder), since it never changes. */
   factionPromissoryNotes: Record<FactionId, { id: string; name: string; timing: string; effect: string; placeInPlayArea: boolean }[]>;
+  /** RR "Gather Starting Components" (setup): each faction's starting unit loadout (data/factions/*.json's startingUnits), keyed by the SAME camelCase keys the raw data already uses (e.g. "spaceDock", not "space_dock") — see setup/createGame.ts's own note on why this one field keeps that inconsistency instead of normalizing to UnitType's snake_case. Plain `string` keys/values (not FactionId/TechId brands) — same reason as factionTechIds above: this is a straight aggregation, reading it back out via a FactionId/TechId still works fine since those are subtypes of string. */
+  startingUnits: Record<string, Record<string, number>>;
+  /** RR "Gather Starting Components": each faction's starting (non-unit-upgrade) technologies (data/factions/*.json's startingTechnologies). */
+  startingTechnologies: Record<string, string[]>;
+  /** Every action card id (data/actionCards.json) — just enough to seed/shuffle the deck at setup; playing a card's actual effect is the same deferred-content bucket as agenda/objective effect text. */
+  allActionCardIds: string[];
+  /** Every relic id (data/relics.json) — just enough to seed/shuffle the relic deck at setup; a relic's own ability isn't resolved anywhere yet (same deferred-content bucket), only PURGE_RELIC_FRAGMENTS drawing one is implemented. */
+  allRelicIds: string[];
+  /** Which SystemId (tile id) is each faction's home system (data/tiles.json's tile-level homeFaction) — needed at setup, before any board has been generated, to know where to place a player's starting units/planets. Plain string keys/values, same reason as startingUnits/startingTechnologies above. */
+  homeSystemByFaction: Record<string, string>;
+  /** Which SystemId (tile id) is Mecatol Rex — needed at setup (custodians token placement, map generation's center slot) without hardcoding "18" anywhere as a magic number. */
+  mecatolSystemId: string;
   // TODO as later phases need them: actionCards, agendas/objectives effect
   // text, strategyCard primary/secondary text, faction abilityIds -> effect
-  // implementations. (technologies, explorationCards, relics, and generic +
-  // faction promissoryNotes are all wired in above already.)
+  // implementations. (technologies, explorationCards, relics, generic +
+  // faction promissoryNotes, and startingUnits/startingTechnologies are all
+  // wired in above already.)
 }
 
 /**
