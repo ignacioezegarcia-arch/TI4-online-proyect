@@ -190,6 +190,7 @@ export function assignBombardmentHits(
 export function commitGroundForces(
   state: GameState,
   action: { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; units: { unitType: UnitType; count: number }[] },
+  rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.playerId !== action.playerId) {
@@ -256,7 +257,7 @@ export function commitGroundForces(
     }
   } else {
     // Uncontested landing — establish control immediately (RR 44.5), no combat needed.
-    nextState = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId);
+    nextState = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules);
     events.push({ type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId: action.targetPlanetId, playerId: action.playerId });
   }
 
@@ -463,5 +464,4 @@ export function assignSpaceCannonDefenseHits(
   const remainingPendingHits = { ...pending.pendingHits };
   delete remainingPendingHits[action.playerId];
 
-  const nextState: GameState = {
-    ..
+  const nextS
