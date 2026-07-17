@@ -1,8 +1,8 @@
 import { GameState, PendingTacticalAction, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId } from "../types/ids";
+import { PlayerId, SystemId, asTechId } from "../types/ids";
 import { UnitType } from "../types/enums";
-import { RuleData } from "../types/RuleData";
+import { RuleData, getUnitStats } from "../types/RuleData";
 import { isAdjacent } from "../rules/adjacency";
 import {
   playersWithShipsInSystem,
@@ -303,18 +303,102 @@ export function assignHits(
   const remainingPendingHits = { ...pending.pendingHits };
   delete remainingPendingHits[action.playerId];
 
+  // RR "Duranium Armor": the player's OWN choice, made right after they
+  // assign this round's hits — repair (un-flip) 1 unit that has Sustain
+  // Damage AND was ALREADY damaged BEFORE this round's hits were assigned
+  // (checked against `stacks`, the pre-assignment snapshot — a unit that
+  // just got flipped damaged by this very round's hits doesn't qualify).
+  // Which unit (if more than one qualifies) is the player's call, not
+  // automatic — see useDuraniumArmor/skipDuraniumArmor below. The round
+  // can't wrap up until every such decision (and every pendingHits entry)
+  // is resolved.
+  const eligibleForDuraniumArmor =
+    player.technologies.includes(asTechId("duranium_armor")) &&
+    stacks.some((s) => s.damagedCount > 0 && (getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades)?.abilities.includes("sustainDamage") ?? false));
+
+  const duraniumArmorPendingPlayers = eligibleForDuraniumArmor
+    ? [...(pending.duraniumArmorPendingPlayers ?? []), action.playerId]
+    : pending.duraniumArmorPendingPlayers;
+
   let nextState: GameState = {
     ...state,
     systems: { ...state.systems, [systemId]: updatedSystem },
-    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
+    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, duraniumArmorPendingPlayers },
   };
 
-  if (Object.keys(remainingPendingHits).length === 0) {
+  if (Object.keys(remainingPendingHits).length === 0 && (duraniumArmorPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpCombatRound(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
 
   return { ok: true, state: nextState, events };
+}
+
+export function useDuraniumArmor(
+  state: GameState,
+  action: { type: "USE_DURANIUM_ARMOR"; playerId: PlayerId; unitType: UnitType },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "spaceCombat") {
+    return { ok: false, error: "RR: not currently in space combat." };
+  }
+  if (!pending.duraniumArmorPendingPlayers?.includes(action.playerId)) {
+    return { ok: false, error: "This player has no pending Duranium Armor decision right now." };
+  }
+
+  const systemId = pending.systemId;
+  const system = state.systems[systemId];
+  const player = state.players[action.playerId];
+  const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
+  const stack = stacks.find((s) => s.unitType === action.unitType);
+  if (!stack || stack.damagedCount <= 0) {
+    return { ok: false, error: `No damaged ${action.unitType} to repair.` };
+  }
+  const unitStats = getUnitStats(rules, player.factionId, action.unitType, player.unitUpgrades);
+  if (!unitStats?.abilities.includes("sustainDamage")) {
+    return { ok: false, error: `RR 76: ${action.unitType} doesn't have Sustain Damage.` };
+  }
+
+  const updatedStacks = stacks.map((s) => (s.unitType === action.unitType ? { ...s, damagedCount: s.damagedCount - 1 } : s));
+  const updatedSystem: SystemState = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: updatedStacks } };
+  const remainingPending = pending.duraniumArmorPendingPlayers.filter((id) => id !== action.playerId);
+
+  let nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    pendingTacticalAction: { ...pending, duraniumArmorPendingPlayers: remainingPending },
+  };
+  const events: GameEvent[] = [{ type: "UNIT_REPAIRED", playerId: action.playerId, systemId, unitType: action.unitType, count: 1 }];
+
+  if (Object.keys(nextState.pendingTacticalAction!.pendingHits ?? {}).length === 0 && remainingPending.length === 0) {
+    const wrap = wrapUpCombatRound(nextState, rules);
+    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
+  }
+  return { ok: true, state: nextState, events };
+}
+
+export function skipDuraniumArmor(
+  state: GameState,
+  action: { type: "SKIP_DURANIUM_ARMOR"; playerId: PlayerId },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "spaceCombat") {
+    return { ok: false, error: "RR: not currently in space combat." };
+  }
+  if (!pending.duraniumArmorPendingPlayers?.includes(action.playerId)) {
+    return { ok: false, error: "This player has no pending Duranium Armor decision right now." };
+  }
+
+  const remainingPending = pending.duraniumArmorPendingPlayers.filter((id) => id !== action.playerId);
+  let nextState: GameState = { ...state, pendingTacticalAction: { ...pending, duraniumArmorPendingPlayers: remainingPending } };
+
+  if (Object.keys(pending.pendingHits ?? {}).length === 0 && remainingPending.length === 0) {
+    const wrap = wrapUpCombatRound(nextState, rules);
+    return { ok: true, state: wrap.state, events: wrap.events };
+  }
+  return { ok: true, state: nextState, events: [] };
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -388,4 +472,4 @@ function mergeStacks(a: UnitStack[], b: UnitStack[]): UnitStack[] {
     }
   }
   return merged;
-    }
+}
