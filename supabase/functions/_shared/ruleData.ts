@@ -27,6 +27,10 @@ import {
   buildExplorationCardsLookup,
   buildGenericPromissoryNotesLookup,
   buildFactionPromissoryNotesLookup,
+  buildStartingDataLookup,
+  buildActionCardIds,
+  buildRelicIds,
+  buildHomeSystemsLookup,
 } from "./engine/rules/ruleDataMapping.ts";
 
 interface RawFactionFile {
@@ -36,4 +40,56 @@ interface RawFactionFile {
   factionTechnologies?: { id: string }[];
   promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
   promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
-  units?: Record<string, Partial
+  startingUnits?: Record<string, number>;
+  startingTechnologies?: string[];
+  units?: Record<string, Partial<RawUnitEntry> & { name?: string }>;
+  // factionSpecificUnits intentionally not consumed yet — its `versions[]`
+  // entries use the same schema as units.json, but wiring "which version
+  // is currently active" needs researched-tech tracking on Player that
+  // isn't built yet either.
+}
+
+/**
+ * Loads and shapes RuleData for exactly the factions in play — no reason to
+ * parse every faction file on every request.
+ */
+export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
+  const unitsFile = JSON.parse(await Deno.readTextFile(new URL("./data/units.json", import.meta.url)));
+  const baseUnitsById = new Map<string, RawUnitEntry>(unitsFile.units.map((u: RawUnitEntry) => [u.id, u]));
+
+  const factionUnits: Record<FactionId, FactionUnitStats> = {};
+  const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
+  const usedFactionFiles: RawFactionFile[] = [];
+
+  for (const rawFactionId of factionIds) {
+    const factionFile: RawFactionFile = JSON.parse(
+      await Deno.readTextFile(new URL(`./data/factions/${rawFactionId}.json`, import.meta.url)),
+    );
+    usedFactionFiles.push(factionFile);
+    const synergyColors = factionFile.breakthrough?.synergy?.colors;
+    factions[asFactionId(rawFactionId)] = {
+      commoditiesMax: factionFile.commodities ?? 0,
+      breakthroughSynergy: synergyColors ? [synergyColors[0], synergyColors[1]] : null,
+    };
+
+    const baseUnits: Record<string, ReturnType<typeof unitEntryToStats> | undefined> = {};
+    for (const [unitType, entry] of baseUnitsById) {
+      baseUnits[unitType] = unitEntryToStats(entry, unitType as UnitType);
+    }
+
+    // Faction-sheet overrides for flagship/mech (units.json has no generic
+    // entry for these — they're only ever faction-specific).
+    for (const [unitType, override] of Object.entries(factionFile.units ?? {})) {
+      baseUnits[unitType] = unitEntryToStats(override, unitType as UnitType);
+    }
+
+    factionUnits[asFactionId(rawFactionId)] = {
+      factionId: asFactionId(rawFactionId),
+      baseUnits: baseUnits as FactionUnitStats["baseUnits"],
+    };
+  }
+
+  const unitUpgradesFile = JSON.parse(await Deno.readTextFile(new URL("./data/unitUpgrades.json", import.meta.url)));
+
+  // Gap #2 is now closed: data/unitUpgrades.json's stats have been
+  // structured (not free-text) for a while — what was missing was
