@@ -22,6 +22,10 @@ import {
   buildExplorationCardsLookup,
   buildGenericPromissoryNotesLookup,
   buildFactionPromissoryNotesLookup,
+  buildStartingDataLookup,
+  buildActionCardIds,
+  buildRelicIds,
+  buildHomeSystemsLookup,
 } from "../engine/rules/ruleDataMapping";
 
 import unitsFile from "../../data/units.json";
@@ -32,6 +36,8 @@ import technologiesFile from "../../data/technologies.json";
 import unitUpgradesFile from "../../data/unitUpgrades.json";
 import explorationCardsFile from "../../data/explorationCards.json";
 import promissoryNotesFile from "../../data/promissoryNotes.json";
+import actionCardsFile from "../../data/actionCards.json";
+import relicsFile from "../../data/relics.json";
 
 // Vite-friendly way to "dynamically" import one of many known JSON files:
 // eagerly globs all faction files at build time, keyed by their path, then
@@ -47,6 +53,8 @@ const factionFiles = import.meta.glob("../../data/factions/*.json", { eager: tru
       factionTechnologies?: { id: string }[];
       promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
       promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
+      startingUnits?: Record<string, number>;
+      startingTechnologies?: string[];
       units?: Record<string, Partial<RawUnitEntry>>;
     };
   }
@@ -65,7 +73,8 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
 
   const factionUnits: Record<FactionId, FactionUnitStats> = {};
   const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
-  const usedFactionFiles: (Parameters<typeof buildFactionPromissoryNotesLookup>[0][number] & { factionTechnologies?: { id: string }[] })[] = [];
+  const usedFactionFiles: (Parameters<typeof buildFactionPromissoryNotesLookup>[0][number] &
+    Parameters<typeof buildStartingDataLookup>[0][number] & { factionTechnologies?: { id: string }[] })[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile = findFactionFile(rawFactionId);
@@ -111,17 +120,4 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     unitUpgrades,
     planets: buildPlanetsLookup(tilesFile as RawTilesFile),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
-    objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
-    technologies: buildTechnologiesLookup(technologiesFile as Parameters<typeof buildTechnologiesLookup>[0]),
-    factions,
-    unitUpgradeTechData: buildUnitUpgradeTechDataLookup(
-      (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
-    ),
-    factionTechIds: buildFactionTechIds(usedFactionFiles),
-    explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
-    genericPromissoryNoteTemplates: buildGenericPromissoryNotesLookup(
-      promissoryNotesFile as Parameters<typeof buildGenericPromissoryNotesLookup>[0],
-    ),
-    factionPromissoryNotes: buildFactionPromissoryNotesLookup(usedFactionFiles),
-  };
-}
+    objectives: buildObjectivesLo
