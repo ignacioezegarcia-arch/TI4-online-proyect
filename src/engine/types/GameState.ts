@@ -320,6 +320,16 @@ export interface PendingTacticalAction {
    * combat's combatRound is set to 1.
    */
   spaceCannonDefensePending?: boolean;
+  /**
+   * RR "Duranium Armor": after a player assigns this round's hits, if they
+   * own the tech AND have at least one Sustain-Damage unit that was
+   * ALREADY damaged BEFORE this round's hits (not just-flipped by them),
+   * they get a real choice — repair one such unit (their pick, if more
+   * than one qualifies) or skip. Lists who still has this decision
+   * pending; the round can't wrap up (next round / end of combat) until
+   * this is empty too, same "gate before advancing" pattern as pendingHits.
+   */
+  duraniumArmorPendingPlayers?: PlayerId[];
 }
 
 export interface PendingAgendaVote {
