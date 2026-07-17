@@ -200,8 +200,22 @@ export function buildFactionPromissoryNotesLookup(
   return out;
 }
 
+/** Aggregates each faction's starting units + starting technologies (data/factions/*.json) across however many faction files are passed in — RR "Gather Starting Components" needs both together, always for the same set of factions, so one function builds both maps in one pass rather than two near-identical loops. */
+export function buildStartingDataLookup(
+  factionFiles: { id: string; startingUnits?: Record<string, number>; startingTechnologies?: string[] }[],
+): { startingUnits: Record<string, Record<string, number>>; startingTechnologies: Record<string, string[]> } {
+  const startingUnits: Record<string, Record<string, number>> = {};
+  const startingTechnologies: Record<string, string[]> = {};
+  for (const file of factionFiles) {
+    startingUnits[file.id] = file.startingUnits ?? {};
+    startingTechnologies[file.id] = file.startingTechnologies ?? [];
+  }
+  return { startingUnits, startingTechnologies };
+}
+
 export interface RawTilesFile {
   tiles: {
+    id: number;
     homeFaction?: string;
     planets?: {
       name: string;
@@ -213,6 +227,17 @@ export interface RawTilesFile {
       isMecatolRex?: boolean;
     }[];
   }[];
+}
+
+/** Shared by both loaders — which SystemId (tile id, as a string) is each faction's home system, straight from data/tiles.json's tile-level homeFaction field, plus which one is Mecatol Rex. Needed at setup to know where to place a player's starting units/planets, and where the custodians token goes, before any board has even been generated yet. */
+export function buildHomeSystemsLookup(tilesFile: RawTilesFile): { homeSystemByFaction: Record<string, string>; mecatolSystemId: string } {
+  const homeSystemByFaction: Record<string, string> = {};
+  let mecatolSystemId = "";
+  for (const tile of tilesFile.tiles) {
+    if (tile.homeFaction) homeSystemByFaction[tile.homeFaction] = String(tile.id);
+    if (tile.planets?.some((p) => p.isMecatolRex)) mecatolSystemId = String(tile.id);
+  }
+  return { homeSystemByFaction, mecatolSystemId };
 }
 
 /** Shared by both loaders (browser + Edge Function) — builds the per-planet static data RuleData.planets needs, straight from data/tiles.json. */
@@ -237,29 +262,13 @@ export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<
   return planets;
 }
 
-/** Shared by both loaders — the points + checkType/checkParams/timing RuleData.objectives needs, from data/objectives.json's publicObjectives (stageI/stageII) and secretObjectives (all 3 phases). */
+/** Shared by both loaders — the points + checkType/checkParams/timing/kind RuleData.objectives needs, from data/objectives.json's publicObjectives (stageI/stageII) and secretObjectives (all 3 phases). */
 export function buildObjectivesLookup(objectivesFile: {
-  publicObjectives: Record<string, { id: string; points: number; checkType: string; checkParams: Record<string, unknown>; timing?: string }[]>;
+  publicObjectives: Record<"stageI" | "stageII", { id: string; points: number; checkType: string; checkParams: Record<string, unknown>; timing?: string }[]>;
   secretObjectives: Record<
     "actionPhase" | "statusPhase" | "agendaPhase",
     { id: string; points: number; checkType: string; checkParams: Record<string, unknown> }[]
   >;
-}): Record<string, { points: number; checkType: string; checkParams: Record<string, unknown>; timing: "actionPhase" | "statusPhase" | "agendaPhase" }> {
-  const objectives: ReturnType<typeof buildObjectivesLookup> = {};
-  for (const list of Object.values(objectivesFile.publicObjectives)) {
-    for (const o of list) {
-      objectives[o.id] = { points: o.points, checkType: o.checkType, checkParams: o.checkParams, timing: "statusPhase" };
-    }
-  }
-  for (const [timing, list] of Object.entries(objectivesFile.secretObjectives)) {
-    for (const o of list) {
-      objectives[o.id] = {
-        points: o.points,
-        checkType: o.checkType,
-        checkParams: o.checkParams,
-        timing: timing as "actionPhase" | "statusPhase" | "agendaPhase",
-      };
-    }
-  }
-  return objectives;
-      }
+}): Record<
+  string,
+  { points: number; checkType: string; checkParams: Record<string, unknown>; timing: "actionPhase" |
