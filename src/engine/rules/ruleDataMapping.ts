@@ -213,6 +213,36 @@ export function buildStartingDataLookup(
   return { startingUnits, startingTechnologies };
 }
 
+/** Shared by both loaders — RR PoK "Leaders": each faction's agent/commander/hero (data/factions/*.json's leaders field), synthesizing a stable id for each since the raw data doesn't carry one. */
+export function buildFactionLeadersLookup(
+  factionFiles: {
+    id: string;
+    leaders?: {
+      agent: { name: string; unlock: string; ability: string };
+      commander: { name: string; unlock: string; ability: string };
+      hero: { name: string; unlock: string; ability: string };
+    };
+  }[],
+): Record<
+  string,
+  {
+    agent: { id: string; name: string; unlock: string; ability: string };
+    commander: { id: string; name: string; unlock: string; ability: string };
+    hero: { id: string; name: string; unlock: string; ability: string };
+  }
+> {
+  const out: ReturnType<typeof buildFactionLeadersLookup> = {};
+  for (const file of factionFiles) {
+    if (!file.leaders) continue;
+    out[file.id] = {
+      agent: { id: `${file.id}_agent`, ...file.leaders.agent },
+      commander: { id: `${file.id}_commander`, ...file.leaders.commander },
+      hero: { id: `${file.id}_hero`, ...file.leaders.hero },
+    };
+  }
+  return out;
+}
+
 export interface RawTilesFile {
   tiles: {
     id: number;
@@ -225,25 +255,30 @@ export interface RawTilesFile {
       tech?: string[];
       isLegendary?: boolean;
       isMecatolRex?: boolean;
+      isMallice?: boolean;
     }[];
   }[];
 }
 
-/** Shared by both loaders — which SystemId (tile id, as a string) is each faction's home system, straight from data/tiles.json's tile-level homeFaction field, plus which one is Mecatol Rex. Needed at setup to know where to place a player's starting units/planets, and where the custodians token goes, before any board has even been generated yet. */
-export function buildHomeSystemsLookup(tilesFile: RawTilesFile): { homeSystemByFaction: Record<string, string>; mecatolSystemId: string } {
+/** Shared by both loaders — which SystemId (tile id, as a string) is each faction's home system, straight from data/tiles.json's tile-level homeFaction field, plus which one is Mecatol Rex and which one (if any, PoK-only) is the off-map Wormhole Nexus. Needed at setup to know where to place a player's starting units/planets, and where the custodians token / Nexus goes, before any board has even been generated yet. */
+export function buildHomeSystemsLookup(
+  tilesFile: RawTilesFile,
+): { homeSystemByFaction: Record<string, string>; mecatolSystemId: string; wormholeNexusSystemId: string | null } {
   const homeSystemByFaction: Record<string, string> = {};
   let mecatolSystemId = "";
+  let wormholeNexusSystemId: string | null = null;
   for (const tile of tilesFile.tiles) {
     if (tile.homeFaction) homeSystemByFaction[tile.homeFaction] = String(tile.id);
     if (tile.planets?.some((p) => p.isMecatolRex)) mecatolSystemId = String(tile.id);
+    if (tile.planets?.some((p) => p.isMallice)) wormholeNexusSystemId = String(tile.id);
   }
-  return { homeSystemByFaction, mecatolSystemId };
+  return { homeSystemByFaction, mecatolSystemId, wormholeNexusSystemId };
 }
 
 /** Shared by both loaders (browser + Edge Function) — builds the per-planet static data RuleData.planets needs, straight from data/tiles.json. */
 export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<
   string,
-  { resources: number; influence: number; traits: string[]; techSpecialties: string[]; isLegendary: boolean; isMecatolRex: boolean; homeFactionId: import("../types/ids").FactionId | null }
+  { resources: number; influence: number; traits: string[]; techSpecialties: string[]; isLegendary: boolean; isMecatolRex: boolean; isMallice: boolean; homeFactionId: import("../types/ids").FactionId | null }
 > {
   const planets: ReturnType<typeof buildPlanetsLookup> = {};
   for (const tile of tilesFile.tiles) {
@@ -255,6 +290,7 @@ export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<
         techSpecialties: planet.tech ?? [],
         isLegendary: planet.isLegendary ?? false,
         isMecatolRex: planet.isMecatolRex ?? false,
+        isMallice: planet.isMallice ?? false,
         homeFactionId: (tile.homeFaction ?? null) as import("../types/ids").FactionId | null,
       };
     }
@@ -271,4 +307,40 @@ export function buildObjectivesLookup(objectivesFile: {
   >;
 }): Record<
   string,
-  { points: number; checkType: string; checkParams: Record<string, unknown>; timing: "actionPhase" |
+  { points: number; checkType: string; checkParams: Record<string, unknown>; timing: "actionPhase" | "statusPhase" | "agendaPhase"; kind: "publicI" | "publicII" | "secret" }
+> {
+  const objectives: ReturnType<typeof buildObjectivesLookup> = {};
+  for (const [stage, list] of Object.entries(objectivesFile.publicObjectives)) {
+    for (const o of list) {
+      objectives[o.id] = {
+        points: o.points,
+        checkType: o.checkType,
+        checkParams: o.checkParams,
+        timing: "statusPhase",
+        kind: stage === "stageI" ? "publicI" : "publicII",
+      };
+    }
+  }
+  for (const [timing, list] of Object.entries(objectivesFile.secretObjectives)) {
+    for (const o of list) {
+      objectives[o.id] = {
+        points: o.points,
+        checkType: o.checkType,
+        checkParams: o.checkParams,
+        timing: timing as "actionPhase" | "statusPhase" | "agendaPhase",
+        kind: "secret",
+      };
+    }
+  }
+  return objectives;
+}
+
+/** Shared by both loaders — every action card id (data/actionCards.json), for setup deck-seeding only (see RuleData.ts's own note on allActionCardIds). */
+export function buildActionCardIds(actionCardsFile: { actionCards: { id: string }[] }): string[] {
+  return actionCardsFile.actionCards.map((c) => c.id);
+}
+
+/** Shared by both loaders — every relic id (data/relics.json), for setup deck-seeding only (see RuleData.ts's own note on allRelicIds). */
+export function buildRelicIds(relicsFile: { relics: { id: string }[] }): string[] {
+  return relicsFile.relics.map((r) => r.id);
+  }
