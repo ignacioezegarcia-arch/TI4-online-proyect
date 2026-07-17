@@ -154,11 +154,23 @@ export type GameAction =
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
   // --- Strategy card primary/secondary abilities (RR 71) ---
-  | { type: "RESOLVE_STRATEGY_PRIMARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown } // one payload shape per card — see phases/strategyCardAbilities.ts
-  | { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown }
+  | { type: "RESOLVE_STRATEGY_PRIMARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown } // TODO, one payload shape per card
+  | { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: StrategyCardId; payload: unknown } // TODO
 
   // --- Component actions (RR 21) ---
-  | { type: "PLAY_ACTION_CARD"; playerId: PlayerId; cardId: ActionCardId; payload: unknown } // TODO
+  | {
+      type: "PLAY_ACTION_CARD";
+      playerId: PlayerId;
+      cardId: ActionCardId;
+      /** Reserved for future per-card choices (targets, etc.) once individual card effects are implemented — unused for now. See phases/actionCards.ts's own note on what this action does and doesn't do yet. */
+      payload?: unknown;
+    }
+  | {
+      type: "DISCARD_ACTION_CARD";
+      playerId: PlayerId;
+      cardId: ActionCardId;
+      /** RR 2.4-adjacent: voluntary discard — hand-limit compliance, or discarding for its own sake (e.g. the "discard N action cards" secret objective). Distinct from PLAY_ACTION_CARD's own discard-after-use, which does NOT count toward that objective's tally (see Player.actionCardsDiscardedCount's own doc comment). */
+    }
   | {
       type: "RESEARCH_TECHNOLOGY";
       playerId: PlayerId;
@@ -209,6 +221,8 @@ export type GameAction =
         exhaustPlanetIdsForInfluence?: PlanetId[];
         tradeGoods?: number;
         commandTokens?: { tactic?: number; strategy?: number };
+        /** RR "Destroy Heretical Works": purge 2 relic fragments of any type/mix — separate from PURGE_RELIC_FRAGMENTS's own 3-for-1 exchange, this doesn't grant a relic. */
+        relicFragments?: { cultural?: number; industrial?: number; hazardous?: number; unknown?: number };
       };
     } // RR 52/70.1
   | { type: "FINISH_STATUS_PHASE_SCORING"; playerId: PlayerId } // RR 70.1: player signals done scoring (0, 1, or 2 objectives) for this status phase
@@ -257,6 +271,8 @@ export type GameEvent =
   | { type: "OBJECTIVE_SCORED"; playerId: PlayerId; objectiveId: ObjectiveId; points: number }
   | { type: "PUBLIC_OBJECTIVE_REVEALED"; objectiveId: ObjectiveId; kind: ObjectiveKind }
   | { type: "ACTION_CARD_DRAWN"; playerId: PlayerId; cardId: ActionCardId }
+  | { type: "ACTION_CARD_PLAYED"; playerId: PlayerId; cardId: ActionCardId }
+  | { type: "ACTION_CARD_DISCARDED"; playerId: PlayerId; cardId: ActionCardId }
   | { type: "AGENDA_REVEALED"; agendaId: AgendaId }
   | { type: "VOTES_CAST"; playerId: PlayerId; outcome: string; votes: number }
   | { type: "AGENDA_RESOLVED"; agendaId: AgendaId; outcome: string; becameLaw: boolean }
