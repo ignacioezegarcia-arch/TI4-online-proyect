@@ -1,6 +1,6 @@
 import { GameState, Player, PlanetState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, ObjectiveId, PlanetId, SystemId } from "../types/ids";
+import { PlayerId, ObjectiveId, PlanetId, SystemId, asTechId } from "../types/ids";
 import { ObjectiveKind } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { OBJECTIVE_CHECKS, SPEND_CHECK_TYPES } from "../rules/objectiveChecks";
@@ -435,4 +435,4 @@ export function finishStatusPhaseScoring(
   return { ok: true, state: nextState, events: [] };
 }
 
-function run
+fu
