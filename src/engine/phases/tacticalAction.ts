@@ -3,6 +3,7 @@ import { ActionResult } from "../types/Actions";
 import { PlayerId, SystemId } from "../types/ids";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
+import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
 import { computeSpaceCombatEntry } from "./spaceCombat";
 
@@ -188,6 +189,11 @@ export function moveShips(
   // space combat will even happen (a lone PDS owner passing through with
   // no stake in this system can still fire). If nobody qualifies, skip
   // straight through to spaceCombat/invasion as before.
+  // RR PoK "Wormhole Nexus": if this move just brought a ship there for the
+  // first time, it flips active at the END of this step (not mid-move) —
+  // hence doing this last, right before returning.
+  workingState = maybeActivateWormholeNexus(workingState, rules, activeSystemId);
+
   const spaceCannonResponders = getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
   const willHaveCombat = playersWithShipsInSystem(workingState, activeSystemId).length > 1;
 
@@ -249,4 +255,4 @@ function addToSystem(
     spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: updatedStacks },
   };
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
-}
+          }
