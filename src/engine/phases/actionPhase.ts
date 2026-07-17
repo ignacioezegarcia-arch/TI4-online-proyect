@@ -466,6 +466,10 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
       planets: system.planets.map((p) => ({
         ...p,
         exhausted: false, // RR 70.6
+        // RR 53's legendary planet ability card readies independently in
+        // spirit, but the status phase readies EVERY exhausted card
+        // (RR 70.6), so in practice both flip together here regardless.
+        ...(p.legendaryAbilityExhausted ? { legendaryAbilityExhausted: false } : {}),
         unitsByPlayer: Object.fromEntries(
           Object.entries(p.unitsByPlayer).map(([pid, stacks]) => [
             pid,
