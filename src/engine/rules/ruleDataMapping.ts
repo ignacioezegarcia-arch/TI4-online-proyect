@@ -26,7 +26,7 @@ export interface RawUnitEntry {
   combatDiceCount?: number;
   move: number | null;
   capacity: number;
-  /** Matches data/units.json's & unitUpgrades.json's actual shape: value/diceCount are present for abilities with a numeric effect (AFB, Bombardment, Space Cannon); absent for flat abilities (Sustain Damage, Planetary Shield, Production). */
+  /** Matches data/units.json's & unitUpgrades.json's actual shape: value/diceCount are present for abilities with a numeric effect (AFB, Bombardment, Space Cannon); absent for flat abilities (Sustain Damage, Planetary Shield, Production). NOTE: earlier version of this file assumed a free-text `effect` field that doesn't exist in the real data, silently dropping these numbers — see anomalies.ts-adjacent combat work for why this was caught now. */
   abilities: { name: string; value?: number; diceCount?: number; rangesToAdjacent?: boolean; text?: string }[];
 }
 
@@ -161,6 +161,45 @@ export function buildExplorationCardsLookup(explorationCardsFile: {
   return out;
 }
 
+/** Shared by both loaders — the 5 GENERIC promissory note templates (data/promissoryNotes.json), keyed by template id. Effect/timing text still has the literal "(color)" placeholder — see RuleData.ts's own note on why that's resolved later, at game setup, not here. */
+export function buildGenericPromissoryNotesLookup(promissoryNotesFile: {
+  generic: { id: string; name: string; timing: string; effect: string; placeInPlayArea: boolean; set: "base" | "pok" }[];
+}): Record<string, { name: string; timing: string; effect: string; placeInPlayArea: boolean; set: "base" | "pok" }> {
+  const out: ReturnType<typeof buildGenericPromissoryNotesLookup> = {};
+  for (const n of promissoryNotesFile.generic) {
+    out[n.id] = { name: n.name, timing: n.timing, effect: n.effect, placeInPlayArea: n.placeInPlayArea, set: n.set };
+  }
+  return out;
+}
+
+/** Aggregates each faction's own promissory note(s) (data/factions/*.json's promissoryNote field) across however many faction files are passed in. Only the "original" (base, non-codex-variant) version is used — same simplification as elsewhere in this project, no codex-version-in-play tracking exists yet. Synthesizes a stable id (`${factionId}_promissory`, or `_1`/`_2` for the rare multi-note faction) since the raw data doesn't carry one. */
+export function buildFactionPromissoryNotesLookup(
+  factionFiles: {
+    id: string;
+    promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
+    promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
+  }[],
+): Record<string, { id: string; name: string; timing: string; effect: string; placeInPlayArea: boolean }[]> {
+  const out: ReturnType<typeof buildFactionPromissoryNotesLookup> = {};
+  for (const file of factionFiles) {
+    // Almost every faction has exactly one (promissoryNote); Empyrean-style
+    // factions with two use promissoryNotes (plural) instead — support both
+    // shapes rather than assuming everyone fits the common case.
+    const notes = file.promissoryNotes ?? (file.promissoryNote ? [file.promissoryNote] : []);
+    out[file.id] = notes.map((note, i) => {
+      const original = note.versions.find((v) => v.source === "base") ?? note.versions[0];
+      return {
+        id: notes.length > 1 ? `${file.id}_promissory_${i + 1}` : `${file.id}_promissory`,
+        name: note.name,
+        timing: original.timing,
+        effect: original.effect,
+        placeInPlayArea: original.placeInPlayArea,
+      };
+    });
+  }
+  return out;
+}
+
 export interface RawTilesFile {
   tiles: {
     homeFaction?: string;
@@ -223,4 +262,4 @@ export function buildObjectivesLookup(objectivesFile: {
     }
   }
   return objectives;
-}
+      }
