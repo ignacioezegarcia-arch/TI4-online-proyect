@@ -77,7 +77,7 @@ export interface RuleData {
   technologies: Record<TechId, { color: string | null; prerequisites: string[] }>;
   /** RR 34/TE breakthrough: commodities max, plus the pair of colors (if any) whose techs can substitute for each other when satisfying prerequisites — never both at once for the same requirement. */
   factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }>;
-  /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned); this is just enough to validate RR 90.7 prerequisites before letting a player research one. */
+  /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned, and is still an unresolved gap per this project's own notes); this is just enough to validate RR 90.7 prerequisites before letting a player research one. */
   unitUpgradeTechData: Record<UnitUpgradeId, { color: string | null; prerequisites: string[] }>;
   /** Every tech id that's a FACTION technology (data/factions/*.json's factionTechnologies) for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. */
   factionTechIds: Set<string>;
@@ -97,9 +97,28 @@ export interface RuleData {
       fallbackInfluenceBonus?: number;
     }
   >;
+  /**
+   * RR: the 5 GENERIC promissory notes (Ceasefire, Trade Agreement,
+   * Political Secret, Support for the Throne, Alliance) — assigned by
+   * PLAYER COLOR, not faction. `effect`/`timing` contain a literal
+   * "(color)" placeholder since the actual owning color isn't known until
+   * a specific game's setup assigns colors to players (see
+   * rules/promissoryNotes.ts's initializePromissoryNotes, which turns
+   * these templates + each player's actual color into concrete per-game
+   * instances). Keyed by template id (ceasefire, trade_agreement,
+   * political_secret, support_for_the_throne, alliance) — "alliance" is
+   * PoK-only, filtered out for Base-only games.
+   */
+  genericPromissoryNoteTemplates: Record<
+    string,
+    { name: string; timing: string; effect: string; placeInPlayArea: boolean; set: "base" | "pok" }
+  >;
+  /** RR: each faction's own promissory note(s) (data/factions/*.json's promissoryNote field) — usually 1 per faction, 2 for Empyrean. Unlike generic notes, the faction's name is already baked into the text literally (no placeholder), since it never changes. */
+  factionPromissoryNotes: Record<FactionId, { id: string; name: string; timing: string; effect: string; placeInPlayArea: boolean }[]>;
   // TODO as later phases need them: actionCards, agendas/objectives effect
-  // text, promissoryNotes, strategyCard primary/secondary text, faction
-  // abilityIds -> effect implementations.
+  // text, strategyCard primary/secondary text, faction abilityIds -> effect
+  // implementations. (technologies, explorationCards, relics, and generic +
+  // faction promissoryNotes are all wired in above already.)
 }
 
 /**
