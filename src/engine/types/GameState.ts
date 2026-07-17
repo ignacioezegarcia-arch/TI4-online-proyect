@@ -119,6 +119,8 @@ export interface Player {
   unitUpgrades: UnitUpgradeId[]; // owned unit upgrades (RR 86)
 
   actionCards: ActionCardId[]; // hidden hand, max 7 (RR 2.4)
+  /** RR 2.4-adjacent: lifetime count of VOLUNTARY discards only (DISCARD_ACTION_CARD) — never incremented by PLAY_ACTION_CARD's own discard-after-use, per the ruling that "discard N action cards" secret objectives (e.g. Form a Spy Network) only count discarding without playing. Never reset. */
+  actionCardsDiscardedCount: number;
   /** RR: notes currently in this player's HAND — tradeable (max 1 per transaction), hideable from other players. Includes this player's own not-yet-traded-away notes AND any received from others (received notes stay tradeable too, "including those from other players" — RR). Ownership (whose color/faction each note matches) is NOT this list; see GameState.promissoryNoteInstances for that. */
   promissoryNotesInHand: PromissoryNoteId[];
   /** RR: notes placed face-up when received — "Support for the Throne", "Alliance", and some faction-specific notes (per each note's own placeInPlayArea flag). These can no longer be traded; they sit here until their own trigger condition returns them to their original owner. */
@@ -193,6 +195,8 @@ export interface GameState {
   publicObjectiveDeck?: { stageI: ObjectiveId[]; stageII: ObjectiveId[] };
   /** RR 2.4/33: remaining shuffled action card ids, top of deck = index 0. Same empty-until-seeded caveat as publicObjectiveDeck. */
   actionCardDeck?: ActionCardId[];
+  /** RR 2.9: cards played (or discarded) go here; reshuffled to form a fresh actionCardDeck if that deck is ever drawn from while empty (see phases/actionPhase.ts's own draw logic). */
+  actionCardDiscardPile?: ActionCardId[];
   /** RR 52.13: remaining shuffled secret objective ids — drawn via the Imperial strategy card (and, later, other sources). Empty-until-seeded, same caveat as the other two decks above. */
   secretObjectiveDeck?: ObjectiveId[];
   /** RR 35: remaining shuffled exploration card ids per deck, top of deck = index 0. Empty-until-seeded, same caveat as the other decks above. */
