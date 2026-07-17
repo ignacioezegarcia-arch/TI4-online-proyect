@@ -202,6 +202,7 @@ export function createGame(input: CreateGameInput): GameState {
       relics: [],
       relicFragments: { cultural: 0, industrial: 0, hazardous: 0, unknown: 0 },
       explorationCardsInPlayArea: [],
+      actionCardsDiscardedCount: 0,
       abilityIds: [],
     };
 
