@@ -19,6 +19,7 @@ import {
 } from "./phases/invasion";
 import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
+import { playActionCard, discardActionCard } from "./phases/actionCards";
 import { revealAgenda, castVotes } from "./phases/agendaPhase";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
@@ -92,7 +93,7 @@ export const GameEngine = {
         result = assignBombardmentHits(state, action, rules);
         break;
       case "COMMIT_GROUND_FORCES":
-        result = commitGroundForces(state, action);
+        result = commitGroundForces(state, action, rules);
         break;
       case "FINISH_INVASION_COMMITS":
         result = finishInvasionCommits(state, action);
@@ -164,9 +165,15 @@ export const GameEngine = {
         result = assignSpaceCannonDefenseHits(state, action, rules);
         break;
 
+      case "PLAY_ACTION_CARD":
+        result = playActionCard(state, action);
+        break;
+      case "DISCARD_ACTION_CARD":
+        result = discardActionCard(state, action);
+        break;
+
       // --- Not yet implemented. Each of these follows the exact same shape
       // as the cases above — see phases/README.md for the recipe.
-      case "PLAY_ACTION_CARD":
       case "PROPOSE_TRANSACTION":
       case "END_TURN_TIMEOUT":
         return { ok: false, error: `${action.type} is not implemented yet.` };
@@ -220,6 +227,16 @@ export const GameEngine = {
 
     if (state.phase === "status" && !state.statusPhaseScoring?.[playerId]?.done) {
       legal.push("SCORE_OBJECTIVE", "FINISH_STATUS_PHASE_SCORING");
+    }
+
+    // RR 2.4/2.7: discarding (voluntary, e.g. hand-limit compliance) and
+    // playing an action card aren't tied to a specific phase the way most
+    // other actions here are — a card's own printed timing window decides
+    // when it's legal, and that per-card timing text isn't modeled yet
+    // (same deferred-content scope as the card's effect itself). Offered
+    // here as generally available whenever the player holds any.
+    if (player.actionCards.length > 0) {
+      legal.push("DISCARD_ACTION_CARD", "PLAY_ACTION_CARD");
     }
 
     if (state.phase === "agenda" && state.pendingAgendaVote?.votingOrder[state.pendingAgendaVote.nextVoterIndex] === playerId) {
