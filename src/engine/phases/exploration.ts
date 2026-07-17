@@ -1,11 +1,10 @@
 import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId } from "../types/ids";
+import { PlayerId, PlanetId, SystemId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 
 /**
- * RR 35 EXPLORATION + RR 75 RELICS. Prophecy of Kings mechanics — every
- * entry point here rejects outright in Base-only games (mode === "base").
+ * RR 35 EXPLORATION + RR 75 RELICS.
  *
  * Card draws are deterministic pops off a pre-shuffled deck array (same
  * pattern as actionCardDeck/publicObjectiveDeck elsewhere) — no mid-game
@@ -26,7 +25,8 @@ import { RuleData } from "../types/RuleData";
  *    legal any time the planet is controlled and unexplored.
  *  - Frontier tokens' OTHER trigger condition (moving a ship into a system
  *    with a frontier token and no other players' ships) isn't validated —
- *    EXPLORE_FRONTIER just checks the token is there.
+ *    EXPLORE_FRONTIER just checks the token is there and (now) that the
+ *    player owns Dark Energy Tap.
  */
 
 export function explorePlanet(
@@ -85,6 +85,9 @@ export function exploreFrontier(
   const system = state.systems[action.systemId];
   if (!system) return { ok: false, error: `No system ${action.systemId}.` };
   if (!system.frontierToken) return { ok: false, error: `RR 35: ${action.systemId} has no frontier token.` };
+  if (!state.players[action.playerId]?.technologies.includes(asTechId("dark_energy_tap"))) {
+    return { ok: false, error: "RR 35: exploring a frontier token requires owning the Dark Energy Tap technology." };
+  }
 
   const deck = state.explorationDecks?.frontier ?? [];
   let nextState: GameState = {
@@ -202,4 +205,4 @@ export function purgeRelicFragments(
     state: { ...state, relicDeck: rest, players: { ...state.players, [action.playerId]: updatedPlayer } },
     events: [{ type: "RELIC_GAINED", playerId: action.playerId, relicId }],
   };
-}
+      }
