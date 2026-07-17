@@ -1869,45 +1869,50 @@
       "isBlank": true
     },
     {
+    {
       "id": 88,
       "name": "Hyperlane A",
       "set": "pok",
-      "tileColor":,
+      "tileColor": null,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
       "isHyperlane": true,
-      "notes": "Tile de hyperlane. Las conexiones exactas dependen de la rotación en el layout."
+      "hyperlaneConnections": "pending",
+      "notes": "Tile de hyperlane. Conexiones exactas entre bordes pendientes de confirmar contra la imagen real del tile — no se adivinan. tileColor es null porque las hyperlanes no participan del mazo azul/rojo, se colocan directo según el layout."
     },
     {
       "id": 89,
       "name": "Hyperlane B",
       "set": "pok",
-      "tileColor":,
+      "tileColor": null,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
-      "isHyperlane": true
+      "isHyperlane": true,
+      "hyperlaneConnections": "pending"
     },
     {
       "id": 90,
       "name": "Hyperlane C",
       "set": "pok",
-      "tileColor":,
+      "tileColor": null,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
-      "isHyperlane": true
+      "isHyperlane": true,
+      "hyperlaneConnections": "pending"
     },
     {
       "id": 91,
       "name": "Hyperlane D",
       "set": "pok",
-      "tileColor":,
+      "tileColor": null,
       "planets": [],
       "anomalies": [],
       "wormholes": [],
-      "isHyperlane": true
+      "isHyperlane": true,
+      "hyperlaneConnections": "pending"
     },
     {
       "id": 92,
