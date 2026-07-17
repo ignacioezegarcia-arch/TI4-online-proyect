@@ -31,6 +31,7 @@ import {
   buildActionCardIds,
   buildRelicIds,
   buildHomeSystemsLookup,
+  buildFactionLeadersLookup,
 } from "./engine/rules/ruleDataMapping.ts";
 
 interface RawFactionFile {
@@ -42,6 +43,11 @@ interface RawFactionFile {
   promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
   startingUnits?: Record<string, number>;
   startingTechnologies?: string[];
+  leaders?: {
+    agent: { name: string; unlock: string; ability: string };
+    commander: { name: string; unlock: string; ability: string };
+    hero: { name: string; unlock: string; ability: string };
+  };
   units?: Record<string, Partial<RawUnitEntry> & { name?: string }>;
   // factionSpecificUnits intentionally not consumed yet — its `versions[]`
   // entries use the same schema as units.json, but wiring "which version
@@ -92,4 +98,50 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
   const unitUpgradesFile = JSON.parse(await Deno.readTextFile(new URL("./data/unitUpgrades.json", import.meta.url)));
 
   // Gap #2 is now closed: data/unitUpgrades.json's stats have been
-  // structured (not free-text) for a while — what was missing was
+  // structured (not free-text) for a while — what was missing was this
+  // loader actually reading them. Same unitEntryToStats() the base
+  // units.json path already uses, since unitUpgrades.json entries match
+  // the same RawUnitEntry shape plus a top-level `unitType` saying which
+  // unit sheet this upgrade replaces (RR 86.4).
+  const unitUpgrades: Record<UnitUpgradeId, UnitUpgradeStats> = {};
+  for (const raw of unitUpgradesFile.unitUpgrades as (RawUnitEntry & { unitType: string })[]) {
+    unitUpgrades[raw.id as UnitUpgradeId] = {
+      id: raw.id as UnitUpgradeId,
+      unitType: raw.unitType as UnitType,
+      stats: unitEntryToStats(raw, raw.unitType as UnitType),
+    };
+  }
+
+  const tilesFile = JSON.parse(await Deno.readTextFile(new URL("./data/tiles.json", import.meta.url)));
+  const agendasFile = JSON.parse(await Deno.readTextFile(new URL("./data/agendas.json", import.meta.url)));
+  const objectivesFile = JSON.parse(await Deno.readTextFile(new URL("./data/objectives.json", import.meta.url)));
+  const technologiesFile = JSON.parse(await Deno.readTextFile(new URL("./data/technologies.json", import.meta.url)));
+  const explorationCardsFile = JSON.parse(await Deno.readTextFile(new URL("./data/explorationCards.json", import.meta.url)));
+  const promissoryNotesFile = JSON.parse(await Deno.readTextFile(new URL("./data/promissoryNotes.json", import.meta.url)));
+  const actionCardsFile = JSON.parse(await Deno.readTextFile(new URL("./data/actionCards.json", import.meta.url)));
+  const relicsFile = JSON.parse(await Deno.readTextFile(new URL("./data/relics.json", import.meta.url)));
+
+  return {
+    factionUnits,
+    unitUpgrades,
+    planets: buildPlanetsLookup(tilesFile as RawTilesFile),
+    agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
+    objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
+    technologies: buildTechnologiesLookup(technologiesFile as Parameters<typeof buildTechnologiesLookup>[0]),
+    factions,
+    unitUpgradeTechData: buildUnitUpgradeTechDataLookup(
+      (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
+    ),
+    factionTechIds: buildFactionTechIds(usedFactionFiles),
+    explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
+    genericPromissoryNoteTemplates: buildGenericPromissoryNotesLookup(
+      promissoryNotesFile as Parameters<typeof buildGenericPromissoryNotesLookup>[0],
+    ),
+    factionPromissoryNotes: buildFactionPromissoryNotesLookup(usedFactionFiles),
+    ...buildStartingDataLookup(usedFactionFiles),
+    allActionCardIds: buildActionCardIds(actionCardsFile as Parameters<typeof buildActionCardIds>[0]),
+    allRelicIds: buildRelicIds(relicsFile as Parameters<typeof buildRelicIds>[0]),
+    ...buildHomeSystemsLookup(tilesFile as RawTilesFile),
+    factionLeaders: buildFactionLeadersLookup(usedFactionFiles),
+  };
+      }
