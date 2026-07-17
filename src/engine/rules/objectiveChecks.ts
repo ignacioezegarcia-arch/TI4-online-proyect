@@ -1,6 +1,7 @@
 import { GameState, PlanetState } from "../types/GameState";
-import { PlayerId, SystemId } from "../types/ids";
-import { SHIP_TYPES, STRUCTURE_TYPES } from "../types/enums";
+import { GameEvent } from "../types/Actions";
+import { PlayerId, SystemId, PlanetId } from "../types/ids";
+import { SHIP_TYPES, GROUND_FORCE_TYPES, STRUCTURE_TYPES } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { getAdjacentSystems } from "./adjacency";
 
@@ -83,6 +84,44 @@ function isHomeSystemOf(state: GameState, rules: RuleData, systemId: SystemId, f
 function hasFlagshipOrWarSun(state: GameState, systemId: SystemId, playerId: PlayerId): boolean {
   const stacks = state.systems[systemId]?.spaceUnitsByPlayer[playerId] ?? [];
   return stacks.some((s) => (s.unitType === "flagship" || s.unitType === "war_sun") && s.count > 0);
+}
+
+/**
+ * RR: combats this player WON during the current tactical action —
+ * state.recentEvents resets at ACTIVATE_SYSTEM (see GameState.ts's own doc
+ * comment on that field), so this is naturally scoped to "just now,"
+ * matching every "win a combat [+ condition]" secret objective's own
+ * "Action" timing. Shared by several checkers below.
+ */
+function combatsWonThisTurn(state: GameState, playerId: PlayerId): { systemId: SystemId; planetId?: PlanetId }[] {
+  return (state.recentEvents ?? [])
+    .filter(
+      (e): e is Extract<GameEvent, { type: "SPACE_COMBAT_ENDED" | "GROUND_COMBAT_ENDED" }> =>
+        (e.type === "SPACE_COMBAT_ENDED" || e.type === "GROUND_COMBAT_ENDED") && e.survivingPlayerId === playerId,
+    )
+    .map((e) => ({ systemId: e.systemId, planetId: e.type === "GROUND_COMBAT_ENDED" ? e.planetId : undefined }));
+}
+
+/**
+ * RR: who this player was fighting in a given system/planet this turn —
+ * inferred from whoever else's units were destroyed there (recentEvents'
+ * UNITS_DESTROYED already records the LOSING player's id). Reasonable for
+ * the normal 2-combatant case; doesn't try to disambiguate 3+-way
+ * scenarios, or distinguish "this player's own attack destroyed it" from
+ * "a third party's Space Cannon happened to land the finishing blow in the
+ * same tactical action" — same category of simplification as this
+ * project's other combat helpers (e.g. rules/combat.ts's own "exactly 2
+ * combatants" assumption).
+ */
+function findOpponentInCombat(state: GameState, playerId: PlayerId, systemId: SystemId, planetId?: PlanetId): PlayerId | null {
+  const loser = (state.recentEvents ?? []).find(
+    (e): e is Extract<GameEvent, { type: "UNITS_DESTROYED" }> =>
+      e.type === "UNITS_DESTROYED" &&
+      e.systemId === systemId &&
+      e.playerId !== playerId &&
+      (planetId ? e.planetId === planetId : !e.planetId),
+  );
+  return loser?.playerId ?? null;
 }
 
 // --- registry ----------------------------------------------------------------
@@ -242,6 +281,128 @@ export const OBJECTIVE_CHECKS: Record<string, ObjectiveCheckFn> = {
       });
     });
     return { met, reason: met ? undefined : "No flagship/war sun in another player's home system or Mecatol Rex." };
+  },
+
+  // --- RR "Action"-timed secrets: all read state.recentEvents, the rolling
+  // buffer of this tactical action's own events (see GameState.ts's own
+  // doc comment on it) — these were the first checkers to actually need
+  // it; every other checkType above only reads CURRENT state. ---
+
+  destroyed_enemy_flagship_or_warsun: ({ state, playerId }) => {
+    const met = (state.recentEvents ?? []).some(
+      (e) => e.type === "UNITS_DESTROYED" && e.playerId !== playerId && (e.unitType === "war_sun" || e.unitType === "flagship"),
+    );
+    return { met, reason: met ? undefined : "No enemy war sun or flagship destroyed this tactical action." };
+  },
+
+  bombardment_destroyed_last_ground_forces: ({ state, playerId }) => {
+    const bombarded = (state.recentEvents ?? []).filter(
+      (e): e is Extract<GameEvent, { type: "BOMBARDMENT_RESOLVED" }> =>
+        e.type === "BOMBARDMENT_RESOLVED" && e.playerId === playerId && e.hits > 0,
+    );
+    for (const b of bombarded) {
+      const planet = state.systems[b.systemId]?.planets.find((p) => p.planetId === b.planetId);
+      if (!planet) continue;
+      const stillHasDefenders = Object.entries(planet.unitsByPlayer).some(
+        ([pid, stacks]) => pid !== playerId && (stacks ?? []).some((s) => s.count > 0 && GROUND_FORCE_TYPES.includes(s.unitType)),
+      );
+      if (!stillHasDefenders) return { met: true };
+    }
+    return { met: false, reason: "No planet where this player's Bombardment wiped out the defender's last ground forces this tactical action." };
+  },
+
+  won_combat_vs_vp_leader: ({ state, playerId }) => {
+    const nonEliminated = Object.values(state.players).filter((p) => !p.eliminated);
+    const maxVP = Math.max(...nonEliminated.map((p) => p.victoryPoints.current));
+    for (const { systemId, planetId } of combatsWonThisTurn(state, playerId)) {
+      const opponentId = findOpponentInCombat(state, playerId, systemId, planetId);
+      if (opponentId && state.players[opponentId]?.victoryPoints.current === maxVP) return { met: true };
+    }
+    return { met: false, reason: "Didn't win a combat this tactical action against the current victory-point leader (ties count)." };
+  },
+
+  space_cannon_destroyed_last_ships: ({ state, playerId }) => {
+    const fired = (state.recentEvents ?? []).some(
+      (e) => (e.type === "SPACE_CANNON_OFFENSE_FIRED" || e.type === "SPACE_CANNON_DEFENSE_FIRED") && e.playerId === playerId && e.hits > 0,
+    );
+    if (!fired) return { met: false, reason: "This player hasn't fired a hit-scoring Space Cannon shot this tactical action." };
+    const destroyedShips = (state.recentEvents ?? []).filter(
+      (e): e is Extract<GameEvent, { type: "UNITS_DESTROYED" }> =>
+        e.type === "UNITS_DESTROYED" && e.playerId !== playerId && SHIP_TYPES.includes(e.unitType),
+    );
+    for (const d of destroyedShips) {
+      const remaining = (state.systems[d.systemId]?.spaceUnitsByPlayer[d.playerId] ?? []).reduce((sum, s) => sum + s.count, 0);
+      if (remaining === 0) return { met: true };
+    }
+    return { met: false, reason: "No player's last ship in a system was destroyed by this player's Space Cannon this tactical action." };
+  },
+
+  won_space_combat_with_flagship_present: ({ state, playerId }) => {
+    const met = (state.recentEvents ?? []).some(
+      (e) =>
+        e.type === "SPACE_COMBAT_ENDED" &&
+        e.survivingPlayerId === playerId &&
+        (state.systems[e.systemId]?.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.unitType === "flagship" && s.count > 0),
+    );
+    return {
+      met,
+      reason: met ? undefined : "Didn't win a space combat this tactical action in a system with this player's (surviving) flagship.",
+    };
+  },
+
+  lost_control_of_home_planet: ({ state, rules, playerId }) => {
+    const player = state.players[playerId];
+    const met = (state.recentEvents ?? []).some(
+      (e) =>
+        e.type === "PLANET_CONTROL_ESTABLISHED" && e.playerId !== playerId && rules.planets[e.planetId]?.homeFactionId === player.factionId,
+    );
+    return { met, reason: met ? undefined : "This player hasn't lost control of one of their own home system's planets this tactical action." };
+  },
+
+  won_combat_vs_note_holder: ({ state, playerId }) => {
+    const heldNoteOwners = new Set(
+      (state.players[playerId]?.promissoryNotesInPlayArea ?? [])
+        .map((id) => state.promissoryNoteInstances?.[id]?.ownerId)
+        .filter((id): id is PlayerId => Boolean(id)),
+    );
+    for (const { systemId, planetId } of combatsWonThisTurn(state, playerId)) {
+      const opponentId = findOpponentInCombat(state, playerId, systemId, planetId);
+      if (opponentId && heldNoteOwners.has(opponentId)) return { met: true };
+    }
+    return {
+      met: false,
+      reason: "Didn't win a combat this tactical action against a player whose promissory note this player holds in their play area.",
+    };
+  },
+
+  won_combat_in_anomaly: ({ state, playerId }) => {
+    const met = combatsWonThisTurn(state, playerId).some(({ systemId }) => (state.systems[systemId]?.anomalies.length ?? 0) > 0);
+    return { met, reason: met ? undefined : "Didn't win a combat this tactical action in an anomaly." };
+  },
+
+  won_combat_in_eliminated_home: ({ state, rules, playerId }) => {
+    const met = combatsWonThisTurn(state, playerId).some(({ systemId }) => {
+      const homeFactionId = state.systems[systemId]?.planets.map((p) => rules.planets[p.planetId]?.homeFactionId).find(Boolean);
+      if (!homeFactionId) return false;
+      return Object.values(state.players).some((p) => p.factionId === homeFactionId && p.eliminated);
+    });
+    return { met, reason: met ? undefined : "Didn't win a combat this tactical action in an eliminated player's home system." };
+  },
+
+  afb_destroyed_last_fighters: ({ state, playerId }) => {
+    const fired = (state.recentEvents ?? []).some((e) => e.type === "ANTI_FIGHTER_BARRAGE_FIRED" && e.playerId === playerId && e.hits > 0);
+    if (!fired) return { met: false, reason: "This player hasn't fired a hit-scoring Anti-Fighter Barrage this tactical action." };
+    const destroyedFighters = (state.recentEvents ?? []).filter(
+      (e): e is Extract<GameEvent, { type: "UNITS_DESTROYED" }> =>
+        e.type === "UNITS_DESTROYED" && e.playerId !== playerId && e.unitType === "fighter",
+    );
+    for (const d of destroyedFighters) {
+      const remaining = (state.systems[d.systemId]?.spaceUnitsByPlayer[d.playerId] ?? [])
+        .filter((s) => s.unitType === "fighter")
+        .reduce((sum, s) => sum + s.count, 0);
+      if (remaining === 0) return { met: true };
+    }
+    return { met: false, reason: "No player's last fighter in a system was destroyed by this player's Anti-Fighter Barrage this tactical action." };
   },
 };
 
