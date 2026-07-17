@@ -76,10 +76,14 @@ export const ANOMALY_RULES: Record<AnomalyType, AnomalyRuleDefinition> = {
   },
 };
 
-/** Can a ship (no special tech) enter this system? `isActiveSystem` must be true only for the system being activated this tactical action — never for a mid-path system. */
-export function canShipEnterTile(anomalies: AnomalyType[], opts: { isActiveSystem?: boolean } = {}): boolean {
+/** Can a ship (no special tech) enter this system? `isActiveSystem` must be true only for the system being activated this tactical action — never for a mid-path system. `ignoreAsteroidFields` is Antimass Deflectors' own effect ("your ships can move into and through asteroid fields") — everything else (Supernova, Nebula's active-system-only rule) still applies even with it. */
+export function canShipEnterTile(
+  anomalies: AnomalyType[],
+  opts: { isActiveSystem?: boolean; ignoreAsteroidFields?: boolean } = {},
+): boolean {
   const isActiveSystem = opts.isActiveSystem ?? false;
   for (const type of anomalies) {
+    if (opts.ignoreAsteroidFields && type === "asteroidField") continue;
     const rule = ANOMALY_RULES[type]?.movement;
     if (!rule) continue;
     if (rule.canEnter === false) return false;
@@ -88,9 +92,12 @@ export function canShipEnterTile(anomalies: AnomalyType[], opts: { isActiveSyste
   return true;
 }
 
-/** Can a ship (no special tech) pass through this system as a mid-path stop? */
-export function canShipPassThroughTile(anomalies: AnomalyType[]): boolean {
-  return anomalies.every((type) => ANOMALY_RULES[type]?.movement.canPassThrough !== false);
+/** Can a ship (no special tech) pass through this system as a mid-path stop? Same Antimass Deflectors carve-out as canShipEnterTile above. */
+export function canShipPassThroughTile(anomalies: AnomalyType[], ignoreAsteroidFields = false): boolean {
+  return anomalies.every((type) => {
+    if (ignoreAsteroidFields && type === "asteroidField") return true;
+    return ANOMALY_RULES[type]?.movement.canPassThrough !== false;
+  });
 }
 
 export function hasGravityRift(anomalies: AnomalyType[]): boolean {
