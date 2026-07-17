@@ -24,7 +24,7 @@ import { SystemId, asSystemId } from "../types/ids";
  * anomalies, starting units) — only the board skeleton (which tile sits in
  * which slot, and who's physically touching whom). Turning a tiles.json
  * entry into a SystemState, and the rest of setup (speaker, starting
- * units, secret objectives), is separate, later work.
+ * units, secret objectives), is now handled by setup/createGame.ts.
  */
 
 // ---------------------------------------------------------------
@@ -347,7 +347,7 @@ export function generateMap(input: GenerateMapInput): GeneratedMap {
   };
 }
 
-function fisherYatesShuffle<T>(arr: T[], rng: () => number): T[] {
+export function fisherYatesShuffle<T>(arr: T[], rng: () => number): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
