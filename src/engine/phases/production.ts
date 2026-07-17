@@ -1,6 +1,6 @@
 import { GameState, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId } from "../types/ids";
+import { PlayerId, PlanetId, SystemId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
@@ -21,8 +21,7 @@ import { advanceActivePlayer } from "./actionPhase";
  *    resourcesAvailable/influenceAvailable as "derived cache — not
  *    authoritative"; that derivation doesn't exist yet either). Until it
  *    does, this just decrements the cached numbers directly.
- *  - Production limit for a Space Dock = that planet's EFFECTIVE resources
- *    (base + exploration attachments, see rules/planetStats.ts) + 2 (RR
+ *  - Production limit for a Space Dock = that planet's resources + 2 (RR
  *    58's base formula). Doesn't yet special-case Space Dock II or any
  *    other producer with a different formula/value — there's currently
  *    only the one Production-granting unit in the data, so there's nothing
@@ -103,6 +102,14 @@ export function executeProduction(
     resolvedUnits.push({ unitType, count, unitCost: stats.cost });
   }
 
+  // RR: Sarween Tools reduces the COMBINED cost of everything produced in
+  // this one action by 1 (not per unit) — applied once here, after the
+  // per-unit loop above, floored at 0 so a cheap single unit can't go
+  // negative.
+  if (totalCost > 0 && player.technologies.includes(asTechId("sarween_tools"))) {
+    totalCost = Math.max(0, totalCost - 1);
+  }
+
   if (totalCost > productionLimit) {
     return { ok: false, error: `RR 58: total cost ${totalCost} exceeds this Space Dock's Production limit (${productionLimit}).` };
   }
@@ -175,4 +182,4 @@ export function finishTacticalAction(
 
   const nextState = advanceActivePlayer({ ...state, pendingTacticalAction: null });
   return { ok: true, state: nextState, events: [] };
-}
+                      }
