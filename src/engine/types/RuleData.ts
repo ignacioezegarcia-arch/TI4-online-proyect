@@ -51,6 +51,8 @@ export interface PlanetStaticData {
   techSpecialties: string[];
   isLegendary: boolean;
   isMecatolRex: boolean;
+  /** RR PoK "Wormhole Nexus": true only for Mallice, the Nexus's own planet. Needed to trigger the Nexus's active-flip on control gain (see rules/adjacency.ts's maybeActivateWormholeNexus). */
+  isMallice: boolean;
   /** Which faction's home system this planet sits in, if any (data/tiles.json's tile-level homeFaction). */
   homeFactionId: FactionId | null;
 }
@@ -72,84 +74,4 @@ export interface RuleData {
   /** Static resources/influence per planet (data/tiles.json), keyed by the same lowercase-underscore id as PlanetId (e.g. "jord", "mecatol_rex"). */
   planets: Record<PlanetId, PlanetStaticData>;
   /** RR 7: only the law-vs-directive split (data/agendas.json) — NOT the outcome/effect text, same "mechanics only" scope cut as objectives (see data/objectives.json's own note). Needed just to know whether a resolved agenda becomes a permanent law or gets discarded after one use. */
-  agendas: Record<AgendaId, { type: "law" | "directive" }>;
-  /** RR 52: points + how to validate the condition (data/objectives.json's checkType/checkParams). Most public objectives have a real checkType; most secrets are "manual" for now — see that file's own note. */
-  objectives: Record<ObjectiveId, ObjectiveStaticData>;
-  /** RR 90: only the color + prerequisites (data/technologies.json) — not the effect text. Prerequisites is a list of colors, one entry per required tech of that color (e.g. ["red","red"] = need 2 red techs already owned). */
-  technologies: Record<TechId, { color: string | null; prerequisites: string[] }>;
-  /** RR 34/TE breakthrough: commodities max, plus the pair of colors (if any) whose techs can substitute for each other when satisfying prerequisites — never both at once for the same requirement. */
-  factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }>;
-  /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned, and is still an unresolved gap per this project's own notes); this is just enough to validate RR 90.7 prerequisites before letting a player research one. */
-  unitUpgradeTechData: Record<UnitUpgradeId, { color: string | null; prerequisites: string[] }>;
-  /** Every tech id that's a FACTION technology (data/factions/*.json's factionTechnologies) for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. */
-  factionTechIds: Set<string>;
-  /** RR 35: exploration card mechanics (data/explorationCards.json) — attach bonuses are structured (see that file's own note), but a plain one-time `effect` isn't applied, same deferred-content pattern as action/agenda cards. */
-  explorationCards: Record<
-    string,
-    {
-      deck: "cultural" | "industrial" | "hazardous" | "frontier";
-      isRelicFragment: boolean;
-      fragmentType?: "cultural" | "industrial" | "hazardous" | "any";
-      attach: boolean;
-      keepInPlayArea: boolean;
-      resourceBonus?: number;
-      influenceBonus?: number;
-      techSpecialtyBonus?: string;
-      fallbackResourceBonus?: number;
-      fallbackInfluenceBonus?: number;
-    }
-  >;
-  /**
-   * RR: the 5 GENERIC promissory notes (Ceasefire, Trade Agreement,
-   * Political Secret, Support for the Throne, Alliance) — assigned by
-   * PLAYER COLOR, not faction. `effect`/`timing` contain a literal
-   * "(color)" placeholder since the actual owning color isn't known until
-   * a specific game's setup assigns colors to players (see
-   * rules/promissoryNotes.ts's initializePromissoryNotes, which turns
-   * these templates + each player's actual color into concrete per-game
-   * instances). Keyed by template id (ceasefire, trade_agreement,
-   * political_secret, support_for_the_throne, alliance) — "alliance" is
-   * PoK-only, filtered out for Base-only games.
-   */
-  genericPromissoryNoteTemplates: Record<
-    string,
-    { name: string; timing: string; effect: string; placeInPlayArea: boolean; set: "base" | "pok" }
-  >;
-  /** RR: each faction's own promissory note(s) (data/factions/*.json's promissoryNote field) — usually 1 per faction, 2 for Empyrean. Unlike generic notes, the faction's name is already baked into the text literally (no placeholder), since it never changes. */
-  factionPromissoryNotes: Record<FactionId, { id: string; name: string; timing: string; effect: string; placeInPlayArea: boolean }[]>;
-  /** RR "Gather Starting Components" (setup): each faction's starting unit loadout (data/factions/*.json's startingUnits), keyed by the SAME camelCase keys the raw data already uses (e.g. "spaceDock", not "space_dock") — see setup/createGame.ts's own note on why this one field keeps that inconsistency instead of normalizing to UnitType's snake_case. Plain `string` keys/values (not FactionId/TechId brands) — same reason as factionTechIds above: this is a straight aggregation, reading it back out via a FactionId/TechId still works fine since those are subtypes of string. */
-  startingUnits: Record<string, Record<string, number>>;
-  /** RR "Gather Starting Components": each faction's starting (non-unit-upgrade) technologies (data/factions/*.json's startingTechnologies). */
-  startingTechnologies: Record<string, string[]>;
-  /** Every action card id (data/actionCards.json) — just enough to seed/shuffle the deck at setup; playing a card's actual effect is the same deferred-content bucket as agenda/objective effect text. */
-  allActionCardIds: string[];
-  /** Every relic id (data/relics.json) — just enough to seed/shuffle the relic deck at setup; a relic's own ability isn't resolved anywhere yet (same deferred-content bucket), only PURGE_RELIC_FRAGMENTS drawing one is implemented. */
-  allRelicIds: string[];
-  /** Which SystemId (tile id) is each faction's home system (data/tiles.json's tile-level homeFaction) — needed at setup, before any board has been generated, to know where to place a player's starting units/planets. Plain string keys/values, same reason as startingUnits/startingTechnologies above. */
-  homeSystemByFaction: Record<string, string>;
-  /** Which SystemId (tile id) is Mecatol Rex — needed at setup (custodians token placement, map generation's center slot) without hardcoding "18" anywhere as a magic number. */
-  mecatolSystemId: string;
-  // TODO as later phases need them: actionCards, agendas/objectives effect
-  // text, strategyCard primary/secondary text, faction abilityIds -> effect
-  // implementations. (technologies, explorationCards, relics, generic +
-  // faction promissoryNotes, and startingUnits/startingTechnologies are all
-  // wired in above already.)
-}
-
-/**
- * Resolves the *current* stats for one of a player's units, accounting for
- * any owned unit upgrade (RR 86.4: the upgrade card's stats fully replace
- * the faction sheet's for that unit type once owned).
- */
-export function getUnitStats(
-  rules: RuleData,
-  factionId: FactionId,
-  unitType: UnitType,
-  ownedUpgradeIds: UnitUpgradeId[],
-): UnitStats | undefined {
-  const upgrade = ownedUpgradeIds
-    .map((id) => rules.unitUpgrades[id])
-    .find((u) => u?.unitType === unitType);
-  if (upgrade) return upgrade.stats;
-  return rules.factionUnits[factionId]?.baseUnits[unitType];
-}
+  agendas: Record
