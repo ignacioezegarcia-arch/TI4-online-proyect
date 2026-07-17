@@ -53,8 +53,10 @@ export type GameAction =
   | {
       type: "USE_SPACE_CANNON_OFFENSE";
       playerId: PlayerId;
-      /** Pre-rolled dice, same trusted-RNG convention as RESOLVE_COMBAT_ROUND — see that action's doc comment. Combines ALL of this player's qualifying PDS (in the active system, plus any with the PDS II `rangesToAdjacent` upgrade in an adjacent system) into one dice pool. RR 77. */
+      /** Pre-rolled dice, same trusted-RNG convention as RESOLVE_COMBAT_ROUND — see that action's doc comment. One dice-group per qualifying unit TYPE (not just PDS — some faction units carry Space Cannon too), each in the active system plus any range-upgraded (e.g. PDS II) in an adjacent system. RR 77. */
       diceRolls: number[];
+      /** RR "Plasma Scoring": which of this player's qualifying unit types gets the +1 die — only matters if they own the tech and have 2+ types with different hitOn values. Ignored otherwise. */
+      plasmaScoringUnitType?: UnitType;
     }
   | { type: "SKIP_SPACE_CANNON_OFFENSE"; playerId: PlayerId } // RR 77: this player declines to fire, even though they had qualifying units
   | {
@@ -64,6 +66,13 @@ export type GameAction =
       assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
     }
   | { type: "ANNOUNCE_RETREAT"; playerId: PlayerId; toSystemId: SystemId } // RR 67.4
+  | {
+      type: "USE_DURANIUM_ARMOR";
+      playerId: PlayerId;
+      /** RR "Duranium Armor": the player's own choice of WHICH Sustain-Damage unit type (already damaged before this round) to repair — only offered when they actually own the tech and have an eligible unit; see PendingTacticalAction.duraniumArmorPendingPlayers's own doc comment. */
+      unitType: UnitType;
+    }
+  | { type: "SKIP_DURANIUM_ARMOR"; playerId: PlayerId } // declines the repair even though eligible
   | {
       type: "USE_ANTI_FIGHTER_BARRAGE";
       playerId: PlayerId;
@@ -116,6 +125,8 @@ export type GameAction =
       targetPlanetId: PlanetId;
       /** Pre-rolled dice, same trusted-RNG convention as RESOLVE_COMBAT_ROUND — see that action's doc comment. Order: iterate the bombarding player's bombardment-capable ship stacks in the order they appear in the system's spaceUnitsByPlayer, abilityValues.bombardment.dice dice per unit in the stack. RR 44.1 / 15. */
       diceRolls: number[];
+      /** RR "Plasma Scoring": which of this player's Bombardment-capable unit types gets the +1 die — the player's own choice, only relevant if they own the tech and have 2+ qualifying types with different hitOn values. Ignored otherwise. */
+      plasmaScoringUnitType?: UnitType;
     }
   | {
       type: "ASSIGN_BOMBARDMENT_HITS";
@@ -142,6 +153,8 @@ export type GameAction =
       playerId: PlayerId;
       /** Same trusted-RNG convention as everywhere else. This is the DEFENDER's own optional choice — RR 44's Space Cannon Defense, fired at the attacker's just-committed ground forces on this planet, before ground combat starts. */
       diceRolls: number[];
+      /** RR "Plasma Scoring": which of the defender's qualifying unit types gets the +1 die — see USE_SPACE_CANNON_OFFENSE's own note. */
+      plasmaScoringUnitType?: UnitType;
     }
   | { type: "SKIP_SPACE_CANNON_DEFENSE"; playerId: PlayerId } // RR 44: the defender declines to use it, even though they had qualifying units
   | {
@@ -262,6 +275,7 @@ export type GameEvent =
   | { type: "COMBAT_ROUND_RESOLVED"; systemId: SystemId; planetId?: PlanetId; round: number; hitsScoredByPlayer: Partial<Record<PlayerId, number>> }
   | { type: "UNITS_DESTROYED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
   | { type: "UNIT_SUSTAINED_DAMAGE"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
+  | { type: "UNIT_REPAIRED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
   | { type: "SPACE_COMBAT_ENDED"; systemId: SystemId; survivingPlayerId: PlayerId | null }
   | { type: "GROUND_FORCES_COMMITTED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId }
   | { type: "BOMBARDMENT_RESOLVED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number }
