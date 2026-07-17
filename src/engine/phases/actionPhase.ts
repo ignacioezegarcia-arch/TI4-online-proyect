@@ -5,6 +5,7 @@ import { ObjectiveKind } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { OBJECTIVE_CHECKS, SPEND_CHECK_TYPES } from "../rules/objectiveChecks";
 import { revealAgenda } from "./agendaPhase";
+import { drawActionCard } from "./actionCards";
 
 /**
  * RR 3.2-3.5 PASS.
@@ -130,6 +131,7 @@ export function scoreObjective(
       exhaustPlanetIdsForInfluence?: PlanetId[];
       tradeGoods?: number;
       commandTokens?: { tactic?: number; strategy?: number };
+      relicFragments?: { cultural?: number; industrial?: number; hazardous?: number; unknown?: number };
     };
   },
   rules: RuleData,
@@ -215,6 +217,7 @@ export function scoreObjectiveCore(
         exhaustPlanetIdsForInfluence?: PlanetId[];
         tradeGoods?: number;
         commandTokens?: { tactic?: number; strategy?: number };
+        relicFragments?: { cultural?: number; industrial?: number; hazardous?: number; unknown?: number };
       }
     | undefined,
   rules: RuleData,
@@ -271,6 +274,7 @@ interface SpentAmounts {
   influence: number;
   tradeGoods: number;
   commandTokens: number;
+  relicFragments: number;
 }
 
 function checkSpendRequirement(
@@ -295,6 +299,10 @@ function checkSpendRequirement(
       return spent.commandTokens >= (params.amount as number)
         ? { met: true }
         : { met: false, reason: `Spent ${spent.commandTokens}/${params.amount} command tokens.` };
+    case "spend_relic_fragments":
+      return spent.relicFragments >= (params.amount as number)
+        ? { met: true }
+        : { met: false, reason: `Purged ${spent.relicFragments}/${params.amount} relic fragments.` };
     case "spend_combined": {
       const need = params as { influence: number; resources: number; tradeGoods: number };
       const met = spent.influence >= need.influence && spent.resources >= need.resources && spent.tradeGoods >= need.tradeGoods;
@@ -351,6 +359,17 @@ function executeObjectiveSpend(
   if (tacticTokens > player.commandTokens.tactic) return { ok: false, error: "Not enough tactic command tokens." };
   if (strategyTokens > player.commandTokens.strategy) return { ok: false, error: "Not enough strategy command tokens." };
 
+  // RR "Destroy Heretical Works": purge 2 relic fragments of ANY type
+  // (mixed types allowed) — deliberately does NOT grant a relic, unlike
+  // PURGE_RELIC_FRAGMENTS (RR 35.9's normal 3-for-1 exchange). A separate,
+  // smaller spend, not a shortcut through the normal relic-purge action.
+  const fragmentSpend = spend.relicFragments ?? { cultural: 0, industrial: 0, hazardous: 0, unknown: 0 };
+  const relicFragments = (fragmentSpend.cultural ?? 0) + (fragmentSpend.industrial ?? 0) + (fragmentSpend.hazardous ?? 0) + (fragmentSpend.unknown ?? 0);
+  for (const key of ["cultural", "industrial", "hazardous", "unknown"] as const) {
+    const amount = fragmentSpend[key] ?? 0;
+    if (amount > player.relicFragments[key]) return { ok: false, error: `Not enough ${key} relic fragments.` };
+  }
+
   nextState = {
     ...nextState,
     players: {
@@ -363,11 +382,17 @@ function executeObjectiveSpend(
           tactic: player.commandTokens.tactic - tacticTokens,
           strategy: player.commandTokens.strategy - strategyTokens,
         },
+        relicFragments: {
+          cultural: player.relicFragments.cultural - (fragmentSpend.cultural ?? 0),
+          industrial: player.relicFragments.industrial - (fragmentSpend.industrial ?? 0),
+          hazardous: player.relicFragments.hazardous - (fragmentSpend.hazardous ?? 0),
+          unknown: player.relicFragments.unknown - (fragmentSpend.unknown ?? 0),
+        },
       },
     },
   };
 
-  return { ok: true, state: nextState, spent: { resources, influence, tradeGoods, commandTokens } };
+  return { ok: true, state: nextState, spent: { resources, influence, tradeGoods, commandTokens, relicFragments } };
 }
 
 function findControlledPlanet(state: GameState, playerId: PlayerId, planetId: PlanetId): { systemId: SystemId; planet: PlanetState } | null {
@@ -410,111 +435,4 @@ export function finishStatusPhaseScoring(
   return { ok: true, state: nextState, events: [] };
 }
 
-function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events: GameEvent[] } {
-  const events: GameEvent[] = [];
-
-  // RR 70.2: reveal 1 public objective — Stage I deck first, then Stage II
-  // once Stage I is exhausted. No-ops (doesn't error) if both decks are
-  // empty, e.g. before game setup has seeded them.
-  let objectives = state.objectives;
-  const deck = state.publicObjectiveDeck;
-  let nextDeck = deck;
-  if (deck) {
-    if (deck.stageI.length > 0) {
-      const [objectiveId, ...rest] = deck.stageI;
-      objectives = [...objectives, { kind: "publicI", objectiveId, revealed: true }];
-      nextDeck = { ...deck, stageI: rest };
-      events.push({ type: "PUBLIC_OBJECTIVE_REVEALED", objectiveId, kind: "publicI" });
-    } else if (deck.stageII.length > 0) {
-      const [objectiveId, ...rest] = deck.stageII;
-      objectives = [...objectives, { kind: "publicII", objectiveId, revealed: true }];
-      nextDeck = { ...deck, stageII: rest };
-      events.push({ type: "PUBLIC_OBJECTIVE_REVEALED", objectiveId, kind: "publicII" });
-    }
-  }
-
-  // RR 70.3: each non-eliminated player draws 1 action card. No-ops per
-  // player once the deck is empty, rather than erroring.
-  let actionCardDeck = state.actionCardDeck ? [...state.actionCardDeck] : undefined;
-  const players: GameState["players"] = {};
-  for (const [id, player] of Object.entries(state.players)) {
-    let updatedPlayer: Player = {
-      ...player,
-      // RR 70.4: command tokens on the board return to reinforcements (i.e. just removed; they're re-gained as fresh tokens in 70.5, not literally recycled).
-      commandTokens: { ...player.commandTokens, onBoard: [] },
-      // RR 70.6: ready all exhausted strategy cards. (Ready state for planets is handled below, per-system.)
-      strategyCards: player.strategyCards.map((c) => ({ ...c, exhausted: false })),
-    };
-    // RR 70.5: gain 2 command tokens. Simplification: auto-placed in the strategy pool;
-    // a future UI can offer redistribution as its own action before this runs.
-    updatedPlayer.commandTokens = { ...updatedPlayer.commandTokens, strategy: updatedPlayer.commandTokens.strategy + 2 };
-
-    if (!player.eliminated && actionCardDeck && actionCardDeck.length > 0) {
-      const [cardId, ...rest] = actionCardDeck;
-      actionCardDeck = rest;
-      updatedPlayer = { ...updatedPlayer, actionCards: [...updatedPlayer.actionCards, cardId] };
-      events.push({ type: "ACTION_CARD_DRAWN", playerId: player.id, cardId });
-    }
-
-    players[id as PlayerId] = updatedPlayer;
-  }
-
-  const systems: GameState["systems"] = {};
-  for (const [id, system] of Object.entries(state.systems)) {
-    systems[id as keyof typeof systems] = {
-      ...system,
-      planets: system.planets.map((p) => ({
-        ...p,
-        exhausted: false, // RR 70.6
-        // RR 53's legendary planet ability card readies independently in
-        // spirit, but the status phase readies EVERY exhausted card
-        // (RR 70.6), so in practice both flip together here regardless.
-        ...(p.legendaryAbilityExhausted ? { legendaryAbilityExhausted: false } : {}),
-        unitsByPlayer: Object.fromEntries(
-          Object.entries(p.unitsByPlayer).map(([pid, stacks]) => [
-            pid,
-            (stacks ?? []).map((u) => ({ ...u, damagedCount: 0 })), // RR 70.7
-          ]),
-        ),
-      })),
-      spaceUnitsByPlayer: Object.fromEntries(
-        Object.entries(system.spaceUnitsByPlayer).map(([pid, stacks]) => [
-          pid,
-          (stacks ?? []).map((u) => ({ ...u, damagedCount: 0 })), // RR 70.7
-        ]),
-      ),
-    };
-  }
-
-  return {
-    state: { ...state, players, systems, objectives, publicObjectiveDeck: nextDeck, actionCardDeck },
-    events,
-  };
-}
-
-export function startNewRound(state: GameState): GameState {
-  const players: GameState["players"] = {};
-  for (const [id, player] of Object.entries(state.players)) {
-    players[id as PlayerId] = { ...player, hasPassed: false, strategyCards: [] };
-  }
-
-  // RR 70.8: strategy cards return to the common play area (RR 73.2's trade
-  // goods only accrue on cards that go unchosen for a full round — cards
-  // that were just used carry no residual trade goods forward).
-  const unclaimedStrategyCards = state.unclaimedStrategyCards.length
-    ? state.unclaimedStrategyCards
-    : Object.values(state.players)
-        .flatMap((p) => p.strategyCards)
-        .map((c) => ({ cardId: c.cardId, tradeGoods: 0 }));
-
-  return {
-    ...state,
-    players,
-    phase: "strategy",
-    round: state.round + 1,
-    activePlayerId: null,
-    initiativeOrder: [],
-    unclaimedStrategyCards,
-    lastPlayerToPass: undefined,
-  };
-}
+function run
