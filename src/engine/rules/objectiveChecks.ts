@@ -404,6 +404,27 @@ export const OBJECTIVE_CHECKS: Record<string, ObjectiveCheckFn> = {
     }
     return { met: false, reason: "No player's last fighter in a system was destroyed by this player's Anti-Fighter Barrage this tactical action." };
   },
+
+  // RR "Status"-timed: this is a plain CURRENT-state check (unlike the
+  // "Action"-timed ones above) — any note sitting in a player's play area
+  // is, by construction, never their own (see setup/promissoryNotes.ts:
+  // a player's OWN notes always start in hand; a note only ever moves to
+  // play area when RECEIVED from someone else and its own placeInPlayArea
+  // flag says so), so there's no need to separately check ownership here.
+  have_another_players_note_in_play_area: ({ state, playerId }) => {
+    const met = (state.players[playerId]?.promissoryNotesInPlayArea.length ?? 0) > 0;
+    return { met, reason: met ? undefined : "No other player's promissory note in this player's play area." };
+  },
+
+  // RR "discard N action cards" (e.g. Form a Spy Network) — lifetime
+  // VOLUNTARY-discard counter, deliberately NOT incremented by playing a
+  // card (see Player.actionCardsDiscardedCount's own doc comment on the
+  // ruling behind that distinction).
+  discarded_action_cards: ({ state, playerId }, params) => {
+    const count = params.count as number;
+    const n = state.players[playerId]?.actionCardsDiscardedCount ?? 0;
+    return { met: n >= count, reason: n >= count ? undefined : `Only discarded ${n}/${count} action cards.` };
+  },
 };
 
 /** checkTypes that need a `spend` payload executed as part of scoring, handled directly in scoreObjective rather than here (they mutate state, not just read it). Exported so scoreObjective can tell them apart from OBJECTIVE_CHECKS. */
@@ -413,4 +434,5 @@ export const SPEND_CHECK_TYPES = new Set([
   "spend_trade_goods",
   "spend_command_tokens",
   "spend_combined",
+  "spend_relic_fragments",
 ]);
