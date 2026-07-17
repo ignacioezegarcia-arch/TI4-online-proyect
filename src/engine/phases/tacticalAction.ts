@@ -1,6 +1,6 @@
 import { GameState, Player, SystemState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, SystemId } from "../types/ids";
+import { PlayerId, SystemId, asTechId } from "../types/ids";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
@@ -121,7 +121,12 @@ export function moveShips(
       return { ok: false, error: `${move.unitType} has no move value and cannot move.` };
     }
 
-    if (!canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, stats.move)) {
+    if (
+      !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, stats.move, {
+        ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
+        ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")),
+      })
+    ) {
       return {
         ok: false,
         error: `RR 58.4: ${move.unitType} at ${move.fromSystemId} cannot reach ${activeSystemId} (move value ${stats.move}) — blocked by an anomaly, an enemy fleet along the way, or simply out of range.`,
@@ -255,4 +260,4 @@ function addToSystem(
     spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: updatedStacks },
   };
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
-          }
+}
