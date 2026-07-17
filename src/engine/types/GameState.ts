@@ -44,6 +44,8 @@ export interface PlanetState {
   attachmentIds: string[];
   /** RR 35: has this planet been explored yet (drawn its trait's exploration card)? Re-exploring normally isn't allowed except via specific tech (e.g. Scanlink Drone Network) — not modeled as an override yet, just this one flag. */
   explored: boolean;
+  /** RR 53: legendary planets have a separate ability card that exhausts/readies INDEPENDENTLY of the planet card itself (RR: "an ability that readies a planet cannot be used to ready a legendary planet ability card"). Undefined/irrelevant for non-legendary planets. See phases/invasion.ts's setPlanetController for the RR 25.1/53.2 rule on what happens to each when control changes. */
+  legendaryAbilityExhausted?: boolean;
   /**
    * Ground forces and structures physically on the planet (RR 39, 74), keyed
    * by owning player — mirrors SystemState.spaceUnitsByPlayer. Needs to be
