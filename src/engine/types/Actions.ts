@@ -49,6 +49,8 @@ export type GameAction =
       /** Ground forces picked up along the way per RR 84.1 — kept separate from ship moves because capacity is checked against these, not against ships. Must come from the same fromSystemId as one of the `moves` entries above (multi-hop pickup along the path isn't supported yet — flagged in moveShips). */
       transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
       transportedFighters?: { fromSystemId: SystemId; count: number }[];
+      /** RR "Gravity Drive": exhaust that tech (if owned and readied) to apply +1 move value to ONE of the moves entries above (identified by its fromSystemId) for this tactical action only. */
+      gravityDriveBoostFromSystemId?: SystemId;
     }
   | {
       type: "USE_SPACE_CANNON_OFFENSE";
@@ -163,7 +165,14 @@ export type GameAction =
       /** Always the ATTACKER (whoever's ground forces got shot at) — same destroy/flip-per-unit shape as ASSIGN_HITS. RR 44/76. */
       assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
     }
-  | { type: "PRODUCE_UNITS"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] }
+  | {
+      type: "PRODUCE_UNITS";
+      playerId: PlayerId;
+      planetId: PlanetId;
+      units: { unitType: UnitType; count: number }[];
+      /** RR "AI Development Algorithm"'s OTHER ability (distinct from its unit-upgrade-research one, but shares the same exhausted state): exhaust to reduce this production's combined cost by the number of unit upgrade technologies this player owns. */
+      useAiDevelopmentAlgorithmForCost?: boolean;
+    }
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
   // --- Strategy card primary/secondary abilities (RR 71) ---
@@ -198,6 +207,8 @@ export type GameAction =
       upgradeId: UnitUpgradeId;
       cost: number;
       exhaustPlanetIdsForResources: PlanetId[];
+      /** RR "AI Development Algorithm": exhaust that tech (if owned and readied) to ignore exactly ONE instance of this one color's prerequisite for this research (e.g. a "2 red" requirement becomes "1 red") — not the whole prerequisite list. */
+      aiDevelopmentAlgorithmIgnoreColor?: string;
     } // RR 90/86
   | { type: "EXPLORE_PLANET"; playerId: PlayerId; planetId: PlanetId } // RR 35 — PoK only (rejected in Base-only games)
   | { type: "EXPLORE_FRONTIER"; playerId: PlayerId; systemId: SystemId } // RR 35 — PoK only
@@ -208,6 +219,22 @@ export type GameAction =
       useCount: number;
       useUnknownCount: number;
     } // RR 35.9 — PoK only
+
+  // --- Standalone technology abilities (see phases/technologyAbilities.ts's own header note on why these are separate actions rather than modifiers on an existing one) ---
+  | { type: "USE_SELF_ASSEMBLY_ROUTINES"; playerId: PlayerId; planetId: PlanetId } // exhausts the tech; +1 free mech on a planet where this player already has one
+  | { type: "USE_DACXIVE_ANIMATORS"; playerId: PlayerId; planetId: PlanetId } // not exhaustable; +1 free infantry after winning ground combat there this tactical action
+  | { type: "USE_INTEGRATED_ECONOMY"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] } // not exhaustable; free production up to the planet's resource value, after gaining control of it this tactical action
+  | { type: "USE_X89_BACTERIAL_WEAPON"; playerId: PlayerId; targetPlanetId: PlanetId } // component action (uses this player's whole turn); exhausts the tech
+  | { type: "USE_PSYCHOARCHAEOLOGY"; playerId: PlayerId; planetId: PlanetId } // exhausts the PLANET (not this tech) for 1 trade good
+  | {
+      type: "USE_SLING_RELAY";
+      playerId: PlayerId;
+      systemId: SystemId;
+      planetId: PlanetId;
+      unitType: UnitType;
+      count: number;
+    } // component action (uses this player's whole turn); exhausts the tech; produce 1 ship in any system with this player's own space dock, paying its normal cost against that dock's Production limit
+  | { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId } // not exhaustable; explores a planet in the just-activated system that has this player's own units on it
 
   // --- Transactions (RR 83) ---
   | {
