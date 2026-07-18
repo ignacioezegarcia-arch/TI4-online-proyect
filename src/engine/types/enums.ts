@@ -5,12 +5,26 @@
  */
 
 /** Which expansions are active. Matches the `set` field convention already used in data/*.json. */
-export type GameMode = "base" | "pok" | "pok_te";
+/**
+ * RR/setup: exactly 4 supported combinations, per the project's own
+ * confirmed scope — Codex is always bundled WITH PoK (there's no "PoK
+ * without Codex" option), and Thunder's Edge can be played either together
+ * with PoK+Codex or completely standalone with just the base game.
+ *  - "base": base game only.
+ *  - "pok_codex": base + Prophecy of Kings + Codex.
+ *  - "pok_codex_te": base + Prophecy of Kings + Codex + Thunder's Edge.
+ *  - "te": base + Thunder's Edge only (no PoK/Codex content at all).
+ * See rules/gameMode.ts's hasPoKContent/hasCodex/hasThundersEdge for the
+ * shared checks built on top of this — call those instead of comparing
+ * against these literal strings directly, so every PoK-gate/Codex-gate
+ * stays consistent if this list ever needs a 5th combination.
+ */
+export type GameMode = "base" | "pok_codex" | "pok_codex_te" | "te";
 
 /** RR 36: A game round consists of these four phases, in order. */
 export type Phase = "setup" | "strategy" | "action" | "status" | "agenda" | "ended";
 
-/** RR 78: The steps of a tactical action, in order. */
+/** RR 78: The five steps of a tactical action, in order. */
 export type TacticalStep =
   | "activation"
   | "movement"
