@@ -59,6 +59,8 @@ export type GameAction =
       diceRolls: number[];
       /** RR "Plasma Scoring": which of this player's qualifying unit types gets the +1 die — only matters if they own the tech and have 2+ types with different hitOn values. Ignored otherwise. */
       plasmaScoringUnitType?: UnitType;
+      /** RR "Graviton Laser System": exhaust that tech (if owned and readied) before firing, so the active player's assignment of these hits must go to non-fighter ships first, while any remain. Only meaningful here — Space Cannon Defense fires at ground forces, never fighters. */
+      useGravitonLaserSystem?: boolean;
     }
   | { type: "SKIP_SPACE_CANNON_OFFENSE"; playerId: PlayerId } // RR 77: this player declines to fire, even though they had qualifying units
   | {
@@ -68,6 +70,12 @@ export type GameAction =
       assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
     }
   | { type: "ANNOUNCE_RETREAT"; playerId: PlayerId; toSystemId: SystemId } // RR 67.4
+  | {
+      type: "USE_ASSAULT_CANNON_DESTRUCTION";
+      playerId: PlayerId;
+      /** RR "Assault Cannon": mandatory (no skip) — the player's own choice of WHICH non-fighter ship type to destroy, only offered while PendingTacticalAction.assaultCannonPendingPlayer names them. */
+      unitType: UnitType;
+    }
   | {
       type: "USE_DURANIUM_ARMOR";
       playerId: PlayerId;
@@ -256,6 +264,12 @@ export type GameAction =
       fleet: number;
       strategy: number;
     } // exhausts the tech; new pool counts must sum to the same total this player already had
+  | {
+      type: "USE_TRANSIT_DIODES";
+      playerId: PlayerId;
+      removals: { planetId: PlanetId; unitType: "infantry" | "mech"; count: number }[];
+      placements: { planetId: PlanetId; unitType: "infantry" | "mech"; count: number }[];
+    } // exhausts the tech; removed and placed totals must match, capped at 4 total
 
   // --- Transactions (RR 83) ---
   | {
