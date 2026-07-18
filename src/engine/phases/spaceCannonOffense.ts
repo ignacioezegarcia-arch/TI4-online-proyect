@@ -3,7 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId } from "../types/ids";
 import { UnitType } from "../types/enums";
 import { RuleData } from "../types/RuleData";
-import { buildSpaceCannonOffenseEntries, resolveCombatRound, applyHitAssignments, playersWithShipsInSystem } from "../rules/combat";
+import { buildSpaceCannonOffenseEntries, resolveCombatRound, applyHitAssignments, applySelfAssemblyRoutinesMechBonus, playersWithShipsInSystem } from "../rules/combat";
 import { computeSpaceCombatEntry } from "./spaceCombat";
 
 /**
@@ -143,6 +143,10 @@ export function assignSpaceCannonOffenseHits(
   const nextState: GameState = {
     ...state,
     systems: { ...state.systems, [systemId]: updatedSystem },
+    // RR "Self-Assembly Routines": normally mechs never appear in space
+    // (ground forces only), but some factions have abilities that let
+    // their mechs sit in the space area too — wired in for that case.
+    players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
     pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
   };
 
