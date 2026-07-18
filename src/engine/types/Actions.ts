@@ -165,6 +165,14 @@ export type GameAction =
       /** Always the ATTACKER (whoever's ground forces got shot at) — same destroy/flip-per-unit shape as ASSIGN_HITS. RR 44/76. */
       assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
     }
+  | { type: "USE_MAGEN_DEFENSE_GRID"; playerId: PlayerId } // base version (base-mode games only): exhausts the tech; the attacker can't roll any combat dice this ground combat round
+  | { type: "SKIP_MAGEN_DEFENSE_GRID"; playerId: PlayerId } // declines the block even though eligible
+  | {
+      type: "ASSIGN_MAGEN_DEFENSE_GRID_HIT";
+      playerId: PlayerId;
+      /** ΩΩ version (everywhere except base-only games): NOT optional and doesn't exhaust anything — the defender's own choice of WHICH attacker unit absorbs the automatic hit. */
+      assignment: { unitType: UnitType; outcome: "destroy" | "flip" };
+    }
   | {
       type: "PRODUCE_UNITS";
       playerId: PlayerId;
