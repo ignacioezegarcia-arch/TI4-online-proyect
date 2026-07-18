@@ -1,6 +1,6 @@
 import { GameState, Player, PendingAgendaVote } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, AgendaId, PlanetId } from "../types/ids";
+import { PlayerId, AgendaId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
 
@@ -59,7 +59,14 @@ export function revealAgenda(state: GameState): ActionResult {
 
 export function castVotes(
   state: GameState,
-  action: { type: "CAST_VOTES"; playerId: PlayerId; outcome: string; exhaustPlanetIds: PlanetId[] },
+  action: {
+    type: "CAST_VOTES";
+    playerId: PlayerId;
+    outcome: string;
+    exhaustPlanetIds: PlanetId[];
+    /** RR "Predictive Intelligence": exhaust that tech (if owned and readied) to cast 3 additional votes for this outcome — conditionally exhausted for real once the agenda resolves (see resolveAgendaVote), only if this outcome doesn't end up winning. */
+    usePredictiveIntelligenceBonus?: boolean;
+  },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingAgendaVote;
@@ -89,11 +96,21 @@ export function castVotes(
     nextState = exhaustPlanet(nextState, planetId);
   }
 
+  let predictiveIntelligenceBonusUsedBy = pending.predictiveIntelligenceBonusUsedBy;
+  if (action.usePredictiveIntelligenceBonus) {
+    const techId = asTechId("predictive_intelligence");
+    if (!player.technologies.includes(techId)) return { ok: false, error: "This player doesn't own Predictive Intelligence." };
+    if (player.exhaustedTechnologies.includes(techId)) return { ok: false, error: "Predictive Intelligence is already exhausted." };
+    votes += 3;
+    predictiveIntelligenceBonusUsedBy = { ...predictiveIntelligenceBonusUsedBy, [action.playerId]: action.outcome };
+  }
+
   const existingForOutcome = pending.votesByOutcome[action.outcome] ?? [];
   const updatedVote: PendingAgendaVote = {
     ...pending,
     nextVoterIndex: pending.nextVoterIndex + 1,
     votesByOutcome: { ...pending.votesByOutcome, [action.outcome]: [...existingForOutcome, { playerId: action.playerId, votes }] },
+    predictiveIntelligenceBonusUsedBy,
   };
   nextState = { ...nextState, pendingAgendaVote: updatedVote };
 
@@ -138,8 +155,23 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
   const agendaType = rules.agendas[agendaId]?.type ?? "directive";
   const becameLaw = agendaType === "law" && winner !== null;
 
+  // RR "Predictive Intelligence": conditionally exhaust for whoever used
+  // its +3-votes bonus this agenda — only if THEIR outcome did NOT win
+  // (RR: "if you do, and the outcome you voted for is not resolved,
+  // exhaust this card" — winning means it stays readied).
+  let players = state.players;
+  for (const [playerId, votedOutcome] of Object.entries(pending.predictiveIntelligenceBonusUsedBy ?? {})) {
+    if (votedOutcome === winner) continue; // their outcome won — stays readied
+    const p = players[playerId as PlayerId];
+    const techId = asTechId("predictive_intelligence");
+    if (p && !p.exhaustedTechnologies.includes(techId)) {
+      players = { ...players, [playerId]: { ...p, exhaustedTechnologies: [...p.exhaustedTechnologies, techId] } };
+    }
+  }
+
   let nextState: GameState = {
     ...state,
+    players,
     pendingAgendaVote: null,
     agendaDeck: becameLaw
       ? { ...state.agendaDeck, lawsInPlay: [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: "common" as const }] }
