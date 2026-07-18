@@ -54,7 +54,7 @@
       "level": 1,
       "expansion": 1,
       "exhaustable": true,
-      "effect": "You may exhaust this card at the start of a player's turn; if you do, that player may exhaust or ready 1 of their planets."
+      "effect": "You may exhaust this card at the end of your turn to ready 1 of your planets that has a technology specialty or 1 of your other technologies."
     },
     {
       "id": "hyper_metabolism",
@@ -81,7 +81,12 @@
       "level": 3,
       "expansion": 0,
       "exhaustable": true,
-      "effect": "ACTION: Exhaust this card and choose 1 planet in a system that contains 1 or more of your ships that have BOMBARDMENT; destroy all infantry on that planet."
+      "effect": "ACTION: Exhaust this card and choose 1 planet in a system that contains 1 or more of your ships that have BOMBARDMENT; destroy all infantry on that planet.",
+      "versions": [
+  { "version": "original", "source": "base", "effect": "ACTION: Exhaust this card and choose 1 planet in a system that contains 1 or more of your ships that have BOMBARDMENT; destroy all infantry on that planet." },
+  { "version": "Ω", "source": "codex1", "effect": "After 1 or more of your units use BOMBARDMENT against a planet, if at least 1 of your opponent's infantry was destroyed, you may destroy all of your opponent's infantry on that planet." },
+  { "version": "ΩΩ", "source": "codex4", "effect": "Double the hits produced by your units' BOMBARDMENT and ground combat rolls. Exhaust each planet you use BOMBARDMENT against." }
+      ]
     },
     {
       "id": "plasma_scoring",
@@ -101,7 +106,7 @@
       "level": 0,
       "expansion": 1,
       "exhaustable": true,
-      "effect": "When you research a unit upgrade technology, you may exhaust this card to ignore all of that technology's prerequisites."
+      "effect": "When you research a unit upgrade technology, you may exhaust this card to ignore any 1 prerequisite. When 1 or more of your units use Production, you may exhaust this card to reduce the combined cost of the produced units by the number of unit upgrade technologies that you own."
     },
     {
       "id": "magen_defense_grid",
@@ -113,7 +118,12 @@
       "level": 1,
       "expansion": 0,
       "exhaustable": true,
-      "effect": "BEFORE COMBAT: You may exhaust this card; if you do, apply +1 to the result of each of your units' combat rolls during this combat round."
+      "effect": "BEFORE COMBAT: You may exhaust this card; if you do, apply +1 to the result of each of your units' combat rolls during this combat round.",
+      "versions": [
+  { "version": "original", "source": "base", "effect": "You may exhaust this card at the start of a round of ground combat on a planet that contains 1 or more of your units that have Planetary Shield; your opponent cannot make combat rolls this combat round." },
+  { "version": "Ω", "source": "codex1", "effect": "At the start of ground combat on a planet that contains 1 or more of your structures, you may produce 1 hit and assign it to 1 of your opponent's ground forces." },
+  { "version": "ΩΩ", "source": "codex4", "effect": "When any player activates a system that contains 1 or more of your structures, place 1 infantry from your reinforcements with each of those structures. At the start of ground combat on a planet that contains 1 or more of your structures, produce 1 hit and assign it to 1 of your opponent's ground forces." }
+      ]
     },
     {
       "id": "self_assembly_routines",
@@ -125,8 +135,8 @@
       "level": 1,
       "expansion": 1,
       "exhaustable": true,
-      "effect": "After you produce a mech, you may exhaust this card to produce 1 additional mech without paying its cost."
-    },
+      "effect": "After 1 or more of your units use PRODUCTION, you may exhaust this card to place 1 mech from your reinforcements on a planet you control in that system. After 1 of your mechs is destroyed, gain 1 trade good." 
+      },
     {
       "id": "duranium_armor",
       "name": "Duranium Armor",
@@ -172,8 +182,8 @@
       "level": 0,
       "expansion": 1,
       "exhaustable": false,
-      "effect": "After you perform a tactical action in a system that contains a frontier token, if you have 1 or more ships in that system, explore that token."
-    },
+      "effect": "After you perform a tactical action in a system that contains a frontier token, if you have 1 or more ships in that system, explore that token. Your ships can retreat into adjacent systems that do not contain other players' units, even if you do not have units or control planets in that system."
+      },
     {
       "id": "gravity_drive",
       "name": "Gravity Drive",
@@ -183,8 +193,8 @@
       ],
       "level": 1,
       "expansion": 0,
-      "exhaustable": true,
-      "effect": "After you activate a system, you may exhaust this card to apply +1 to the move value of 1 of your ships during this tactical action."
+      "exhaustable": false,
+      "effect": "After you activate a system, apply +1 to the move value of 1 of your ships during this tactical action."
     },
     {
       "id": "sling_relay",
@@ -196,8 +206,8 @@
       "level": 1,
       "expansion": 1,
       "exhaustable": true,
-      "effect": "When you activate a system, you may exhaust this card to explore 1 planet in that system which contains 1 or more of your units."
-    },
+      "effect": "ACTION: Exhaust this card to produce 1 ship in any system that contains 1 of your space docks."
+      },
     {
       "id": "fleet_logistics",
       "name": "Fleet Logistics",
@@ -267,8 +277,8 @@
       "level": 1,
       "expansion": 1,
       "exhaustable": true,
-      "effect": "You may exhaust this card at the end of your turn; if you do, remove all of your command tokens from the board and return them to your reinforcements."
-    },
+      "effect": "At the end of your turn, you may exhaust this card to redistribute your command tokens. When you cast votes during the agenda phase, you may cast 3 additional votes; if you do, and the outcome you voted for is not resolved, exhaust this card."
+      },
     {
       "id": "transit_diodes",
       "name": "Transit Diodes",
