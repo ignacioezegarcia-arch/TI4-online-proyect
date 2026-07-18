@@ -4,31 +4,31 @@ import { PlayerId, PlanetId, SystemId, asTechId } from "../types/ids";
 import { UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
-import { hasPoKContent } from "../rules/gameMode";
+import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
 import { applyExplorationCard } from "./exploration";
 import { advanceActivePlayer } from "./actionPhase";
 import { executeProduction } from "./production";
 
 /**
- * RR "Technology" — the standalone abilities of 8 exhaustable/passive
+ * RR "Technology" — the standalone abilities of 6 exhaustable/passive
  * techs that don't fit the tactical-action-step handlers elsewhere (see
  * this project's own note on which techs live where): each is its own
  * GameAction rather than a modifier threaded through an existing one,
  * since none of them share a natural existing action to piggyback on the
  * way Gravity Drive rides MOVE_SHIPS or AI Development Algorithm rides
- * RESEARCH_UNIT_UPGRADE/PRODUCE_UNITS.
+ * RESEARCH_UNIT_UPGRADE.
  *
- * Timing simplification, flagged rather than silently strict: Sling Relay,
- * Bio-Stims, and Predictive Intelligence's own "at the end of your turn" /
- * "when you activate a system" text isn't strictly gated to that exact
- * instant (this engine doesn't have a generic "was X the most recent thing
- * that happened" gate for every possible trigger — only for the ones
- * state.recentEvents already tracks) — offered any time during the action
- * phase (or, for Sling Relay/X-89, whenever it'd be this player's own
- * component-action turn) instead. Self-Assembly Routines, Dacxive
- * Animators, and Integrated Economy all check recentEvents directly
- * (production/ground-combat-win/control-gained are all tracked there
- * already), so those three ARE timing-accurate.
+ * Timing simplification, flagged rather than silently strict: Sling Relay
+ * and Integrated Economy's own "free production" scope (this engine
+ * doesn't have a generic "was X the most recent thing that happened" gate
+ * for every possible trigger — only for the ones state.recentEvents
+ * already tracks). Self-Assembly Routines, Dacxive Animators, and
+ * Integrated Economy all check recentEvents directly (production/ground-
+ * combat-win/control-gained are all tracked there already), so those three
+ * ARE timing-accurate; Sling Relay's own "when you activate a system" isn't
+ * strictly gated to the moment of activation, just to being the player's
+ * own turn with no tactical action pending — a reasonable, bounded
+ * approximation rather than a precise re-check.
  */
 
 function ownsReadiedTech(player: Player, techId: string): { ok: true } | { ok: false; error: string } {
@@ -199,12 +199,15 @@ export function useIntegratedEconomy(
   return { ok: true, state: nextState, events };
 }
 
-/** RR "X-89 Bacterial Weapon": a component action (uses this player's whole turn, same as PASS/a tactical/strategic action) — exhaust, pick a planet in a system where this player has a Bombardment-capable ship, destroy every OTHER player's infantry there. */
+/** RR "X-89 Bacterial Weapon" — BASE version only (see rules/combat.ts's buildBombardmentEntries/buildGroundCombatEntries for the ΩΩ Codex 4 version's passive dice-doubling, and phases/invasion.ts's bombard for its "exhaust each planet you use Bombardment against" clause — both active instead whenever Codex is in play): a component action (uses this player's whole turn, same as PASS/a tactical/strategic action) — exhaust, pick a planet in a system where this player has a Bombardment-capable ship, destroy every OTHER player's infantry there. */
 export function useX89BacterialWeapon(
   state: GameState,
   action: { type: "USE_X89_BACTERIAL_WEAPON"; playerId: PlayerId; targetPlanetId: PlanetId },
   rules: RuleData,
 ): ActionResult {
+  if (usesCodex4Version(state.mode)) {
+    return { ok: false, error: "RR \"X-89 Bacterial Weapon\": the Codex ΩΩ version doesn't have this component-action ability at all — see rules/combat.ts for its passive dice-doubling instead." };
+  }
   if (state.phase !== "action") return { ok: false, error: "RR: this component action only applies during the action phase." };
   if (state.activePlayerId !== action.playerId) return { ok: false, error: "RR 4: it is not this player's turn." };
   if (state.pendingTacticalAction) return { ok: false, error: "Cannot use this with a tactical action in progress." };
@@ -356,4 +359,93 @@ export function usePredictiveIntelligenceRedistribute(
   const currentTotal = player.commandTokens.tactic + player.commandTokens.fleet + player.commandTokens.strategy;
   const newTotal = action.tactic + action.fleet + action.strategy;
   if (newTotal !== currentTotal) {
-    return { ok: false, error: `RR "Predictive Intelligen
+    return { ok: false, error: `RR "Predictive Intelligence": redistribution must keep the same total (${currentTotal}), got ${newTotal}.` };
+  }
+
+  const updatedPlayer = exhaustTech(
+    { ...player, commandTokens: { ...player.commandTokens, tactic: action.tactic, fleet: action.fleet, strategy: action.strategy } },
+    "predictive_intelligence",
+  );
+  const nextState: GameState = { ...state, players: { ...state.players, [action.playerId]: updatedPlayer } };
+  return { ok: true, state: nextState, events: [] };
+}
+
+/** RR "Scanlink Drone Network": when activating a system, explore 1 planet there that has this player's own units on it — independent of RR 35's normal "just gained control" trigger, and independent of whether it's already been explored. Not exhaustable — repeatable every tactical action. */
+export function useScanlinkDroneNetwork(
+  state: GameState,
+  action: { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId },
+  rules: RuleData,
+): ActionResult {
+  if (!hasPoKContent(state.mode)) {
+    return {
+      ok: false,
+      error: "RR 35: Exploration is a Prophecy of Kings mechanic, not available without Prophecy of Kings + Codex content (base-only or Thunder's-Edge-only games).",
+    };
+  }
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  if (!player.technologies.includes(asTechId("scanlink_drone_network"))) {
+    return { ok: false, error: "This player doesn't own Scanlink Drone Network." };
+  }
+
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  const { systemId, planet } = found;
+  const hasUnitsHere = (planet.unitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0);
+  if (!hasUnitsHere) return { ok: false, error: "This player has no units on that planet." };
+
+  const planetData = rules.planets[action.planetId];
+  const trait = planetData?.traits[0] as "cultural" | "industrial" | "hazardous" | undefined;
+  if (!trait) return { ok: false, error: `RR 35: ${action.planetId} has no trait and can't be explored.` };
+
+  const deck = state.explorationDecks?.[trait] ?? [];
+  let nextState: GameState = state;
+  const events: GameEvent[] = [];
+
+  if (deck.length > 0) {
+    const [cardId, ...rest] = deck;
+    const result = applyExplorationCard(nextState, action.playerId, systemId, action.planetId, cardId, rules);
+    nextState = result.state;
+    events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: trait });
+    nextState = { ...nextState, explorationDecks: { ...nextState.explorationDecks!, [trait]: rest } };
+  }
+
+  nextState = setExplored(nextState, systemId, action.planetId);
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "Sling Relay": a component action (uses this player's whole turn, same as X-89 Bacterial Weapon) — exhaust, produce 1 ship in ANY system containing 1 of this player's space docks, paying its normal cost against that dock's own Production limit (same mechanics as PRODUCE_UNITS/executeProduction — this just isn't restricted to the player's currently-activated system). */
+export function useSlingRelay(
+  state: GameState,
+  action: { type: "USE_SLING_RELAY"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; unitType: UnitType; count: number },
+  rules: RuleData,
+): ActionResult {
+  if (state.phase !== "action") return { ok: false, error: "RR: this component action only applies during the action phase." };
+  if (state.activePlayerId !== action.playerId) return { ok: false, error: "RR 4: it is not this player's turn." };
+  if (state.pendingTacticalAction) return { ok: false, error: "Cannot use this with a tactical action in progress." };
+
+  const player = state.players[action.playerId];
+  const techCheck = ownsReadiedTech(player, "sling_relay");
+  if (!techCheck.ok) return techCheck;
+
+  const productionResult = executeProduction(state, action.playerId, action.systemId, action.planetId, [{ unitType: action.unitType, count: action.count }], rules);
+  if (!productionResult.ok) return productionResult;
+
+  let nextState = productionResult.state;
+  nextState = {
+    ...nextState,
+    players: { ...nextState.players, [action.playerId]: exhaustTech(nextState.players[action.playerId], "sling_relay") },
+  };
+  // RR: this is a component ACTION — it uses this player's entire turn, same as PASS/finishing a tactical/strategic action.
+  nextState = advanceActivePlayer(nextState);
+  return { ok: true, state: nextState, events: productionResult.events };
+}
+
+function setExplored(state: GameState, systemId: SystemId, planetId: PlanetId): GameState {
+  const system = state.systems[systemId];
+  const updatedSystem: SystemState = {
+    ...system,
+    planets: system.planets.map((p) => (p.planetId === planetId ? { ...p, explored: true } : p)),
+  };
+  return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+}
