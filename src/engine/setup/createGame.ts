@@ -5,6 +5,7 @@ import { GameMode, UnitType, AnomalyType, WormholeType } from "../types/enums";
 import { generateMap, fisherYatesShuffle, PlaceableTile } from "./mapGeneration";
 import { initializePromissoryNotes } from "./promissoryNotes";
 import { planetNameToId } from "../rules/ruleDataMapping";
+import { hasPoKContent } from "../rules/gameMode";
 
 /**
  * RR "First-Game Setup" steps 1-12 (the COMPLETE/standard version — the
@@ -136,7 +137,7 @@ export function createGame(input: CreateGameInput): GameState {
   // here instead, starting inactive (gamma-only wormhole). See
   // rules/adjacency.ts's maybeActivateWormholeNexus for how it flips
   // active later. Base-only games never have this tile at all.
-  if (input.mode !== "base" && rules.wormholeNexusSystemId) {
+  if (hasPoKContent(input.mode) && rules.wormholeNexusSystemId) {
     const nexusRaw = allPlacedTiles.get(rules.wormholeNexusSystemId);
     if (nexusRaw) {
       const nexusSystemId = asSystemId(rules.wormholeNexusSystemId);
@@ -193,6 +194,7 @@ export function createGame(input: CreateGameInput): GameState {
       commodities: 0, // RR: commodities only fill up via the Trade strategy card's "replenish", never start pre-filled
       tradeGoods: 0,
       technologies: (rules.startingTechnologies[factionId] ?? []).map(asTechId),
+      exhaustedTechnologies: [],
       unitUpgrades: [],
       actionCards: [],
       promissoryNotesInHand: [...(promissoryNoteSetup.startingHands[p.id] ?? [])],
@@ -290,16 +292,13 @@ function rawTileToSystemState(t: RawTileEntry, systemId: SystemId, mode: GameMod
     // Base-only games don't have Frontier tokens at all — RR 35's whole
     // Exploration mechanic is PoK-only (see phases/exploration.ts's own
     // mode guard).
-    frontierToken: mode !== "base" && (t.planets ?? []).length === 0,
+    frontierToken: hasPoKContent(mode) && (t.planets ?? []).length === 0,
   };
 }
 
 /** RR "Gather Starting Components": places a faction's startingUnits onto their home system — ships go to space, ground forces + structures go on the planet with the highest resource value (RR's own recommendation when a home system has multiple planets). */
 function placeStartingUnits(homeSystem: SystemState, playerId: PlayerId, factionId: FactionId, rules: RuleData): void {
   const raw = rules.startingUnits[factionId] ?? {};
-  // Raw data keys are camelCase (e.g. "spaceDock") but UnitType is snake_case
-  // for multi-word types — see RuleData.ts's own note on why this one field
-  // keeps that inconsistency rather than normalizing the source data.
   const keyToUnitType: Record<string, UnitType> = {
     carrier: "carrier",
     cruiser: "cruiser",
@@ -338,7 +337,7 @@ function rulesResourceOf(planet: PlanetState, rules: RuleData): number {
   return rules.planets[planet.planetId]?.resources ?? 0;
 }
 
-/** RR "Shuffle Common Decks" — all 6 shuffled decks this engine tracks (action, agenda, public objectives x2 stages, secret objectives, exploration x4 + relics if PoK). Mode-filtered where a deck has PoK/TE-only content mixed in with base content already (agendas, objectives don't currently distinguish set in RuleData, so they're not filtered here — see this project's own note on why: RuleData.agendas/objectives don't carry a `set` field yet). */
+/** RR "Shuffle Common Decks" — all 6 shuffled decks this engine tracks. */
 function shuffleAndSeedDecks(
   rules: RuleData,
   mode: GameMode,
@@ -361,7 +360,7 @@ function shuffleAndSeedDecks(
   }
 
   const explorationDecks: NonNullable<GameState["explorationDecks"]> = { cultural: [], industrial: [], hazardous: [], frontier: [] };
-  if (mode !== "base") {
+  if (hasPoKContent(mode)) {
     for (const deck of ["cultural", "industrial", "hazardous", "frontier"] as const) {
       const idsForDeck = Object.entries(rules.explorationCards)
         .filter(([, c]) => c.deck === deck)
@@ -379,6 +378,6 @@ function shuffleAndSeedDecks(
     },
     secretObjectiveDeck: fisherYatesShuffle(secretIds.map(asObjectiveId), rng),
     explorationDecks,
-    relicDeck: mode === "base" ? [] : fisherYatesShuffle(rules.allRelicIds.map(asRelicId), rng),
+    relicDeck: hasPoKContent(mode) ? fisherYatesShuffle(rules.allRelicIds.map(asRelicId), rng) : [],
   };
 }
