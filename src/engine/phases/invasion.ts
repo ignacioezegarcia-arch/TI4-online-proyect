@@ -1,8 +1,9 @@
 import { GameState, PlanetState, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId, PlanetId } from "../types/ids";
-import { UnitType } from "../types/enums";
-import { RuleData } from "../types/RuleData";
+import { PlayerId, SystemId, PlanetId, asTechId } from "../types/ids";
+import { UnitType, STRUCTURE_TYPES } from "../types/enums";
+import { RuleData, getUnitStats } from "../types/RuleData";
+import { usesCodex4Version } from "../rules/gameMode";
 import {
   playersWithGroundForces,
   buildBombardmentEntries,
@@ -22,8 +23,9 @@ import { maybeActivateWormholeNexus } from "../rules/adjacency";
  *  1. BOMBARD (optional, any number of times against different planets;
  *     attacker decides whether to bombard at all).
  *  2. COMMIT_GROUND_FORCES (optional, any number of times/planets).
- *  3. FINISH_INVASION_COMMITS — attacker signals they're done committing.
- *     If nothing ended up contested, this goes straight to Production.
+ *  3. FINISH_INVASION_COMMITS — attacker signals no more planets will be
+ *     invaded this tactical action. If nothing ended up contested, this
+ *     goes straight to Production.
  *  4. START_GROUND_COMBAT(planetId) — the active player's own, independent
  *     choice of which contested planet resolves next (RR 44.4). Not tied
  *     to commit order, not tied to any previous pick — called again after
@@ -31,7 +33,10 @@ import { maybeActivateWormholeNexus } from "../rules/adjacency";
  *     If the defender on that planet has a qualifying PDS there, this
  *     opens a Space Cannon Defense window (their own optional choice,
  *     USE_SPACE_CANNON_DEFENSE / SKIP_SPACE_CANNON_DEFENSE) before ground
- *     combat's dice start rolling; skipped automatically if they have none.
+ *     combat's dice start rolling. Failing that, checks Magen Defense Grid
+ *     (base version's optional block, or ΩΩ's automatic hit) — see that
+ *     tech's own functions below. Skipped straight to ground combat if
+ *     none of these apply.
  *  5. Ground combat itself for whichever planet is current
  *     (RESOLVE_COMBAT_ROUND / ASSIGN_HITS, dispatched here instead of
  *     spaceCombat.ts based on `pendingTacticalAction.currentInvasionPlanetId`
@@ -42,8 +47,8 @@ import { maybeActivateWormholeNexus } from "../rules/adjacency";
  *  - A card/ability granting a Space Cannon Defense roll to a unit that
  *    doesn't actually have the ability — same category of gap as
  *    PLAY_ACTION_CARD not existing yet.
- *  - Action cards / technologies / faction abilities that modify any of
- *    this — same scope cut as combat.ts's own note on this.
+ *  - Action cards / other technologies / faction abilities that modify any
+ *    of this — same scope cut as combat.ts's own note on this.
  *  - Transport capacity enforcement (see moveShips' own TODO).
  */
 
@@ -106,12 +111,20 @@ export function bombard(
     { type: "BOMBARDMENT_RESOLVED", playerId: action.playerId, systemId, planetId: action.targetPlanetId, hits },
   ];
 
+  // RR "X-89 Bacterial Weapon" ΩΩ (Codex 4): "exhaust each planet you use
+  // Bombardment against" — ALWAYS, on every bombardment roll, whether or
+  // not it actually scores a hit (confirmed) — and a no-op if it's already
+  // exhausted (not an error).
+  const shouldExhaustTargetPlanet =
+    usesCodex4Version(state.mode) && state.players[action.playerId]?.technologies.includes(asTechId("x89_bacterial_weapon"));
+  const stateWithPlanetExhaust = shouldExhaustTargetPlanet && !planet.exhausted ? setPlanetExhausted(state, systemId, action.targetPlanetId) : state;
+
   if (hits === 0) {
-    return { ok: true, state, events };
+    return { ok: true, state: stateWithPlanetExhaust, events };
   }
 
   const nextState: GameState = {
-    ...state,
+    ...stateWithPlanetExhaust,
     pendingTacticalAction: {
       ...pending,
       currentInvasionPlanetId: action.targetPlanetId,
@@ -337,6 +350,12 @@ export function startGroundCombat(
   const defenderId = playersWithGroundForces(planet).find((id) => id !== action.playerId);
   const defenderQualifies = defenderId ? buildSpaceCannonDefenseEntries(state, rules, defenderId, planet, action.playerId).length > 0 : false;
 
+  // RR "Magen Defense Grid": only checked if Space Cannon Defense didn't
+  // already claim this window (simplification, flagged — the two aren't
+  // offered together in the same call).
+  const magenDefenseGridEligibility =
+    defenderQualifies || !defenderId ? null : checkMagenDefenseGridEligibility(state, rules, defenderId, planet);
+
   return {
     ok: true,
     state: {
@@ -349,16 +368,136 @@ export function startGroundCombat(
             spaceCannonDefensePending: true,
             pendingHits: {},
           }
-        : {
-            ...pending,
-            currentInvasionPlanetId: action.targetPlanetId,
-            remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
-            combatRound: 1,
-            pendingHits: {},
-          },
+        : magenDefenseGridEligibility === "base"
+          ? {
+              ...pending,
+              currentInvasionPlanetId: action.targetPlanetId,
+              remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+              magenDefenseGridPending: true,
+              pendingHits: {},
+            }
+          : magenDefenseGridEligibility === "omega_omega"
+            ? {
+                ...pending,
+                currentInvasionPlanetId: action.targetPlanetId,
+                remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+                magenDefenseGridAutoHitPending: true,
+                pendingHits: {},
+              }
+            : {
+                ...pending,
+                currentInvasionPlanetId: action.targetPlanetId,
+                remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+                combatRound: 1,
+                pendingHits: {},
+              },
     },
     events: [],
   };
+}
+
+export function useMagenDefenseGrid(
+  state: GameState,
+  action: { type: "USE_MAGEN_DEFENSE_GRID"; playerId: PlayerId },
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
+    return { ok: false, error: "RR 44: no ground combat window currently open." };
+  }
+  if (!pending.magenDefenseGridPending) {
+    return { ok: false, error: "RR: no Magen Defense Grid window currently open for this planet." };
+  }
+  const planet = state.systems[pending.systemId].planets.find((p) => p.planetId === pending.currentInvasionPlanetId)!;
+  const defenderId = playersWithGroundForces(planet).find((id) => id !== pending.playerId);
+  if (defenderId !== action.playerId) {
+    return { ok: false, error: "RR: only the defending player can use Magen Defense Grid here." };
+  }
+
+  const player = state.players[action.playerId];
+  const updatedPlayer = { ...player, exhaustedTechnologies: [...player.exhaustedTechnologies, asTechId("magen_defense_grid")] };
+  const nextState: GameState = {
+    ...state,
+    players: { ...state.players, [action.playerId]: updatedPlayer },
+    pendingTacticalAction: {
+      ...pending,
+      magenDefenseGridPending: false,
+      groundCombatAttackerBlockedThisRound: true,
+      combatRound: 1,
+    },
+  };
+  return { ok: true, state: nextState, events: [] };
+}
+
+export function skipMagenDefenseGrid(
+  state: GameState,
+  action: { type: "SKIP_MAGEN_DEFENSE_GRID"; playerId: PlayerId },
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
+    return { ok: false, error: "RR 44: no ground combat window currently open." };
+  }
+  if (!pending.magenDefenseGridPending) {
+    return { ok: false, error: "RR: no Magen Defense Grid window currently open for this planet." };
+  }
+  const planet = state.systems[pending.systemId].planets.find((p) => p.planetId === pending.currentInvasionPlanetId)!;
+  const defenderId = playersWithGroundForces(planet).find((id) => id !== pending.playerId);
+  if (defenderId !== action.playerId) {
+    return { ok: false, error: "RR: only the defending player can decide on Magen Defense Grid here." };
+  }
+
+  return {
+    ok: true,
+    state: { ...state, pendingTacticalAction: { ...pending, magenDefenseGridPending: false, combatRound: 1 } },
+    events: [],
+  };
+}
+
+/** RR "Magen Defense Grid" ΩΩ (Codex 4): the automatic (not optional, doesn't exhaust anything) hit at the start of ground combat — the defender still chooses WHICH of the attacker's units absorbs it. Kept separate from the normal pendingHits/ASSIGN_HITS flow so resolving it doesn't trigger wrapUpGroundCombat before round 1 has properly started. */
+export function assignMagenDefenseGridHit(
+  state: GameState,
+  action: { type: "ASSIGN_MAGEN_DEFENSE_GRID_HIT"; playerId: PlayerId; assignment: { unitType: UnitType; outcome: "destroy" | "flip" } },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
+    return { ok: false, error: "RR 44: no ground combat window currently open." };
+  }
+  if (!pending.magenDefenseGridAutoHitPending) {
+    return { ok: false, error: "RR: no Magen Defense Grid hit is currently pending assignment." };
+  }
+  const systemId = pending.systemId;
+  const planetId = pending.currentInvasionPlanetId;
+  const planet = state.systems[systemId].planets.find((p) => p.planetId === planetId)!;
+  const defenderId = playersWithGroundForces(planet).find((id) => id !== pending.playerId);
+  if (defenderId !== action.playerId) {
+    return { ok: false, error: "RR: only the defending player assigns this hit." };
+  }
+
+  // The hit lands on the ATTACKER (pending.playerId), same "who's the opponent here" direction as everything else in this step.
+  const attackerId = pending.playerId;
+  const attackerPlayer = state.players[attackerId];
+  const attackerStacks = (planet.unitsByPlayer[attackerId] ?? []) as UnitStack[];
+  const result = applyHitAssignments(attackerStacks, [action.assignment], 1, attackerPlayer.factionId, attackerPlayer.unitUpgrades, rules);
+  if (!result.ok) return { ok: false, error: `RR: ${result.error}` };
+
+  const events: GameEvent[] = [
+    ...Array.from(result.destroyed.entries()).map(
+      ([unitType, count]): GameEvent => ({ type: "UNITS_DESTROYED", playerId: attackerId, systemId, planetId, unitType, count }),
+    ),
+    ...Array.from(result.flipped.entries()).map(
+      ([unitType, count]): GameEvent => ({ type: "UNIT_SUSTAINED_DAMAGE", playerId: attackerId, systemId, planetId, unitType, count }),
+    ),
+  ];
+
+  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [attackerId]: result.stacks } };
+  const updatedSystem: SystemState = { ...state.systems[systemId], planets: state.systems[systemId].planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
+
+  const nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    pendingTacticalAction: { ...pending, magenDefenseGridAutoHitPending: false, combatRound: 1 },
+  };
+  return { ok: true, state: nextState, events };
 }
 
 export function useSpaceCannonDefense(
@@ -512,7 +651,7 @@ export function resolveGroundCombatRound(
 
   let entries;
   try {
-    entries = buildGroundCombatEntries(state, rules, planet);
+    entries = buildGroundCombatEntries(state, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -600,6 +739,38 @@ export function assignGroundCombatHits(
 
 // --- helpers ---------------------------------------------------------------
 
+/** RR "Magen Defense Grid": which version (if any) this defender qualifies for on this planet, given their own owned/readied state and what's physically there. Returns null if they don't own it, or don't meet either version's own physical requirement. */
+function checkMagenDefenseGridEligibility(state: GameState, rules: RuleData, defenderId: PlayerId, planet: PlanetState): "base" | "omega_omega" | null {
+  const player = state.players[defenderId];
+  const techId = asTechId("magen_defense_grid");
+  if (!player.technologies.includes(techId)) return null;
+
+  if (usesCodex4Version(state.mode)) {
+    // ΩΩ: not exhaustable, needs 1+ structures (not specifically Planetary Shield) on this planet.
+    const hasStructure = (planet.unitsByPlayer[defenderId] ?? []).some((s) => STRUCTURE_TYPES.includes(s.unitType) && s.count > 0);
+    return hasStructure ? "omega_omega" : null;
+  }
+
+  // Base: must be readied, needs 1+ Planetary-Shield-capable units on this planet.
+  if (player.exhaustedTechnologies.includes(techId)) return null;
+  const hasPlanetaryShieldUnit = (planet.unitsByPlayer[defenderId] ?? []).some((s) => {
+    if (s.count <= 0) return false;
+    const stats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+    return stats?.abilities.includes("planetaryShield") ?? false;
+  });
+  return hasPlanetaryShieldUnit ? "base" : null;
+}
+
+/** RR "X-89 Bacterial Weapon" ΩΩ's own "exhaust each planet you use Bombardment against" clause — a plain exhaust, no control/legendary-ability side effects (unlike setPlanetController below, which is for actually GAINING control). */
+function setPlanetExhausted(state: GameState, systemId: SystemId, planetId: PlanetId): GameState {
+  const system = state.systems[systemId];
+  const updatedSystem: SystemState = {
+    ...system,
+    planets: system.planets.map((p) => (p.planetId === planetId ? { ...p, exhausted: true } : p)),
+  };
+  return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+}
+
 function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingTacticalAction!;
   const systemId = pending.systemId;
@@ -631,9 +802,16 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
   }
 
   // Both sides still standing — next round, no retreat option in ground combat (RR 38).
+  // RR "Magen Defense Grid" (base version): its block only applies to the
+  // ONE round it was used in — clear it here so round 2+ rolls normally.
   nextState = {
     ...nextState,
-    pendingTacticalAction: { ...pending, combatRound: (pending.combatRound ?? 1) + 1, pendingHits: {} },
+    pendingTacticalAction: {
+      ...pending,
+      combatRound: (pending.combatRound ?? 1) + 1,
+      pendingHits: {},
+      groundCombatAttackerBlockedThisRound: false,
+    },
   };
   return { state: nextState, events };
 }
