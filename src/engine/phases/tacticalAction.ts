@@ -1,9 +1,11 @@
 import { GameState, Player, SystemState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
 import { PlayerId, SystemId, asTechId } from "../types/ids";
+import { STRUCTURE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
+import { usesCodex4Version } from "../rules/gameMode";
 import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
 import { computeSpaceCombatEntry } from "./spaceCombat";
 
@@ -17,6 +19,7 @@ import { computeSpaceCombatEntry } from "./spaceCombat";
 export function activateSystem(
   state: GameState,
   action: { type: "ACTIVATE_SYSTEM"; playerId: PlayerId; systemId: SystemId },
+  rules: RuleData,
 ): ActionResult {
   if (state.phase !== "action") {
     return { ok: false, error: "RR 78: tactical actions only happen during the action phase." };
@@ -48,8 +51,39 @@ export function activateSystem(
     },
   };
 
+  // RR "Magen Defense Grid" ΩΩ (Codex 4): whenever ANY player activates a
+  // system containing 1+ of a magen_defense_grid-owning player's own
+  // structures — even the activating player's own system, even the
+  // activating player themselves if it's their own structures — place 1
+  // free infantry with EACH such structure. Not gated to the base
+  // version's readied/exhaust state at all (this ΩΩ ability never
+  // exhausts anything).
+  const activatedSystem = state.systems[action.systemId];
+  const updatedPlanets = activatedSystem
+    ? activatedSystem.planets.map((planet) => {
+        let updatedPlanet = planet;
+        for (const [ownerId, stacks] of Object.entries(planet.unitsByPlayer)) {
+          const ownerPlayer = state.players[ownerId as PlayerId];
+          if (!ownerPlayer?.technologies.includes(asTechId("magen_defense_grid")) || !usesCodex4Version(state.mode)) continue;
+          const structureCount = (stacks ?? []).filter((s) => STRUCTURE_TYPES.includes(s.unitType)).reduce((sum, s) => sum + s.count, 0);
+          if (structureCount === 0) continue;
+          const existingInfantry = (updatedPlanet.unitsByPlayer[ownerId as PlayerId] ?? []).find((s) => s.unitType === "infantry" && !s.upgradeId);
+          const ownerStacks = updatedPlanet.unitsByPlayer[ownerId as PlayerId] ?? [];
+          const newOwnerStacks = existingInfantry
+            ? ownerStacks.map((s) => (s === existingInfantry ? { ...s, count: s.count + structureCount } : s))
+            : [...ownerStacks, { unitType: "infantry" as const, count: structureCount, damagedCount: 0 }];
+          updatedPlanet = { ...updatedPlanet, unitsByPlayer: { ...updatedPlanet.unitsByPlayer, [ownerId]: newOwnerStacks } };
+        }
+        return updatedPlanet;
+      })
+    : [];
+  const systemsWithMagenDefenseGridInfantry = activatedSystem
+    ? { ...state.systems, [action.systemId]: { ...activatedSystem, planets: updatedPlanets } }
+    : state.systems;
+
   const nextState: GameState = {
     ...state,
+    systems: systemsWithMagenDefenseGridInfantry,
     players: { ...state.players, [player.id]: updatedPlayer },
     pendingTacticalAction: {
       playerId: action.playerId,
@@ -277,4 +311,4 @@ function addToSystem(
     spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: updatedStacks },
   };
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
-      }
+}
