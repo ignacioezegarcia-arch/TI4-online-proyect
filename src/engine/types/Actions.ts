@@ -235,6 +235,19 @@ export type GameAction =
       count: number;
     } // component action (uses this player's whole turn); exhausts the tech; produce 1 ship in any system with this player's own space dock, paying its normal cost against that dock's Production limit
   | { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId } // not exhaustable; explores a planet in the just-activated system that has this player's own units on it
+  | {
+      type: "USE_BIO_STIMS";
+      playerId: PlayerId;
+      /** Either a controlled planet with a tech specialty, or another of this player's own already-exhausted technologies (not Bio-Stims itself) — see phases/technologyAbilities.ts's own note. */
+      target: { kind: "planet"; planetId: PlanetId } | { kind: "technology"; techId: string };
+    } // exhausts the tech; readies the chosen target
+  | {
+      type: "USE_PREDICTIVE_INTELLIGENCE_REDISTRIBUTE";
+      playerId: PlayerId;
+      tactic: number;
+      fleet: number;
+      strategy: number;
+    } // exhausts the tech; new pool counts must sum to the same total this player already had
 
   // --- Transactions (RR 83) ---
   | {
@@ -275,6 +288,8 @@ export type GameAction =
       outcome: string;
       /** Planets to exhaust for influence — votes cast = sum of their influence (RR 8.3). Empty array = abstain. Doesn't support paying with trade goods (RR 82) yet. */
       exhaustPlanetIds: PlanetId[];
+      /** RR "Predictive Intelligence": exhaust that tech (if owned and readied) to cast 3 additional votes for this outcome — the actual exhaustion only takes effect once the agenda resolves, and only if this outcome doesn't win (see phases/agendaPhase.ts's own note on PendingAgendaVote.predictiveIntelligenceBonusUsedBy). */
+      usePredictiveIntelligenceBonus?: boolean;
     }
   | { type: "REVEAL_AGENDA" } // RR 8.2: engine-driven (no playerId) — pops the agenda deck and opens voting; wired into autoAdvancePhase so nothing needs to remember to call it, but kept as a real action for direct/manual triggering too.
 
