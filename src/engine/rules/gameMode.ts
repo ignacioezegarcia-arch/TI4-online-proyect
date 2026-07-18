@@ -23,3 +23,19 @@ export function hasCodex(mode: GameMode): boolean {
 export function hasThundersEdge(mode: GameMode): boolean {
   return mode === "pok_codex_te" || mode === "te";
 }
+
+/**
+ * A few technologies (Magen Defense Grid, X-89 Bacterial Weapon) have been
+ * re-worked by Codex updates into a materially different mechanic — not
+ * just a numbers tweak. Since the latest Codex (4, "ΩΩ") supersedes the
+ * earlier one (1, "Ω") whenever ANY Codex-updated ruleset is in play, and
+ * — confirmed — Thunder's Edge (played standalone or with PoK+Codex)
+ * ALSO uses the ΩΩ version by default, there are only ever 2 versions
+ * actually reachable in play: the base one (only in plain "base" games)
+ * and ΩΩ (everywhere else). Never the Ω-only middle one. Call sites for
+ * these specific techs branch on this instead of re-deriving the same
+ * "mode !== base" check inline everywhere.
+ */
+export function usesCodex4Version(mode: GameMode): boolean {
+  return mode !== "base";
+}
