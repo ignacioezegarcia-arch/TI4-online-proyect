@@ -1,6 +1,6 @@
 import { GameState } from "./types/GameState";
 import { GameAction, ActionResult, GameEvent } from "./types/Actions";
-import { PlayerId } from "./types/ids";
+import { PlayerId, asTechId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
@@ -25,6 +25,15 @@ import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strat
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
 import { explorePlanet, exploreFrontier, purgeRelicFragments } from "./phases/exploration";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
+import {
+  useSelfAssemblyRoutines,
+  useDacxiveAnimators,
+  useIntegratedEconomy,
+  useX89BacterialWeapon,
+  usePsychoarchaeology,
+  useSlingRelay,
+  useScanlinkDroneNetwork,
+} from "./phases/technologyAbilities";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -129,7 +138,15 @@ export const GameEngine = {
         result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules);
         break;
       case "RESEARCH_UNIT_UPGRADE":
-        result = researchUnitUpgrade(state, action.playerId, action.upgradeId, action.cost, action.exhaustPlanetIdsForResources, rules);
+        result = researchUnitUpgrade(
+          state,
+          action.playerId,
+          action.upgradeId,
+          action.cost,
+          action.exhaustPlanetIdsForResources,
+          rules,
+          action.aiDevelopmentAlgorithmIgnoreColor,
+        );
         break;
       case "EXPLORE_PLANET":
         result = explorePlanet(state, action, rules);
@@ -139,6 +156,27 @@ export const GameEngine = {
         break;
       case "PURGE_RELIC_FRAGMENTS":
         result = purgeRelicFragments(state, action);
+        break;
+      case "USE_SELF_ASSEMBLY_ROUTINES":
+        result = useSelfAssemblyRoutines(state, action);
+        break;
+      case "USE_DACXIVE_ANIMATORS":
+        result = useDacxiveAnimators(state, action);
+        break;
+      case "USE_INTEGRATED_ECONOMY":
+        result = useIntegratedEconomy(state, action, rules);
+        break;
+      case "USE_X89_BACTERIAL_WEAPON":
+        result = useX89BacterialWeapon(state, action, rules);
+        break;
+      case "USE_PSYCHOARCHAEOLOGY":
+        result = usePsychoarchaeology(state, action, rules);
+        break;
+      case "USE_SLING_RELAY":
+        result = useSlingRelay(state, action, rules);
+        break;
+      case "USE_SCANLINK_DRONE_NETWORK":
+        result = useScanlinkDroneNetwork(state, action, rules);
         break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
@@ -253,22 +291,39 @@ export const GameEngine = {
       legal.push("PASS");
       if (!state.pendingTacticalAction) {
         legal.push("ACTIVATE_SYSTEM");
+        if (player.technologies.includes(asTechId("x89_bacterial_weapon")) && !player.exhaustedTechnologies.includes(asTechId("x89_bacterial_weapon"))) {
+          legal.push("USE_X89_BACTERIAL_WEAPON");
+        }
+        if (player.technologies.includes(asTechId("sling_relay")) && !player.exhaustedTechnologies.includes(asTechId("sling_relay"))) {
+          legal.push("USE_SLING_RELAY");
+        }
       } else if (state.pendingTacticalAction.playerId === playerId) {
-        if (state.pendingTacticalAction.step === "movement") legal.push("MOVE_SHIPS");
+        if (state.pendingTacticalAction.step === "movement") {
+          legal.push("MOVE_SHIPS");
+          if (state.mode !== "base" && player.technologies.includes(asTechId("scanlink_drone_network"))) {
+            legal.push("USE_SCANLINK_DRONE_NETWORK");
+          }
+        }
         if (state.pendingTacticalAction.step === "invasion" && !state.pendingTacticalAction.currentInvasionPlanetId) {
           const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
           if (!noPendingHits) {
             legal.push("ASSIGN_BOMBARDMENT_HITS");
           } else if (!state.pendingTacticalAction.invasionCommitsFinished) {
             legal.push("BOMBARD", "COMMIT_GROUND_FORCES", "FINISH_INVASION_COMMITS");
+            if (player.technologies.includes(asTechId("dacxive_animators"))) legal.push("USE_DACXIVE_ANIMATORS");
+            if (player.technologies.includes(asTechId("integrated_economy"))) legal.push("USE_INTEGRATED_ECONOMY");
           } else if ((state.pendingTacticalAction.remainingInvasionPlanetIds ?? []).length > 0) {
             legal.push("START_GROUND_COMBAT");
           }
         }
         if (state.pendingTacticalAction.step === "production") {
           legal.push("PRODUCE_UNITS", "FINISH_TACTICAL_ACTION");
+          if (player.technologies.includes(asTechId("self_assembly_routines")) && !player.exhaustedTechnologies.includes(asTechId("self_assembly_routines"))) {
+            legal.push("USE_SELF_ASSEMBLY_ROUTINES");
+          }
         }
       }
+      if (player.technologies.includes(asTechId("psychoarchaeology"))) legal.push("USE_PSYCHOARCHAEOLOGY");
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
