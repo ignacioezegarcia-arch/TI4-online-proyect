@@ -29,7 +29,7 @@
       "prerequisites": [],
       "level": 0,
       "expansion": 1,
-      "exhaustable": true,
+      "exhaustable": false,
       "effect": "You can use technology specialties on planets you control without exhausting them, even if those planets are exhausted. During the action phase, you can exhaust planets you control that have technology specialties to gain 1 trade good."
     },
     {
