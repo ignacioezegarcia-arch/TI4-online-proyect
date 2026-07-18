@@ -1,4 +1,4 @@
-import { GameState, PlanetState, UnitStack } from "../types/GameState";
+import { GameState, Player, PlanetState, UnitStack } from "../types/GameState";
 import { PlayerId, SystemId, FactionId, UnitUpgradeId, asTechId } from "../types/ids";
 import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
@@ -314,6 +314,23 @@ export function applyHitAssignments(
   return { ok: true, stacks: updated.filter((s) => s.count > 0), destroyed, flipped };
 }
 
+/**
+ * RR "Self-Assembly Routines"'s OTHER ability (passive, no exhaust — the
+ * card's first ability is the only exhaustable one, see
+ * phases/technologyAbilities.ts's useSelfAssemblyRoutines): gain 1 trade
+ * good per mech destroyed. A mech can be destroyed via space combat,
+ * ground combat, bombardment, Space Cannon Offense, or Space Cannon
+ * Defense — every one of those call sites' own hit-assignment handler
+ * calls this right after computing `destroyed` from applyHitAssignments,
+ * rather than duplicating the "does this player own the tech" check in
+ * six different files.
+ */
+export function applySelfAssemblyRoutinesMechBonus(player: Player, destroyed: Map<UnitType, number>): Player {
+  const mechsDestroyed = destroyed.get("mech") ?? 0;
+  if (mechsDestroyed === 0 || !player.technologies.includes(asTechId("self_assembly_routines"))) return player;
+  return { ...player, tradeGoods: player.tradeGoods + mechsDestroyed };
+}
+
 // ---------------------------------------------------------------------
 // RR 77 SPACE CANNON OFFENSE — after movement, ANY player (not just the
 // active player's opponent — even one with no ships in this system at all)
@@ -411,105 +428,4 @@ export function buildSpaceCannonOffenseEntries(
   rules: RuleData,
   firingPlayerId: PlayerId,
   targetSystemId: SystemId,
-  targetPlayerId: PlayerId,
-  plasmaScoringUnitType?: UnitType,
-): CombatUnitEntry[] {
-  return spaceCannonEntriesForPlayer(state, rules, firingPlayerId, targetSystemId, targetPlayerId, plasmaScoringUnitType);
-}
-
-// ---------------------------------------------------------------------
-// RR 67.1 ANTI-FIGHTER BARRAGE — mandatory (not a choice) for whichever
-// combatants have AFB-capable ships, fires once at the very start of a
-// space combat, targeting only fighters. The dice pool itself is built the
-// same way normal combat dice are (per-ship abilityValues), just using
-// `antiFighterBarrage` instead of `combat` — the "fighters only" part is
-// enforced at hit-ASSIGNMENT time (see phases/spaceCombat.ts), not here.
-// ---------------------------------------------------------------------
-
-/** Every combatant in this system with at least 1 AFB-capable ship. */
-export function getAntiFighterBarrageParticipants(state: GameState, rules: RuleData, systemId: SystemId): PlayerId[] {
-  return playersWithShipsInSystem(state, systemId).filter(
-    (playerId) => buildAntiFighterBarrageEntries(state, rules, playerId, systemId).length > 0,
-  );
-}
-
-/** This one player's AFB dice pool in this system (single-entry array, matching resolveCombatRound's input shape) — empty if none of their ships have the ability. */
-export function buildAntiFighterBarrageEntries(
-  state: GameState,
-  rules: RuleData,
-  firingPlayerId: PlayerId,
-  systemId: SystemId,
-): CombatUnitEntry[] {
-  const system = state.systems[systemId];
-  if (!system) return [];
-  const player = state.players[firingPlayerId];
-  const stacks = (system.spaceUnitsByPlayer[firingPlayerId] ?? []) as UnitStack[];
-
-  let diceCount = 0;
-  let hitOn: number | null = null;
-  for (const stack of stacks) {
-    if (stack.count <= 0) continue;
-    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
-    const afb = stats?.abilityValues?.antiFighterBarrage;
-    if (!afb) continue;
-    diceCount += stack.count * afb.dice;
-    hitOn = afb.value;
-  }
-
-  if (diceCount === 0 || hitOn === null) return [];
-  return [{ playerId: firingPlayerId, diceCount, hitOn }];
-}
-
-// ---------------------------------------------------------------------
-// RR 44 SPACE CANNON DEFENSE — the defender's own optional choice, before
-// ground combat starts, to fire their PDS on the invaded planet at the
-// attacker's just-committed ground forces. Only the PDS physically ON that
-// planet count — unlike Space Cannon Offense, this doesn't extend to
-// adjacent systems (PDS II's `rangesToAdjacent` is about firing at ships
-// from a planet, not about defending a different planet than the one it's on).
-// ---------------------------------------------------------------------
-
-/** The defender's Space Cannon dice pool for defending this one planet — empty if they have no qualifying PDS there. */
-export function buildSpaceCannonDefenseEntries(
-  state: GameState,
-  rules: RuleData,
-  defenderId: PlayerId,
-  planet: PlanetState,
-  attackerId: PlayerId,
-  plasmaScoringUnitType?: UnitType,
-): CombatUnitEntry[] {
-  const player = state.players[defenderId];
-  if (!player) return [];
-  const stacks = (planet.unitsByPlayer[defenderId] ?? []) as UnitStack[];
-
-  const perType = new Map<UnitType, { diceCount: number; hitOn: number }>();
-  for (const stack of stacks) {
-    if (stack.count <= 0) continue;
-    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
-    const sc = stats?.abilityValues?.spaceCannon;
-    if (!sc) continue;
-    const existing = perType.get(stack.unitType);
-    if (existing) existing.diceCount += stack.count * sc.dice;
-    else perType.set(stack.unitType, { diceCount: stack.count * sc.dice, hitOn: sc.value });
-  }
-
-  if (perType.size === 0) return [];
-  // RR "Antimass Deflectors": if the ATTACKER (whose ground forces are
-  // being fired at here) owns it, apply -1 to each attacking die
-  // (expressed as +1 to hitOn — see spaceCannonEntriesForPlayer's own note
-  // on why this is mathematically identical).
-  const antimassBonus = state.players[attackerId]?.technologies.includes(asTechId("antimass_deflectors")) ? 1 : 0;
-  // RR "Plasma Scoring": the DEFENDER's own choice of which qualifying
-  // unit type gets the +1 die — see spaceCannonEntriesForPlayer's own note.
-  const applyPlasmaScoringTo = player.technologies.includes(asTechId("plasma_scoring")) ? plasmaScoringUnitType : undefined;
-
-  const entries: CombatUnitEntry[] = [];
-  for (const [unitType, { diceCount, hitOn }] of perType) {
-    entries.push({
-      playerId: defenderId,
-      diceCount: diceCount + (applyPlasmaScoringTo === unitType ? 1 : 0),
-      hitOn: hitOn + antimassBonus,
-    });
-  }
-  return entries;
-}
+  ta
