@@ -332,6 +332,30 @@ export interface PendingTacticalAction {
    * this is empty too, same "gate before advancing" pattern as pendingHits.
    */
   duraniumArmorPendingPlayers?: PlayerId[];
+  /**
+   * RR "Magen Defense Grid" (base version, base-mode games only): the
+   * defender's own optional choice, at the start of ground combat on a
+   * planet where they have a Planetary-Shield-capable unit, to exhaust
+   * this card so the ATTACKER can't roll any combat dice this round.
+   * True while waiting on that decision. Simplification, flagged: only
+   * offered before ROUND 1 (alongside/instead of Space Cannon Defense),
+   * not re-offered for later rounds of the same combat, and skipped
+   * entirely if Space Cannon Defense already qualified this same call.
+   */
+  magenDefenseGridPending?: boolean;
+  /** Set once the defender actually USES Magen Defense Grid (base version) — the attacker in `pendingTacticalAction.playerId` can't roll dice for round 1; see rules/combat.ts's buildGroundCombatEntries. */
+  groundCombatAttackerBlockedThisRound?: boolean;
+  /**
+   * RR "Magen Defense Grid" ΩΩ (Codex 4, everywhere except base-only
+   * games): NOT optional and doesn't exhaust anything — if the defender
+   * has 1+ structures on this planet, they automatically get 1 hit at the
+   * start of ground combat, which THEY assign to 1 of the attacker's
+   * units. True while that assignment is still owed (see
+   * assignMagenDefenseGridHit) — kept separate from the normal
+   * `pendingHits`-driven round flow so resolving it doesn't accidentally
+   * trigger wrapUpGroundCombat before round 1 has even properly started.
+   */
+  magenDefenseGridAutoHitPending?: boolean;
 }
 
 export interface PendingAgendaVote {
