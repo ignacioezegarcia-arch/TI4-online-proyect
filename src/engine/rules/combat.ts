@@ -4,6 +4,7 @@ import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus } from "./anomalies";
 import { getAdjacentSystems } from "./adjacency";
+import { usesCodex4Version } from "./gameMode";
 
 /**
  * RR 61 (space combat) / RR 38 (ground combat) — presence queries.
@@ -169,7 +170,13 @@ export function buildSpaceCombatEntries(
  * players" and "no action cards/tech/faction abilities yet" limits as
  * buildSpaceCombatEntries above.
  */
-export function buildGroundCombatEntries(state: GameState, rules: RuleData, planet: PlanetState): CombatUnitEntry[] {
+export function buildGroundCombatEntries(
+  state: GameState,
+  rules: RuleData,
+  planet: PlanetState,
+  /** RR "Magen Defense Grid" (base version): if the defender used it this round, the attacker can't roll any combat dice at all — excluded here entirely rather than zeroed out per-unit. */
+  blockedPlayerId?: PlayerId,
+): CombatUnitEntry[] {
   const playerIds = playersWithGroundForces(planet);
   if (playerIds.length !== 2) {
     throw new Error(
@@ -179,13 +186,22 @@ export function buildGroundCombatEntries(state: GameState, rules: RuleData, plan
 
   const entries: CombatUnitEntry[] = [];
   for (const playerId of playerIds) {
+    if (playerId === blockedPlayerId) continue;
     const player = state.players[playerId];
     const stacks = (planet.unitsByPlayer[playerId] ?? []) as UnitStack[];
     for (const stack of stacks) {
       if (!GROUND_FORCE_TYPES.includes(stack.unitType) || stack.count <= 0) continue;
       const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
       if (!stats || stats.combat == null) continue;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1), hitOn: stats.combat });
+      // RR "X-89 Bacterial Weapon" ΩΩ (Codex 4): doubles the hits produced
+      // by this player's own ground combat rolls — modeled as doubling the
+      // dice count (proportionally the same effect on average hits),
+      // consistent with how this project's other dice-count bonuses work.
+      // See useX89BacterialWeapon's own note on the OTHER, unimplemented
+      // half of this version's text.
+      const diceMultiplier =
+        usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier, hitOn: stats.combat });
     }
   }
   return entries;
@@ -211,6 +227,12 @@ export function buildBombardmentEntries(
   const player = state.players[attackerId];
   const stacks = (system.spaceUnitsByPlayer[attackerId] ?? []) as UnitStack[];
   const applyPlasmaScoringTo = player.technologies.includes(asTechId("plasma_scoring")) ? plasmaScoringUnitType : undefined;
+  // RR "X-89 Bacterial Weapon" ΩΩ (Codex 4): doubles the hits produced by
+  // this player's own Bombardment rolls — modeled as doubling the dice
+  // count, same reasoning as the ground-combat half in
+  // buildGroundCombatEntries above.
+  const bombardmentDiceMultiplier =
+    usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
 
   const entries: CombatUnitEntry[] = [];
   for (const stack of stacks) {
@@ -218,7 +240,7 @@ export function buildBombardmentEntries(
     const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
     const bombardment = stats?.abilityValues?.bombardment;
     if (!bombardment) continue;
-    let diceCount = stack.count * bombardment.dice;
+    let diceCount = stack.count * bombardment.dice * bombardmentDiceMultiplier;
     if (applyPlasmaScoringTo === stack.unitType) {
       diceCount += 1;
     }
@@ -397,35 +419,4 @@ function spaceCannonEntriesForPlayer(
   // unit type gets the +1 die — matters whenever they have 2+ types with
   // different hitOn values, so the caller must supply it explicitly (see
   // this function's own callers) rather than guessing which one benefits most.
-  const applyPlasmaScoringTo = player.technologies.includes(asTechId("plasma_scoring")) ? plasmaScoringUnitType : undefined;
-
-  const entries: CombatUnitEntry[] = [];
-  for (const [unitType, { diceCount, hitOn }] of perType) {
-    entries.push({
-      playerId: firingPlayerId,
-      diceCount: diceCount + (applyPlasmaScoringTo === unitType ? 1 : 0),
-      hitOn: hitOn + antimassBonus,
-    });
-  }
-  return entries;
-}
-
-/** RR 77: every player (excluding the active player themselves) with at least one qualifying Space-Cannon-capable unit — in the system, or range-upgraded (e.g. PDS II) in an adjacent one. */
-export function getSpaceCannonOffenseEligiblePlayers(
-  state: GameState,
-  rules: RuleData,
-  targetSystemId: SystemId,
-  activePlayerId: PlayerId,
-): PlayerId[] {
-  return Object.keys(state.players)
-    .filter((id): id is PlayerId => id !== activePlayerId && !state.players[id as PlayerId].eliminated)
-    .filter((id) => spaceCannonEntriesForPlayer(state, rules, id, targetSystemId, activePlayerId).length > 0);
-}
-
-/** This one player's full Space Cannon Offense dice pool (rules.combat.ts) — see spaceCannonEntriesForPlayer for why this can be more than one entry. */
-export function buildSpaceCannonOffenseEntries(
-  state: GameState,
-  rules: RuleData,
-  firingPlayerId: PlayerId,
-  targetSystemId: SystemId,
-  ta
+  const applyPlasmaScoringT
