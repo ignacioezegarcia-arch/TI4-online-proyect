@@ -89,6 +89,7 @@ export function moveShips(
     moves: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; count: number }[];
     transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
     transportedFighters?: { fromSystemId: SystemId; count: number }[];
+    gravityDriveBoostFromSystemId?: SystemId;
   },
   rules: RuleData,
 ): ActionResult {
@@ -104,6 +105,7 @@ export function moveShips(
   const activeSystemId = pending.systemId;
 
   let workingState = state;
+  let usedGravityDrive = false;
 
   for (const move of action.moves) {
     if (move.fromSystemId === activeSystemId) continue; // already there, nothing to validate
@@ -121,15 +123,30 @@ export function moveShips(
       return { ok: false, error: `${move.unitType} has no move value and cannot move.` };
     }
 
+    // RR "Gravity Drive": +1 move value for whichever ONE moves-entry the
+    // player picked (identified by fromSystemId), if they own the tech —
+    // repeatable every tactical action, does NOT exhaust (confirmed: this
+    // one is a plain passive-on-request bonus, unlike most other
+    // technologies in this same "after you activate a system" family).
+    let effectiveMove = stats.move;
+    if (action.gravityDriveBoostFromSystemId === move.fromSystemId && !usedGravityDrive) {
+      const techId = asTechId("gravity_drive");
+      if (!player.technologies.includes(techId)) {
+        return { ok: false, error: "This player doesn't own Gravity Drive." };
+      }
+      effectiveMove += 1;
+      usedGravityDrive = true;
+    }
+
     if (
-      !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, stats.move, {
+      !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, {
         ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
         ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")),
       })
     ) {
       return {
         ok: false,
-        error: `RR 58.4: ${move.unitType} at ${move.fromSystemId} cannot reach ${activeSystemId} (move value ${stats.move}) — blocked by an anomaly, an enemy fleet along the way, or simply out of range.`,
+        error: `RR 58.4: ${move.unitType} at ${move.fromSystemId} cannot reach ${activeSystemId} (move value ${effectiveMove}) — blocked by an anomaly, an enemy fleet along the way, or simply out of range.`,
       };
     }
 
@@ -260,4 +277,4 @@ function addToSystem(
     spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: updatedStacks },
   };
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
-}
+      }
