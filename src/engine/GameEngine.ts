@@ -33,6 +33,8 @@ import {
   usePsychoarchaeology,
   useSlingRelay,
   useScanlinkDroneNetwork,
+  useBioStims,
+  usePredictiveIntelligenceRedistribute,
 } from "./phases/technologyAbilities";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
@@ -177,6 +179,12 @@ export const GameEngine = {
         break;
       case "USE_SCANLINK_DRONE_NETWORK":
         result = useScanlinkDroneNetwork(state, action, rules);
+        break;
+      case "USE_BIO_STIMS":
+        result = useBioStims(state, action, rules);
+        break;
+      case "USE_PREDICTIVE_INTELLIGENCE_REDISTRIBUTE":
+        result = usePredictiveIntelligenceRedistribute(state, action);
         break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
@@ -324,6 +332,12 @@ export const GameEngine = {
         }
       }
       if (player.technologies.includes(asTechId("psychoarchaeology"))) legal.push("USE_PSYCHOARCHAEOLOGY");
+      if (player.technologies.includes(asTechId("bio_stims")) && !player.exhaustedTechnologies.includes(asTechId("bio_stims"))) {
+        legal.push("USE_BIO_STIMS");
+      }
+      if (player.technologies.includes(asTechId("predictive_intelligence")) && !player.exhaustedTechnologies.includes(asTechId("predictive_intelligence"))) {
+        legal.push("USE_PREDICTIVE_INTELLIGENCE_REDISTRIBUTE");
+      }
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
