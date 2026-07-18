@@ -9,6 +9,7 @@ import {
   buildSpaceCombatEntries,
   resolveCombatRound,
   applyHitAssignments,
+  applySelfAssemblyRoutinesMechBonus,
   getAntiFighterBarrageParticipants,
   buildAntiFighterBarrageEntries,
 } from "../rules/combat";
@@ -343,6 +344,11 @@ export function assignHits(
   let nextState: GameState = {
     ...state,
     systems: { ...state.systems, [systemId]: updatedSystem },
+    // RR "Self-Assembly Routines": normally mechs never appear in space
+    // combat (they're ground forces), but some factions have abilities
+    // that let their mechs participate there too — this stays wired in
+    // rather than assuming it can never trigger.
+    players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
     pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, duraniumArmorPendingPlayers },
   };
 
@@ -448,14 +454,10 @@ function wrapUpCombatRound(state: GameState, _rules: RuleData): { state: GameSta
     return { state: nextState, events };
   }
 
+  // Both sides still standing — next round, no retreat option in ground combat (RR 38).
   nextState = {
     ...nextState,
-    pendingTacticalAction: {
-      ...pending,
-      combatRound: (pending.combatRound ?? 1) + 1,
-      pendingHits: {},
-      retreating: [],
-    },
+    pendingTacticalAction: { ...pending, combatRound: (pending.combatRound ?? 1) + 1, pendingHits: {}, retreating: [] },
   };
   return { state: nextState, events };
 }
