@@ -4,7 +4,7 @@ import { PlayerId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
-import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits } from "./phases/spaceCombat";
+import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits, useDuraniumArmor, skipDuraniumArmor } from "./phases/spaceCombat";
 import {
   bombard,
   assignBombardmentHits,
@@ -155,6 +155,12 @@ export const GameEngine = {
       case "ASSIGN_ANTI_FIGHTER_BARRAGE_HITS":
         result = assignAntiFighterBarrageHits(state, action, rules);
         break;
+      case "USE_DURANIUM_ARMOR":
+        result = useDuraniumArmor(state, action, rules);
+        break;
+      case "SKIP_DURANIUM_ARMOR":
+        result = skipDuraniumArmor(state, action, rules);
+        break;
       case "USE_SPACE_CANNON_DEFENSE":
         result = useSpaceCannonDefense(state, action, rules);
         break;
@@ -278,10 +284,12 @@ export const GameEngine = {
       const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
       const stillInAfbPhase = state.pendingTacticalAction.combatRound === undefined;
       const afbPending = state.pendingTacticalAction.afbPendingPlayers?.includes(playerId);
+      const duraniumArmorPending = state.pendingTacticalAction.duraniumArmorPendingPlayers?.includes(playerId);
 
       if (owesHits && stillInAfbPhase) legal.push("ASSIGN_ANTI_FIGHTER_BARRAGE_HITS");
       else if (owesHits) legal.push("ASSIGN_HITS");
       else if (stillInAfbPhase && afbPending && noPendingHits) legal.push("USE_ANTI_FIGHTER_BARRAGE");
+      else if (duraniumArmorPending && noPendingHits) legal.push("USE_DURANIUM_ARMOR", "SKIP_DURANIUM_ARMOR");
       else if (inCombat && noPendingHits && !stillInAfbPhase) {
         legal.push("RESOLVE_COMBAT_ROUND");
         if (!state.pendingTacticalAction.retreating?.some((r) => r.playerId === playerId)) {
