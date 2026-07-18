@@ -16,6 +16,9 @@ import {
   useSpaceCannonDefense,
   skipSpaceCannonDefense,
   assignSpaceCannonDefenseHits,
+  useMagenDefenseGrid,
+  skipMagenDefenseGrid,
+  assignMagenDefenseGridHit,
 } from "./phases/invasion";
 import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
@@ -77,7 +80,7 @@ export const GameEngine = {
         result = pass(state, action);
         break;
       case "ACTIVATE_SYSTEM":
-        result = activateSystem(state, action);
+        result = activateSystem(state, action, rules);
         break;
       case "MOVE_SHIPS":
         result = moveShips(state, action, rules);
@@ -215,6 +218,15 @@ export const GameEngine = {
         break;
       case "ASSIGN_SPACE_CANNON_DEFENSE_HITS":
         result = assignSpaceCannonDefenseHits(state, action, rules);
+        break;
+      case "USE_MAGEN_DEFENSE_GRID":
+        result = useMagenDefenseGrid(state, action);
+        break;
+      case "SKIP_MAGEN_DEFENSE_GRID":
+        result = skipMagenDefenseGrid(state, action);
+        break;
+      case "ASSIGN_MAGEN_DEFENSE_GRID_HIT":
+        result = assignMagenDefenseGridHit(state, action, rules);
         break;
 
       case "PLAY_ACTION_CARD":
@@ -378,6 +390,12 @@ export const GameEngine = {
         const defenderId = planet ? playersWithGroundForces(planet).find((id) => id !== state.pendingTacticalAction!.playerId) : undefined;
         if (owesHits) legal.push("ASSIGN_SPACE_CANNON_DEFENSE_HITS");
         else if (defenderId === playerId) legal.push("USE_SPACE_CANNON_DEFENSE", "SKIP_SPACE_CANNON_DEFENSE");
+      } else if (state.pendingTacticalAction.magenDefenseGridPending) {
+        const defenderId = planet ? playersWithGroundForces(planet).find((id) => id !== state.pendingTacticalAction!.playerId) : undefined;
+        if (defenderId === playerId) legal.push("USE_MAGEN_DEFENSE_GRID", "SKIP_MAGEN_DEFENSE_GRID");
+      } else if (state.pendingTacticalAction.magenDefenseGridAutoHitPending) {
+        const defenderId = planet ? playersWithGroundForces(planet).find((id) => id !== state.pendingTacticalAction!.playerId) : undefined;
+        if (defenderId === playerId) legal.push("ASSIGN_MAGEN_DEFENSE_GRID_HIT");
       } else if (owesHits) legal.push("ASSIGN_HITS");
       else if (inCombat && noPendingHits) legal.push("RESOLVE_COMBAT_ROUND");
     }
