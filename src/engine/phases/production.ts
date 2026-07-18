@@ -35,7 +35,14 @@ import { advanceActivePlayer } from "./actionPhase";
  */
 export function produceUnits(
   state: GameState,
-  action: { type: "PRODUCE_UNITS"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] },
+  action: {
+    type: "PRODUCE_UNITS";
+    playerId: PlayerId;
+    planetId: PlanetId;
+    units: { unitType: UnitType; count: number }[];
+    /** RR "AI Development Algorithm"'s OTHER ability (distinct from its unit-upgrade-research one, but shares the same exhausted-state — using either one exhausts the same card): exhaust to reduce this production's combined cost by the number of unit upgrade technologies this player owns. */
+    useAiDevelopmentAlgorithmForCost?: boolean;
+  },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -45,7 +52,7 @@ export function produceUnits(
   if (pending.step !== "production") {
     return { ok: false, error: `RR 58: expected step "production", got "${pending.step}".` };
   }
-  return executeProduction(state, action.playerId, pending.systemId, action.planetId, action.units, rules);
+  return executeProduction(state, action.playerId, pending.systemId, action.planetId, action.units, rules, action.useAiDevelopmentAlgorithmForCost);
 }
 
 /**
@@ -62,6 +69,7 @@ export function executeProduction(
   planetId: PlanetId,
   units: { unitType: UnitType; count: number }[],
   rules: RuleData,
+  useAiDevelopmentAlgorithmForCost?: boolean,
 ): ActionResult {
   const system = state.systems[systemId];
   if (!system) return { ok: false, error: `No system ${systemId}.` };
@@ -108,6 +116,20 @@ export function executeProduction(
   // negative.
   if (totalCost > 0 && player.technologies.includes(asTechId("sarween_tools"))) {
     totalCost = Math.max(0, totalCost - 1);
+  }
+
+  // RR "AI Development Algorithm"'s OTHER ability: exhaust to reduce the
+  // combined cost by the number of unit upgrade technologies this player
+  // owns — shares the SAME exhausted state as its unit-upgrade-research
+  // ability (researchUnitUpgrade), so using either one here exhausts the
+  // same card either way.
+  let usedAiDevelopmentAlgorithmForCost = false;
+  if (useAiDevelopmentAlgorithmForCost && totalCost > 0) {
+    const techId = asTechId("ai_development_algorithm");
+    if (!player.technologies.includes(techId)) return { ok: false, error: "This player doesn't own AI Development Algorithm." };
+    if (player.exhaustedTechnologies.includes(techId)) return { ok: false, error: "AI Development Algorithm is already exhausted." };
+    totalCost = Math.max(0, totalCost - player.unitUpgrades.length);
+    usedAiDevelopmentAlgorithmForCost = true;
   }
 
   if (totalCost > productionLimit) {
@@ -160,6 +182,9 @@ export function executeProduction(
         ...player,
         resourcesAvailable: player.resourcesAvailable - spentFromResources,
         tradeGoods: player.tradeGoods - spentFromTradeGoods,
+        exhaustedTechnologies: usedAiDevelopmentAlgorithmForCost
+          ? [...player.exhaustedTechnologies, asTechId("ai_development_algorithm")]
+          : player.exhaustedTechnologies,
       },
     },
   };
@@ -182,4 +207,4 @@ export function finishTacticalAction(
 
   const nextState = advanceActivePlayer({ ...state, pendingTacticalAction: null });
   return { ok: true, state: nextState, events: [] };
-                      }
+}
