@@ -1,7 +1,7 @@
 import { GameState, PendingTacticalAction, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, SystemId, asTechId } from "../types/ids";
-import { UnitType } from "../types/enums";
+import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { isAdjacent } from "../rules/adjacency";
 import {
@@ -42,8 +42,52 @@ import {
  *    throws rather than guess which 2 fight first).
  */
 
-/** Called whenever a tactical action's pendingTacticalAction is about to become step "spaceCombat", from wherever that transition happens — so AFB eligibility is computed exactly once, consistently. */
+/**
+ * Called whenever a tactical action's pendingTacticalAction is about to
+ * become step "spaceCombat", from wherever that transition happens — so
+ * AFB eligibility (and, before it, Assault Cannon's own trigger — see
+ * below) is computed exactly once, consistently, regardless of which step
+ * led here.
+ */
 export function computeSpaceCombatEntry(
+  state: GameState,
+  rules: RuleData,
+  systemId: SystemId,
+  attackerId: PlayerId,
+): { combatRound?: number; afbPendingPlayers?: PlayerId[]; assaultCannonPendingPlayer?: PlayerId; assaultCannonStage?: "attacker" | "defender"; pendingHits: Record<string, number> } {
+  const defenderId = playersWithShipsInSystem(state, systemId).find((id) => id !== attackerId);
+  if (defenderId) {
+    // RR "Assault Cannon": resolution order is confirmed — the ACTIVE
+    // player's own trigger (if any) resolves FIRST, forcing the defender
+    // to destroy one of THEIR non-fighter ships; only THEN is the
+    // defender's own trigger checked, against the now-possibly-reduced
+    // ship count (see resolveAssaultCannonStage for the "attacker" ->
+    // "defender" continuation once this first stage resolves).
+    const attackerTrigger = checkAssaultCannonTrigger(state, rules, systemId, attackerId, defenderId);
+    if (attackerTrigger) {
+      return { assaultCannonPendingPlayer: defenderId, assaultCannonStage: "attacker", pendingHits: {} };
+    }
+    const defenderTrigger = checkAssaultCannonTrigger(state, rules, systemId, defenderId, attackerId);
+    if (defenderTrigger) {
+      return { assaultCannonPendingPlayer: attackerId, assaultCannonStage: "defender", pendingHits: {} };
+    }
+  }
+
+  return computeAfbEntry(state, rules, systemId);
+}
+
+/** RR "Assault Cannon": does `triggeringPlayerId` currently have 3+ non-fighter ships AND own the tech, with `opponentId` actually having a non-fighter ship to lose? (No-op — doesn't trigger — if the opponent has none left to destroy.) */
+function checkAssaultCannonTrigger(state: GameState, rules: RuleData, systemId: SystemId, triggeringPlayerId: PlayerId, opponentId: PlayerId): boolean {
+  const player = state.players[triggeringPlayerId];
+  if (!player.technologies.includes(asTechId("assault_cannon"))) return false;
+  const ownStacks = (state.systems[systemId]?.spaceUnitsByPlayer[triggeringPlayerId] ?? []) as UnitStack[];
+  const ownNonFighterCount = ownStacks.filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter").reduce((sum, s) => sum + s.count, 0);
+  if (ownNonFighterCount < 3) return false;
+  const opponentStacks = (state.systems[systemId]?.spaceUnitsByPlayer[opponentId] ?? []) as UnitStack[];
+  return opponentStacks.some((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter" && s.count > 0);
+}
+
+function computeAfbEntry(
   state: GameState,
   rules: RuleData,
   systemId: SystemId,
@@ -53,6 +97,59 @@ export function computeSpaceCombatEntry(
     return { combatRound: 1, pendingHits: {} };
   }
   return { afbPendingPlayers: afbEligible, pendingHits: {} };
+}
+
+/** RR "Assault Cannon": the mandatory (no skip — see this project's own note on why) destruction the triggered player owes. They choose WHICH of their own non-fighter ships to destroy, same "real choice, not engine-picked" pattern as everywhere else in this codebase. Once resolved, if this was the ATTACKER's trigger (stage "attacker"), the DEFENDER's own trigger is checked next against the now-current ship count — continuing the confirmed resolution order — before finally moving on to AFB/combat rounds. */
+export function useAssaultCannonDestruction(
+  state: GameState,
+  action: { type: "USE_ASSAULT_CANNON_DESTRUCTION"; playerId: PlayerId; unitType: UnitType },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "spaceCombat") {
+    return { ok: false, error: "RR: not currently in space combat." };
+  }
+  if (pending.assaultCannonPendingPlayer !== action.playerId) {
+    return { ok: false, error: "This player has no pending Assault Cannon destruction owed right now." };
+  }
+  if (!SHIP_TYPES.includes(action.unitType) || action.unitType === "fighter") {
+    return { ok: false, error: 'RR "Assault Cannon": must destroy a non-fighter ship.' };
+  }
+
+  const systemId = pending.systemId;
+  const system = state.systems[systemId];
+  const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
+  const stack = stacks.find((s) => s.unitType === action.unitType);
+  if (!stack || stack.count <= 0) return { ok: false, error: `This player has no ${action.unitType} to destroy.` };
+
+  const updatedStacks = stacks.map((s) => (s.unitType === action.unitType ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+  const updatedSystem: SystemState = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: updatedStacks } };
+  const events: GameEvent[] = [{ type: "UNITS_DESTROYED", playerId: action.playerId, systemId, unitType: action.unitType, count: 1 }];
+
+  let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  const attackerId = pending.playerId;
+  const defenderId = playersWithShipsInSystem(nextState, systemId).find((id) => id !== attackerId);
+
+  if (pending.assaultCannonStage === "attacker" && defenderId) {
+    // The attacker's own trigger just resolved (this destruction was the
+    // DEFENDER's own ship) — now check the DEFENDER's trigger, against
+    // the just-updated ship count, per the confirmed resolution order.
+    const defenderTrigger = checkAssaultCannonTrigger(nextState, rules, systemId, defenderId, attackerId);
+    nextState = {
+      ...nextState,
+      pendingTacticalAction: defenderTrigger
+        ? { ...pending, assaultCannonPendingPlayer: attackerId, assaultCannonStage: "defender" }
+        : { ...pending, assaultCannonPendingPlayer: undefined, assaultCannonStage: undefined, ...computeAfbEntry(nextState, rules, systemId) },
+    };
+    return { ok: true, state: nextState, events };
+  }
+
+  // Either this was the "defender" stage (last one — nothing more to check), or there's no defender left at all (combat's about to end anyway).
+  nextState = {
+    ...nextState,
+    pendingTacticalAction: { ...pending, assaultCannonPendingPlayer: undefined, assaultCannonStage: undefined, ...computeAfbEntry(nextState, rules, systemId) },
+  };
+  return { ok: true, state: nextState, events };
 }
 
 export function useAntiFighterBarrage(
@@ -454,10 +551,14 @@ function wrapUpCombatRound(state: GameState, _rules: RuleData): { state: GameSta
     return { state: nextState, events };
   }
 
-  // Both sides still standing — next round, no retreat option in ground combat (RR 38).
   nextState = {
     ...nextState,
-    pendingTacticalAction: { ...pending, combatRound: (pending.combatRound ?? 1) + 1, pendingHits: {}, retreating: [] },
+    pendingTacticalAction: {
+      ...pending,
+      combatRound: (pending.combatRound ?? 1) + 1,
+      pendingHits: {},
+      retreating: [],
+    },
   };
   return { state: nextState, events };
 }
