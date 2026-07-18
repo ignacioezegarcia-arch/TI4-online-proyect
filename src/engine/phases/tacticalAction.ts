@@ -259,7 +259,7 @@ export function moveShips(
       spaceCannonResponders.length > 0
         ? { ...pending, step: "spaceCannonOffense", spaceCannonOffenseRespondersRemaining: spaceCannonResponders }
         : willHaveCombat
-          ? { ...pending, step: "spaceCombat", ...computeSpaceCombatEntry(workingState, rules, activeSystemId) }
+          ? { ...pending, step: "spaceCombat", ...computeSpaceCombatEntry(workingState, rules, activeSystemId, player.id) }
           : { ...pending, step: "invasion" },
   };
 
