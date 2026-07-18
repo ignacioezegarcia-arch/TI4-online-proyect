@@ -10,6 +10,7 @@ import {
   buildSpaceCannonDefenseEntries,
   resolveCombatRound,
   applyHitAssignments,
+  applySelfAssemblyRoutinesMechBonus,
   planetHasShield,
 } from "../rules/combat";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
@@ -189,6 +190,7 @@ export function assignBombardmentHits(
   const nextState: GameState = {
     ...state,
     systems: { ...state.systems, [systemId]: updatedSystem },
+    players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
     pendingTacticalAction: { ...pending, currentInvasionPlanetId: undefined, pendingHits: remainingPendingHits },
   };
 
@@ -462,4 +464,200 @@ export function assignSpaceCannonDefenseHits(
       ([unitType, count]): GameEvent => ({ type: "UNITS_DESTROYED", playerId: action.playerId, systemId, planetId, unitType, count }),
     ),
     ...Array.from(result.flipped.entries()).map(
-      ([unitType, count])
+      ([unitType, count]): GameEvent => ({ type: "UNIT_SUSTAINED_DAMAGE", playerId: action.playerId, systemId, planetId, unitType, count }),
+    ),
+  ];
+
+  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: result.stacks } };
+  const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
+
+  const remainingPendingHits = { ...pending.pendingHits };
+  delete remainingPendingHits[action.playerId];
+
+  const nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
+    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, combatRound: 1 },
+  };
+
+  return { ok: true, state: nextState, events };
+}
+
+export function resolveGroundCombatRound(
+  state: GameState,
+  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[] },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
+    return { ok: false, error: "RR 38.1: no ground combat currently in progress." };
+  }
+  if (pending.spaceCannonDefensePending) {
+    return { ok: false, error: "RR 44: resolve Space Cannon Defense before rolling ground combat dice." };
+  }
+  if (pending.pendingHits && Object.keys(pending.pendingHits).length > 0) {
+    return { ok: false, error: "RR 38.2: the previous round's hits haven't all been assigned yet." };
+  }
+
+  const systemId = pending.systemId;
+  const planetId = pending.currentInvasionPlanetId;
+  const system = state.systems[systemId];
+  const planet = system.planets.find((p) => p.planetId === planetId)!;
+
+  const combatants = playersWithGroundForces(planet);
+  if (!combatants.includes(action.playerId)) {
+    return { ok: false, error: "RR 38.1: only a player with ground forces in this combat can submit its dice roll." };
+  }
+
+  let entries;
+  try {
+    entries = buildGroundCombatEntries(state, rules, planet);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+
+  let result;
+  try {
+    result = resolveCombatRound(entries, action.diceRolls);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+
+  const [a, b] = combatants;
+  const pendingHits: Partial<Record<PlayerId, number>> = {};
+  if (result.hitsScoredByPlayer[a]) pendingHits[b] = result.hitsScoredByPlayer[a];
+  if (result.hitsScoredByPlayer[b]) pendingHits[a] = result.hitsScoredByPlayer[b];
+
+  const round = pending.combatRound ?? 1;
+  let nextState: GameState = { ...state, pendingTacticalAction: { ...pending, combatRound: round, pendingHits } };
+  const events: GameEvent[] = [
+    { type: "COMBAT_ROUND_RESOLVED", systemId, planetId, round, hitsScoredByPlayer: result.hitsScoredByPlayer },
+  ];
+
+  if (Object.keys(pendingHits).length === 0) {
+    const wrap = wrapUpGroundCombat(nextState, rules);
+    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
+  }
+  return { ok: true, state: nextState, events };
+}
+
+export function assignGroundCombatHits(
+  state: GameState,
+  action: { type: "ASSIGN_HITS"; playerId: PlayerId; assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId) {
+    return { ok: false, error: "RR 38.2: no ground combat currently in progress." };
+  }
+  const hitsOwed = pending.pendingHits?.[action.playerId];
+  if (!hitsOwed || hitsOwed <= 0) {
+    return { ok: false, error: "This player has no pending hits to assign right now." };
+  }
+
+  const systemId = pending.systemId;
+  const planetId = pending.currentInvasionPlanetId;
+  const system = state.systems[systemId];
+  const planet = system.planets.find((p) => p.planetId === planetId)!;
+  const player = state.players[action.playerId];
+  const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
+
+  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  if (!result.ok) return { ok: false, error: `RR 38.2: ${result.error}` };
+
+  const events: GameEvent[] = [
+    ...Array.from(result.destroyed.entries()).map(
+      ([unitType, count]): GameEvent => ({ type: "UNITS_DESTROYED", playerId: action.playerId, systemId, planetId, unitType, count }),
+    ),
+    ...Array.from(result.flipped.entries()).map(
+      ([unitType, count]): GameEvent => ({ type: "UNIT_SUSTAINED_DAMAGE", playerId: action.playerId, systemId, planetId, unitType, count }),
+    ),
+  ];
+
+  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: result.stacks } };
+  const updatedSystem: SystemState = {
+    ...system,
+    planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
+  };
+
+  const remainingPendingHits = { ...pending.pendingHits };
+  delete remainingPendingHits[action.playerId];
+
+  let nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
+    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
+  };
+
+  if (Object.keys(remainingPendingHits).length === 0) {
+    const wrap = wrapUpGroundCombat(nextState, rules);
+    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
+  }
+  return { ok: true, state: nextState, events };
+}
+
+// --- helpers ---------------------------------------------------------------
+
+function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
+  const pending = state.pendingTacticalAction!;
+  const systemId = pending.systemId;
+  const planetId = pending.currentInvasionPlanetId!;
+  const system = state.systems[systemId];
+  const planet = system.planets.find((p) => p.planetId === planetId)!;
+
+  const survivors = playersWithGroundForces(planet);
+  const events: GameEvent[] = [];
+  let nextState = state;
+
+  if (survivors.length <= 1) {
+    const winner = survivors[0] ?? null;
+    if (winner) {
+      nextState = setPlanetController(nextState, systemId, planetId, winner, rules);
+      events.push({ type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
+    }
+    events.push({ type: "GROUND_COMBAT_ENDED", systemId, planetId, survivingPlayerId: winner });
+
+    const queue = pending.remainingInvasionPlanetIds ?? [];
+    nextState = {
+      ...nextState,
+      pendingTacticalAction:
+        queue.length > 0
+          ? { ...pending, currentInvasionPlanetId: undefined, combatRound: undefined, pendingHits: {} }
+          : { playerId: pending.playerId, systemId, step: "production" },
+    };
+    return { state: nextState, events };
+  }
+
+  // Both sides still standing — next round, no retreat option in ground combat (RR 38).
+  nextState = {
+    ...nextState,
+    pendingTacticalAction: { ...pending, combatRound: (pending.combatRound ?? 1) + 1, pendingHits: {} },
+  };
+  return { state: nextState, events };
+}
+
+/** RR 25.1: gaining control of a planet ALWAYS exhausts its planet card — no exceptions, regardless of how control was gained (invasion win, uncontested landing, anything else). RR 53.2: a legendary planet's separate ability card only readies if this is the FIRST time it's ever been controlled (i.e. it's coming "from the deck"); if it's being taken FROM another player, it keeps whatever exhausted/readied state it already had — untouched here, on purpose. */
+function setPlanetController(state: GameState, systemId: SystemId, planetId: PlanetId, controllerId: PlayerId, rules: RuleData): GameState {
+  const system = state.systems[systemId];
+  const planet = system.planets.find((p) => p.planetId === planetId);
+  if (!planet || planet.controllerId === controllerId) return state;
+
+  const wasUncontrolled = planet.controllerId === null;
+  const isLegendary = rules.planets[planetId]?.isLegendary ?? false;
+
+  const updatedPlanet: PlanetState = {
+    ...planet,
+    controllerId,
+    exhausted: true,
+    ...(wasUncontrolled && isLegendary ? { legendaryAbilityExhausted: false } : {}),
+  };
+  const updatedSystem: SystemState = {
+    ...system,
+    planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
+  };
+  const nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  // RR PoK "Wormhole Nexus": gaining control of Mallice is the OTHER trigger for the active-flip (the first being a ship arriving there — see tacticalAction.ts's moveShips).
+  return maybeActivateWormholeNexus(nextState, rules, systemId);
+}
