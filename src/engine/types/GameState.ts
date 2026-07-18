@@ -116,6 +116,8 @@ export interface Player {
   tradeGoods: number; // current trade good tokens (RR 82)
 
   technologies: TechId[]; // owned, non-unit-upgrade techs (RR 79.1)
+  /** Which of the player's OWNED exhaustable techs (data/technologies.json's own `exhaustable` flag) are currently exhausted — absent/not-in-list = readied. Readied for everyone during the status phase (RR 70.6), same as strategy cards and planets. */
+  exhaustedTechnologies: TechId[];
   unitUpgrades: UnitUpgradeId[]; // owned unit upgrades (RR 86)
 
   actionCards: ActionCardId[]; // hidden hand, max 7 (RR 2.4)
@@ -338,4 +340,13 @@ export interface PendingAgendaVote {
   votingOrder: PlayerId[];
   nextVoterIndex: number;
   votesByOutcome: Record<string, { playerId: PlayerId; votes: number }[]>;
+  /**
+   * RR "Predictive Intelligence": which outcome (if any) each player who
+   * used its +3-votes bonus voted for on THIS agenda — checked once the
+   * agenda resolves (resolveAgendaVote) to conditionally exhaust the tech
+   * (only if their chosen outcome did NOT win; RR: "if you do, and the
+   * outcome you voted for is not resolved, exhaust this card" — winning
+   * means it stays readied).
+   */
+  predictiveIntelligenceBonusUsedBy?: Partial<Record<PlayerId, string>>;
 }
