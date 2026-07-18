@@ -1,6 +1,7 @@
 import { PlayerId, FactionId, PromissoryNoteId, asPromissoryNoteId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { GameMode } from "../types/enums";
+import { hasPoKContent } from "../rules/gameMode";
 
 /**
  * RR: promissory note setup. Generic notes (Ceasefire, Trade Agreement,
@@ -38,7 +39,7 @@ export function initializePromissoryNotes(
     const hand: PromissoryNoteId[] = [];
 
     for (const [templateId, template] of Object.entries(rules.genericPromissoryNoteTemplates)) {
-      if (template.set === "pok" && mode === "base") continue; // Alliance is PoK-only
+      if (template.set === "pok" && !hasPoKContent(mode)) continue; // Alliance is PoK-only
       const instanceId = asPromissoryNoteId(`${templateId}_${player.color}`);
       instances[instanceId] = {
         ownerId: player.id,
@@ -66,4 +67,4 @@ export function initializePromissoryNotes(
   }
 
   return { instances, startingHands };
-}
+         }
