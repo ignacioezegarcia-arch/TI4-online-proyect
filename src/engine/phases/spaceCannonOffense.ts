@@ -24,7 +24,7 @@ import { computeSpaceCombatEntry } from "./spaceCombat";
 
 export function useSpaceCannonOffense(
   state: GameState,
-  action: { type: "USE_SPACE_CANNON_OFFENSE"; playerId: PlayerId; diceRolls: number[] },
+  action: { type: "USE_SPACE_CANNON_OFFENSE"; playerId: PlayerId; diceRolls: number[]; plasmaScoringUnitType?: UnitType },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -39,7 +39,7 @@ export function useSpaceCannonOffense(
     return { ok: false, error: "RR 77: resolve the previous responder's hits before the next one fires." };
   }
 
-  const entries = buildSpaceCannonOffenseEntries(state, rules, action.playerId, pending.systemId);
+  const entries = buildSpaceCannonOffenseEntries(state, rules, action.playerId, pending.systemId, pending.playerId, action.plasmaScoringUnitType);
   if (entries.length === 0) {
     return { ok: false, error: "This player has no qualifying Space Cannon units." };
   }
