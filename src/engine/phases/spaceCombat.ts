@@ -188,6 +188,26 @@ export function announceRetreat(
     return { ok: false, error: "RR 67.4: cannot retreat into a system that contains another player's ships." };
   }
 
+  // RR 67.4's base rule: the destination must be a system the retreating
+  // player already has units in, or controls a planet in — UNLESS they own
+  // Dark Energy Tap, which specifically waives this (RR: "your ships can
+  // retreat into adjacent systems that do not contain other players' units,
+  // even if you do not have units or control planets in that system").
+  if (!state.players[action.playerId]?.technologies.includes(asTechId("dark_energy_tap"))) {
+    const destSystem = state.systems[action.toSystemId];
+    const alreadyHasPresence =
+      (destSystem?.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0) ||
+      (destSystem?.planets ?? []).some(
+        (p) => p.controllerId === action.playerId || (p.unitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0),
+      );
+    if (!alreadyHasPresence) {
+      return {
+        ok: false,
+        error: "RR 67.4: retreat destination must already have this player's units, or a planet they control (Dark Energy Tap waives this).",
+      };
+    }
+  }
+
   const nextPending: PendingTacticalAction = {
     ...pending,
     retreating: [...(pending.retreating ?? []), { playerId: action.playerId, toSystemId: action.toSystemId }],
