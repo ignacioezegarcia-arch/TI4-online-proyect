@@ -1,6 +1,6 @@
 import { GameState, Player } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, TechId, UnitUpgradeId, PlanetId } from "../types/ids";
+import { PlayerId, TechId, UnitUpgradeId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 
 /**
@@ -65,6 +65,8 @@ export function researchUnitUpgrade(
   cost: number,
   exhaustPlanetIdsForResources: PlanetId[],
   rules: RuleData,
+  /** RR "AI Development Algorithm": exhaust that tech (if owned and readied) to ignore exactly ONE instance of this one color's prerequisite for this specific research (e.g. a "2 red" requirement becomes "1 red") — not the whole prerequisite list. */
+  aiDevelopmentAlgorithmIgnoreColor?: string,
 ): ActionResult {
   const player = state.players[playerId];
   if (!player) return { ok: false, error: "Unknown player." };
@@ -72,10 +74,21 @@ export function researchUnitUpgrade(
     return { ok: false, error: `RR 90/86: this player already owns ${upgradeId}.` };
   }
 
-  const prereqCheck = checkUnitUpgradePrerequisites(state, playerId, upgradeId, rules);
-  if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
+  let workingPlayer = player;
+  if (aiDevelopmentAlgorithmIgnoreColor) {
+    const techId = asTechId("ai_development_algorithm");
+    if (!player.technologies.includes(techId)) return { ok: false, error: "This player doesn't own AI Development Algorithm." };
+    if (player.exhaustedTechnologies.includes(techId)) return { ok: false, error: "AI Development Algorithm is already exhausted." };
+    const prereqCheck = checkUnitUpgradePrerequisites(state, playerId, upgradeId, rules, aiDevelopmentAlgorithmIgnoreColor);
+    if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
+    workingPlayer = { ...player, exhaustedTechnologies: [...player.exhaustedTechnologies, techId] };
+  } else {
+    const prereqCheck = checkUnitUpgradePrerequisites(state, playerId, upgradeId, rules);
+    if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
+  }
 
-  const spend = spendForCost(state, playerId, cost, exhaustPlanetIdsForResources, rules);
+  const stateWithExhaust: GameState = { ...state, players: { ...state.players, [playerId]: workingPlayer } };
+  const spend = spendForCost(stateWithExhaust, playerId, cost, exhaustPlanetIdsForResources, rules);
   if (!spend.ok) return spend;
 
   const updatedPlayer: Player = { ...spend.state.players[playerId], unitUpgrades: [...player.unitUpgrades, upgradeId] };
@@ -89,11 +102,13 @@ export function checkUnitUpgradePrerequisites(
   playerId: PlayerId,
   upgradeId: UnitUpgradeId,
   rules: RuleData,
+  /** RR "AI Development Algorithm": ignore exactly one instance of this one color's requirement. */
+  ignoreOnePrerequisiteOfColor?: string,
 ): { met: boolean; reason?: string } {
   const upgradeData = rules.unitUpgradeTechData[upgradeId];
   if (!upgradeData) return { met: false, reason: `No rule data for ${upgradeId}.` };
   const synergy = rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null;
-  return checkPrerequisitesAgainst(upgradeData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy);
+  return checkPrerequisitesAgainst(upgradeData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreOnePrerequisiteOfColor);
 }
 
 /** Every color this player already owns a tech (or unit upgrade — those count too, RR 90.7) in, one entry per tech. */
@@ -108,12 +123,20 @@ function checkPrerequisitesAgainst(
   prerequisites: string[],
   ownedColors: string[],
   synergy: [string, string] | null,
+  /** RR "AI Development Algorithm": ignores exactly ONE instance of this one color's requirement (e.g. a "2 red" requirement becomes "1 red") — not the whole prerequisite list. */
+  ignoreOnePrerequisiteOfColor?: string,
 ): { met: boolean; reason?: string } {
   if (prerequisites.length === 0) return { met: true };
   const neededByColor = new Map<string, number>();
   for (const color of prerequisites) neededByColor.set(color, (neededByColor.get(color) ?? 0) + 1);
 
+  if (ignoreOnePrerequisiteOfColor) {
+    const current = neededByColor.get(ignoreOnePrerequisiteOfColor) ?? 0;
+    if (current > 0) neededByColor.set(ignoreOnePrerequisiteOfColor, current - 1);
+  }
+
   for (const [color, count] of neededByColor) {
+    if (count <= 0) continue;
     let owned = ownedColors.filter((c) => c === color).length;
     if (synergy && (synergy[0] === color || synergy[1] === color)) {
       const substituteColor = synergy[0] === color ? synergy[1] : synergy[0];
