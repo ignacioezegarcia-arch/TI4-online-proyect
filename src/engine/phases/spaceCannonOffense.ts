@@ -1,7 +1,7 @@
 import { GameState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId } from "../types/ids";
-import { UnitType } from "../types/enums";
+import { PlayerId, asTechId } from "../types/ids";
+import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { buildSpaceCannonOffenseEntries, resolveCombatRound, applyHitAssignments, applySelfAssemblyRoutinesMechBonus, playersWithShipsInSystem } from "../rules/combat";
 import { computeSpaceCombatEntry } from "./spaceCombat";
@@ -24,7 +24,14 @@ import { computeSpaceCombatEntry } from "./spaceCombat";
 
 export function useSpaceCannonOffense(
   state: GameState,
-  action: { type: "USE_SPACE_CANNON_OFFENSE"; playerId: PlayerId; diceRolls: number[]; plasmaScoringUnitType?: UnitType },
+  action: {
+    type: "USE_SPACE_CANNON_OFFENSE";
+    playerId: PlayerId;
+    diceRolls: number[];
+    plasmaScoringUnitType?: UnitType;
+    /** RR "Graviton Laser System": exhaust that tech (if owned and readied) before firing, so the ACTIVE player's assignment of these hits must go to non-fighter ships if any are available (enforced in assignSpaceCannonOffenseHits). Only meaningful here (not Space Cannon Defense — that fires at ground forces, which are never fighters). */
+    useGravitonLaserSystem?: boolean;
+  },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -44,6 +51,15 @@ export function useSpaceCannonOffense(
     return { ok: false, error: "This player has no qualifying Space Cannon units." };
   }
 
+  let workingState = state;
+  if (action.useGravitonLaserSystem) {
+    const techId = asTechId("graviton_laser_system");
+    const player = state.players[action.playerId];
+    if (!player.technologies.includes(techId)) return { ok: false, error: "This player doesn't own Graviton Laser System." };
+    if (player.exhaustedTechnologies.includes(techId)) return { ok: false, error: "Graviton Laser System is already exhausted." };
+    workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...player, exhaustedTechnologies: [...player.exhaustedTechnologies, techId] } } };
+  }
+
   let result;
   try {
     result = resolveCombatRound(entries, action.diceRolls);
@@ -56,11 +72,12 @@ export function useSpaceCannonOffense(
   const events: GameEvent[] = [{ type: "SPACE_CANNON_OFFENSE_FIRED", playerId: action.playerId, systemId: pending.systemId, hits }];
 
   const nextState: GameState = {
-    ...state,
+    ...workingState,
     pendingTacticalAction: {
       ...pending,
       spaceCannonOffenseRespondersRemaining: remainingResponders,
       pendingHits: hits > 0 ? { [pending.playerId]: hits } : {},
+      gravitonLaserSystemRestrictsPendingHits: hits > 0 ? Boolean(action.useGravitonLaserSystem) : false,
     },
   };
 
@@ -124,6 +141,21 @@ export function assignSpaceCannonOffenseHits(
   const player = state.players[action.playerId];
   const stacks = system.spaceUnitsByPlayer[action.playerId] ?? [];
 
+  // RR "Graviton Laser System": if the firing player exhausted it before
+  // this shot, these hits must go to non-fighter ships first, while any
+  // remain — checked here (assignment time), not at fire time, since
+  // that's when the actual unit stacks are known.
+  if (pending.gravitonLaserSystemRestrictsPendingHits) {
+    const nonFighterShipUnitsAvailable = stacks
+      .filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter")
+      .reduce((sum, s) => sum + s.count, 0);
+    const nonFighterAssignments = action.assignments.filter((a) => a.unitType !== "fighter").length;
+    const fighterAssignments = action.assignments.filter((a) => a.unitType === "fighter").length;
+    if (fighterAssignments > 0 && nonFighterAssignments < nonFighterShipUnitsAvailable) {
+      return { ok: false, error: 'RR "Graviton Laser System": these hits must be assigned to non-fighter ships first, while any remain.' };
+    }
+  }
+
   const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
   if (!result.ok) return { ok: false, error: `RR 77: ${result.error}` };
 
@@ -147,7 +179,7 @@ export function assignSpaceCannonOffenseHits(
     // (ground forces only), but some factions have abilities that let
     // their mechs sit in the space area too — wired in for that case.
     players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
-    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
+    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, gravitonLaserSystemRestrictsPendingHits: false },
   };
 
   const respondersLeft = pending.spaceCannonOffenseRespondersRemaining ?? [];
@@ -165,7 +197,7 @@ function advanceFromSpaceCannonOffense(state: GameState, rules: RuleData): { sta
   const nextState: GameState = {
     ...state,
     pendingTacticalAction: willHaveCombat
-      ? { playerId: pending.playerId, systemId: pending.systemId, step: "spaceCombat", ...computeSpaceCombatEntry(state, rules, pending.systemId) }
+      ? { playerId: pending.playerId, systemId: pending.systemId, step: "spaceCombat", ...computeSpaceCombatEntry(state, rules, pending.systemId, pending.playerId) }
       : { playerId: pending.playerId, systemId: pending.systemId, step: "invasion" },
   };
   return { state: nextState, events: [] };
