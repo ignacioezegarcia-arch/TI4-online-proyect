@@ -4,7 +4,7 @@ import { PlayerId, asTechId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
-import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits, useDuraniumArmor, skipDuraniumArmor } from "./phases/spaceCombat";
+import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits, useDuraniumArmor, skipDuraniumArmor, useAssaultCannonDestruction } from "./phases/spaceCombat";
 import {
   bombard,
   assignBombardmentHits,
@@ -38,6 +38,7 @@ import {
   useScanlinkDroneNetwork,
   useBioStims,
   usePredictiveIntelligenceRedistribute,
+  useTransitDiodes,
 } from "./phases/technologyAbilities";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
@@ -189,6 +190,9 @@ export const GameEngine = {
       case "USE_PREDICTIVE_INTELLIGENCE_REDISTRIBUTE":
         result = usePredictiveIntelligenceRedistribute(state, action);
         break;
+      case "USE_TRANSIT_DIODES":
+        result = useTransitDiodes(state, action);
+        break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
         break;
@@ -209,6 +213,9 @@ export const GameEngine = {
         break;
       case "SKIP_DURANIUM_ARMOR":
         result = skipDuraniumArmor(state, action, rules);
+        break;
+      case "USE_ASSAULT_CANNON_DESTRUCTION":
+        result = useAssaultCannonDestruction(state, action, rules);
         break;
       case "USE_SPACE_CANNON_DEFENSE":
         result = useSpaceCannonDefense(state, action, rules);
@@ -350,6 +357,9 @@ export const GameEngine = {
       if (player.technologies.includes(asTechId("predictive_intelligence")) && !player.exhaustedTechnologies.includes(asTechId("predictive_intelligence"))) {
         legal.push("USE_PREDICTIVE_INTELLIGENCE_REDISTRIBUTE");
       }
+      if (player.technologies.includes(asTechId("transit_diodes")) && !player.exhaustedTechnologies.includes(asTechId("transit_diodes"))) {
+        legal.push("USE_TRANSIT_DIODES");
+      }
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
@@ -366,8 +376,10 @@ export const GameEngine = {
       const stillInAfbPhase = state.pendingTacticalAction.combatRound === undefined;
       const afbPending = state.pendingTacticalAction.afbPendingPlayers?.includes(playerId);
       const duraniumArmorPending = state.pendingTacticalAction.duraniumArmorPendingPlayers?.includes(playerId);
+      const assaultCannonPending = state.pendingTacticalAction.assaultCannonPendingPlayer === playerId;
 
-      if (owesHits && stillInAfbPhase) legal.push("ASSIGN_ANTI_FIGHTER_BARRAGE_HITS");
+      if (assaultCannonPending) legal.push("USE_ASSAULT_CANNON_DESTRUCTION");
+      else if (owesHits && stillInAfbPhase) legal.push("ASSIGN_ANTI_FIGHTER_BARRAGE_HITS");
       else if (owesHits) legal.push("ASSIGN_HITS");
       else if (stillInAfbPhase && afbPending && noPendingHits) legal.push("USE_ANTI_FIGHTER_BARRAGE");
       else if (duraniumArmorPending && noPendingHits) legal.push("USE_DURANIUM_ARMOR", "SKIP_DURANIUM_ARMOR");
