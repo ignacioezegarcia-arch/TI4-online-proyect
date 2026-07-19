@@ -202,15 +202,21 @@ export function buildFactionPromissoryNotesLookup(
 
 /** Aggregates each faction's starting units + starting technologies (data/factions/*.json) across however many faction files are passed in — RR "Gather Starting Components" needs both together, always for the same set of factions, so one function builds both maps in one pass rather than two near-identical loops. */
 export function buildStartingDataLookup(
-  factionFiles: { id: string; startingUnits?: Record<string, number>; startingTechnologies?: string[] }[],
-): { startingUnits: Record<string, Record<string, number>>; startingTechnologies: Record<string, string[]> } {
+  factionFiles: { id: string; startingUnits?: Record<string, number>; startingTechnologies?: string[]; startingTechnologyChoice?: { count: number; options: string[] } }[],
+): {
+  startingUnits: Record<string, Record<string, number>>;
+  startingTechnologies: Record<string, string[]>;
+  startingTechnologyChoices: Record<string, { count: number; options: string[] } | undefined>;
+} {
   const startingUnits: Record<string, Record<string, number>> = {};
   const startingTechnologies: Record<string, string[]> = {};
+  const startingTechnologyChoices: Record<string, { count: number; options: string[] } | undefined> = {};
   for (const file of factionFiles) {
     startingUnits[file.id] = file.startingUnits ?? {};
     startingTechnologies[file.id] = file.startingTechnologies ?? [];
+    startingTechnologyChoices[file.id] = file.startingTechnologyChoice;
   }
-  return { startingUnits, startingTechnologies };
+  return { startingUnits, startingTechnologies, startingTechnologyChoices };
 }
 
 /** Shared by both loaders — RR PoK "Leaders": each faction's agent/commander/hero (data/factions/*.json's leaders field), synthesizing a stable id for each since the raw data doesn't carry one. */
@@ -343,4 +349,4 @@ export function buildActionCardIds(actionCardsFile: { actionCards: { id: string 
 /** Shared by both loaders — every relic id (data/relics.json), for setup deck-seeding only (see RuleData.ts's own note on allRelicIds). */
 export function buildRelicIds(relicsFile: { relics: { id: string }[] }): string[] {
   return relicsFile.relics.map((r) => r.id);
-  }
+}
