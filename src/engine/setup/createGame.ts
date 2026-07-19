@@ -1,5 +1,5 @@
 import { GameState, Player, SystemState, PlanetState } from "../types/GameState";
-import { PlayerId, FactionId, SystemId, PlanetId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId } from "../types/ids";
+import { PlayerId, FactionId, SystemId, PlanetId, TechId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { GameMode, UnitType, AnomalyType, WormholeType } from "../types/enums";
 import { generateMap, fisherYatesShuffle, PlaceableTile } from "./mapGeneration";
@@ -52,6 +52,8 @@ export interface CreateGameInput {
     color: string;
     /** Omit to have this player dealt a random faction from whatever's left in availableFactionPool after every explicit pick is removed. */
     factionId?: FactionId;
+    /** RR "Gather Starting Components": for a faction with a `startingTechnologyChoice` (e.g. Argent Flight: "choose two of the following") — the actual pick, supplied here rather than resolved as an in-game action (this is a one-time setup choice, made before the game state even exists yet). Validated against that faction's own `count`/`options`; ignored (and harmless) for factions with no such choice. */
+    chosenStartingTechnologies?: string[];
   }[];
   /** Every faction id available to deal from for this game (e.g. all 17 base ids if mode is "base") — only consulted for players who didn't pre-pick. */
   availableFactionPool: FactionId[];
@@ -193,7 +195,7 @@ export function createGame(input: CreateGameInput): GameState {
       influenceAvailable: 0,
       commodities: 0, // RR: commodities only fill up via the Trade strategy card's "replenish", never start pre-filled
       tradeGoods: 0,
-      technologies: (rules.startingTechnologies[factionId] ?? []).map(asTechId),
+      technologies: resolveStartingTechnologies(rules, factionId, p.chosenStartingTechnologies),
       exhaustedTechnologies: [],
       unitUpgrades: [],
       actionCards: [],
@@ -263,6 +265,33 @@ export function createGame(input: CreateGameInput): GameState {
 
 // --- helpers ---------------------------------------------------------------
 
+/** RR "Gather Starting Components": combines a faction's FIXED starting technologies with whatever this player CHOSE, for factions with a `startingTechnologyChoice` (e.g. Argent Flight: "choose two of the following"). Throws (same "bad setup input" pattern as this file's other RR-named errors) if a faction has a choice and the supplied pick doesn't satisfy it exactly — wrong count, an option not on the list, or a duplicate. */
+function resolveStartingTechnologies(rules: RuleData, factionId: FactionId, chosen: string[] | undefined): TechId[] {
+  const fixed = rules.startingTechnologies[factionId] ?? [];
+  const choiceSpec = rules.startingTechnologyChoices[factionId];
+
+  if (!choiceSpec) {
+    return fixed.map(asTechId);
+  }
+
+  const picked = chosen ?? [];
+  if (picked.length !== choiceSpec.count) {
+    throw new Error(
+      `RR "Gather Starting Components": ${factionId} must choose exactly ${choiceSpec.count} starting technolog${choiceSpec.count === 1 ? "y" : "ies"} from [${choiceSpec.options.join(", ")}], got ${picked.length}.`,
+    );
+  }
+  if (new Set(picked).size !== picked.length) {
+    throw new Error(`RR "Gather Starting Components": ${factionId}'s starting technology choice can't repeat the same tech twice.`);
+  }
+  for (const techId of picked) {
+    if (!choiceSpec.options.includes(techId)) {
+      throw new Error(`RR "Gather Starting Components": "${techId}" isn't one of ${factionId}'s starting technology choice options.`);
+    }
+  }
+
+  return [...fixed, ...picked].map(asTechId);
+}
+
 function rawTileToPlaceableTile(t: RawTileEntry): PlaceableTile {
   return {
     systemId: asSystemId(String(t.id)),
@@ -299,6 +328,9 @@ function rawTileToSystemState(t: RawTileEntry, systemId: SystemId, mode: GameMod
 /** RR "Gather Starting Components": places a faction's startingUnits onto their home system — ships go to space, ground forces + structures go on the planet with the highest resource value (RR's own recommendation when a home system has multiple planets). */
 function placeStartingUnits(homeSystem: SystemState, playerId: PlayerId, factionId: FactionId, rules: RuleData): void {
   const raw = rules.startingUnits[factionId] ?? {};
+  // Raw data keys are camelCase (e.g. "spaceDock") but UnitType is snake_case
+  // for multi-word types — see RuleData.ts's own note on why this one field
+  // keeps that inconsistency rather than normalizing the source data.
   const keyToUnitType: Record<string, UnitType> = {
     carrier: "carrier",
     cruiser: "cruiser",
@@ -337,7 +369,7 @@ function rulesResourceOf(planet: PlanetState, rules: RuleData): number {
   return rules.planets[planet.planetId]?.resources ?? 0;
 }
 
-/** RR "Shuffle Common Decks" — all 6 shuffled decks this engine tracks. */
+/** RR "Shuffle Common Decks" — all 6 shuffled decks this engine tracks (action, agenda, public objectives x2 stages, secret objectives, exploration x4 + relics if PoK). Mode-filtered where a deck has PoK/TE-only content mixed in with base content already (agendas, objectives don't currently distinguish set in RuleData, so they're not filtered here — see this project's own note on why: RuleData.agendas/objectives don't carry a `set` field yet). */
 function shuffleAndSeedDecks(
   rules: RuleData,
   mode: GameMode,
