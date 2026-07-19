@@ -6,7 +6,7 @@ import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
 import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
 import { applyExplorationCard } from "./exploration";
-import { advanceActivePlayer } from "./actionPhase";
+import { maybeAdvanceActivePlayer } from "./actionPhase";
 import { executeProduction } from "./production";
 
 /**
@@ -255,8 +255,9 @@ export function useX89BacterialWeapon(
   };
   // RR: this is a component ACTION — it uses this player's entire turn,
   // same as PASS or finishing a tactical/strategic action, so initiative
-  // advances to the next player exactly like those do.
-  nextState = advanceActivePlayer(nextState);
+  // advances to the next player exactly like those do (respecting Fleet
+  // Logistics's own extra-action allowance, if this player has it).
+  nextState = maybeAdvanceActivePlayer(nextState, action.playerId);
   return { ok: true, state: nextState, events };
 }
 
@@ -370,6 +371,73 @@ export function usePredictiveIntelligenceRedistribute(
   return { ok: true, state: nextState, events: [] };
 }
 
+/** RR "Transit Diodes": exhaust to remove up to 4 of this player's own ground forces from any of their own planets, and place them back on 1 or more planets THEY control (can be entirely different planets, or the same ones). RR text says "at the start of your turn" — same timing simplification as the other "start/end of turn" techs in this file (see this file's own header note); offered any time during the action phase instead. */
+export function useTransitDiodes(
+  state: GameState,
+  action: {
+    type: "USE_TRANSIT_DIODES";
+    playerId: PlayerId;
+    removals: { planetId: PlanetId; unitType: "infantry" | "mech"; count: number }[];
+    placements: { planetId: PlanetId; unitType: "infantry" | "mech"; count: number }[];
+  },
+): ActionResult {
+  if (state.phase !== "action") return { ok: false, error: "RR: this ability only applies during the action phase." };
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  const techCheck = ownsReadiedTech(player, "transit_diodes");
+  if (!techCheck.ok) return techCheck;
+
+  const totalRemoved = action.removals.reduce((sum, r) => sum + r.count, 0);
+  const totalPlaced = action.placements.reduce((sum, p) => sum + p.count, 0);
+  if (totalRemoved <= 0 || totalRemoved > 4) {
+    return { ok: false, error: 'RR "Transit Diodes": must remove between 1 and 4 ground forces total.' };
+  }
+  if (totalRemoved !== totalPlaced) {
+    return { ok: false, error: 'RR "Transit Diodes": everything removed must be placed back somewhere (removed and placed totals must match).' };
+  }
+
+  let nextState: GameState = state;
+
+  for (const { planetId, unitType, count } of action.removals) {
+    if (count <= 0) continue;
+    const found = findPlanet(nextState, planetId);
+    if (!found) return { ok: false, error: `No planet ${planetId}.` };
+    const { systemId, system, planet } = found;
+    if (planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    const stack = (planet.unitsByPlayer[action.playerId] ?? []).find((s) => s.unitType === unitType);
+    if (!stack || stack.count < count) return { ok: false, error: `Not enough ${unitType} on ${planetId} to remove ${count}.` };
+
+    const updatedStacks = (planet.unitsByPlayer[action.playerId] ?? [])
+      .map((s) => (s.unitType === unitType ? { ...s, count: s.count - count } : s))
+      .filter((s) => s.count > 0);
+    const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: updatedStacks } };
+    const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: updatedSystem } };
+  }
+
+  const events: GameEvent[] = [];
+  for (const { planetId, unitType, count } of action.placements) {
+    if (count <= 0) continue;
+    const found = findPlanet(nextState, planetId);
+    if (!found) return { ok: false, error: `No planet ${planetId}.` };
+    const { systemId, system, planet } = found;
+    if (planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+
+    const stacks = planet.unitsByPlayer[action.playerId] ?? [];
+    const existing = stacks.find((s) => s.unitType === unitType && !s.upgradeId);
+    const updatedStacks = existing
+      ? stacks.map((s) => (s === existing ? { ...s, count: s.count + count } : s))
+      : [...stacks, { unitType, count, damagedCount: 0 }];
+    const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: updatedStacks } };
+    const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: updatedSystem } };
+    events.push({ type: "UNITS_PRODUCED", playerId: action.playerId, systemId, planetId, unitType, count, totalCost: 0 });
+  }
+
+  nextState = { ...nextState, players: { ...nextState.players, [action.playerId]: exhaustTech(nextState.players[action.playerId], "transit_diodes") } };
+  return { ok: true, state: nextState, events };
+}
+
 /** RR "Scanlink Drone Network": when activating a system, explore 1 planet there that has this player's own units on it — independent of RR 35's normal "just gained control" trigger, and independent of whether it's already been explored. Not exhaustable — repeatable every tactical action. */
 export function useScanlinkDroneNetwork(
   state: GameState,
@@ -436,8 +504,8 @@ export function useSlingRelay(
     ...nextState,
     players: { ...nextState.players, [action.playerId]: exhaustTech(nextState.players[action.playerId], "sling_relay") },
   };
-  // RR: this is a component ACTION — it uses this player's entire turn, same as PASS/finishing a tactical/strategic action.
-  nextState = advanceActivePlayer(nextState);
+  // RR: this is a component ACTION — it uses this player's entire turn, same as PASS/finishing a tactical/strategic action (respecting Fleet Logistics's own extra-action allowance, if this player has it).
+  nextState = maybeAdvanceActivePlayer(nextState, action.playerId);
   return { ok: true, state: nextState, events: productionResult.events };
 }
 
