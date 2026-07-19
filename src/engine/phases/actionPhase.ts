@@ -58,10 +58,30 @@ export function advanceActivePlayer(state: GameState): GameState {
   for (let i = 1; i <= order.length; i++) {
     const candidate = order[(currentIndex + i) % order.length];
     if (!state.players[candidate].hasPassed) {
-      return { ...state, activePlayerId: candidate };
+      return { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0 };
     }
   }
   return { ...state, activePlayerId: null };
+}
+
+/**
+ * RR "Fleet Logistics": the shared entry point every "a tactical/component
+ * action for the CURRENT active player just finished" call site uses
+ * instead of calling advanceActivePlayer directly — PASS is the one
+ * exception (see GameState.ts's own note on activePlayerActionsTaken for
+ * why). If this player owns Fleet Logistics and hasn't yet used their
+ * second action this turn-in-rotation, the turn does NOT advance (they
+ * stay active, free to submit another ACTIVATE_SYSTEM/component action, or
+ * PASS if they'd rather stop early); otherwise this behaves exactly like
+ * advanceActivePlayer.
+ */
+export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): GameState {
+  const player = state.players[playerId];
+  const actionsSoFar = state.activePlayerActionsTaken ?? 0;
+  if (player?.technologies.includes(asTechId("fleet_logistics")) && actionsSoFar < 1) {
+    return { ...state, activePlayerActionsTaken: actionsSoFar + 1 };
+  }
+  return advanceActivePlayer(state);
 }
 
 /**
@@ -217,7 +237,6 @@ export function scoreObjectiveCore(
         exhaustPlanetIdsForInfluence?: PlanetId[];
         tradeGoods?: number;
         commandTokens?: { tactic?: number; strategy?: number };
-        relicFragments?: { cultural?: number; industrial?: number; hazardous?: number; unknown?: number };
       }
     | undefined,
   rules: RuleData,
@@ -435,4 +454,127 @@ export function finishStatusPhaseScoring(
   return { ok: true, state: nextState, events: [] };
 }
 
-fu
+function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events: GameEvent[] } {
+  const events: GameEvent[] = [];
+
+  // RR 70.2: reveal 1 public objective — Stage I deck first, then Stage II
+  // once Stage I is exhausted. No-ops (doesn't error) if both decks are
+  // empty, e.g. before game setup has seeded them.
+  let objectives = state.objectives;
+  const deck = state.publicObjectiveDeck;
+  let nextDeck = deck;
+  if (deck) {
+    if (deck.stageI.length > 0) {
+      const [objectiveId, ...rest] = deck.stageI;
+      objectives = [...objectives, { kind: "publicI", objectiveId, revealed: true }];
+      nextDeck = { ...deck, stageI: rest };
+      events.push({ type: "PUBLIC_OBJECTIVE_REVEALED", objectiveId, kind: "publicI" });
+    } else if (deck.stageII.length > 0) {
+      const [objectiveId, ...rest] = deck.stageII;
+      objectives = [...objectives, { kind: "publicII", objectiveId, revealed: true }];
+      nextDeck = { ...deck, stageII: rest };
+      events.push({ type: "PUBLIC_OBJECTIVE_REVEALED", objectiveId, kind: "publicII" });
+    }
+  }
+
+  // RR 70.3: each non-eliminated player draws 1 action card. RR 2.9:
+  // reshuffles the discard pile into a fresh deck first if the deck is
+  // empty — see phases/actionCards.ts's drawActionCard, shared with any
+  // other future draw site rather than duplicating the reshuffle-check.
+  let actionCardDeck = state.actionCardDeck ? [...state.actionCardDeck] : [];
+  let actionCardDiscardPile = state.actionCardDiscardPile ? [...state.actionCardDiscardPile] : [];
+  const players: GameState["players"] = {};
+  for (const [id, player] of Object.entries(state.players)) {
+    let updatedPlayer: Player = {
+      ...player,
+      // RR 70.4: command tokens on the board return to reinforcements (i.e. just removed; they're re-gained as fresh tokens in 70.5, not literally recycled).
+      commandTokens: { ...player.commandTokens, onBoard: [] },
+      // RR 70.6: ready all exhausted strategy cards. (Ready state for planets is handled below, per-system.)
+      strategyCards: player.strategyCards.map((c) => ({ ...c, exhausted: false })),
+      // RR 70.6-adjacent: readies every exhausted TECH card too, same as strategy cards/planets.
+      exhaustedTechnologies: [],
+    };
+    // RR 70.5: gain 2 command tokens — 3 instead, with Hyper Metabolism.
+    // Simplification: auto-placed in the strategy pool; a future UI can
+    // offer redistribution as its own action before this runs.
+    const commandTokenGain = player.technologies.includes(asTechId("hyper_metabolism")) ? 3 : 2;
+    updatedPlayer.commandTokens = { ...updatedPlayer.commandTokens, strategy: updatedPlayer.commandTokens.strategy + commandTokenGain };
+
+    if (!player.eliminated) {
+      // Neural Motivator: draw 2 action cards instead of 1 — just runs the
+      // same drawActionCard (with its own reshuffle-on-empty) an extra time.
+      const drawsThisPlayer = player.technologies.includes(asTechId("neural_motivator")) ? 2 : 1;
+      for (let i = 0; i < drawsThisPlayer; i++) {
+        const drawResult = drawActionCard({ ...state, actionCardDeck, actionCardDiscardPile });
+        actionCardDeck = drawResult.deck;
+        actionCardDiscardPile = drawResult.discardPile;
+        if (drawResult.drawn) {
+          updatedPlayer = { ...updatedPlayer, actionCards: [...updatedPlayer.actionCards, drawResult.drawn] };
+          events.push({ type: "ACTION_CARD_DRAWN", playerId: player.id, cardId: drawResult.drawn });
+        }
+      }
+    }
+
+    players[id as PlayerId] = updatedPlayer;
+  }
+
+  const systems: GameState["systems"] = {};
+  for (const [id, system] of Object.entries(state.systems)) {
+    systems[id as keyof typeof systems] = {
+      ...system,
+      planets: system.planets.map((p) => ({
+        ...p,
+        exhausted: false, // RR 70.6
+        // RR 53's legendary planet ability card readies independently in
+        // spirit, but the status phase readies EVERY exhausted card
+        // (RR 70.6), so in practice both flip together here regardless.
+        ...(p.legendaryAbilityExhausted ? { legendaryAbilityExhausted: false } : {}),
+        unitsByPlayer: Object.fromEntries(
+          Object.entries(p.unitsByPlayer).map(([pid, stacks]) => [
+            pid,
+            (stacks ?? []).map((u) => ({ ...u, damagedCount: 0 })), // RR 70.7
+          ]),
+        ),
+      })),
+      spaceUnitsByPlayer: Object.fromEntries(
+        Object.entries(system.spaceUnitsByPlayer).map(([pid, stacks]) => [
+          pid,
+          (stacks ?? []).map((u) => ({ ...u, damagedCount: 0 })), // RR 70.7
+        ]),
+      ),
+    };
+  }
+
+  return {
+    state: { ...state, players, systems, objectives, publicObjectiveDeck: nextDeck, actionCardDeck, actionCardDiscardPile },
+    events,
+  };
+}
+
+export function startNewRound(state: GameState): GameState {
+  const players: GameState["players"] = {};
+  for (const [id, player] of Object.entries(state.players)) {
+    players[id as PlayerId] = { ...player, hasPassed: false, strategyCards: [] };
+  }
+
+  // RR 70.8: strategy cards return to the common play area (RR 73.2's trade
+  // goods only accrue on cards that go unchosen for a full round — cards
+  // that were just used carry no residual trade goods forward).
+  const unclaimedStrategyCards = state.unclaimedStrategyCards.length
+    ? state.unclaimedStrategyCards
+    : Object.values(state.players)
+        .flatMap((p) => p.strategyCards)
+        .map((c) => ({ cardId: c.cardId, tradeGoods: 0 }));
+
+  return {
+    ...state,
+    players,
+    phase: "strategy",
+    round: state.round + 1,
+    activePlayerId: null,
+    initiativeOrder: [],
+    unclaimedStrategyCards,
+    lastPlayerToPass: undefined,
+    activePlayerActionsTaken: undefined,
+  };
+}
