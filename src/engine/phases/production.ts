@@ -4,7 +4,7 @@ import { PlayerId, PlanetId, SystemId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
-import { advanceActivePlayer } from "./actionPhase";
+import { maybeAdvanceActivePlayer } from "./actionPhase";
 
 /**
  * RR 78 STEP 5 — PRODUCTION (RR 58/59), tactical-action version (units
@@ -205,6 +205,6 @@ export function finishTacticalAction(
     return { ok: false, error: `RR 78: a tactical action can only be finished from the "production" step, currently at "${pending.step}".` };
   }
 
-  const nextState = advanceActivePlayer({ ...state, pendingTacticalAction: null });
+  const nextState = maybeAdvanceActivePlayer({ ...state, pendingTacticalAction: null }, action.playerId);
   return { ok: true, state: nextState, events: [] };
 }
