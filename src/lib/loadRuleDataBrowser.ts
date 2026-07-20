@@ -11,12 +11,15 @@ import { FactionId, UnitUpgradeId, asFactionId, asUnitUpgradeId } from "../engin
 import { UnitType } from "../engine/types/enums";
 import {
   unitEntryToStats,
+  resolveFactionUnitBaseEntry,
+  buildFactionUnitUpgradesFromVersions,
   RawUnitEntry,
   buildPlanetsLookup,
   RawTilesFile,
   buildAgendasLookup,
   buildObjectivesLookup,
   buildTechnologiesLookup,
+  buildFactionTechnologyDataLookup,
   buildUnitUpgradeTechDataLookup,
   buildFactionTechIds,
   buildExplorationCardsLookup,
@@ -61,7 +64,7 @@ const factionFiles = import.meta.glob("../../data/factions/*.json", { eager: tru
         commander: { name: string; unlock: string; ability: string };
         hero: { name: string; unlock: string; ability: string };
       };
-      units?: Record<string, Partial<RawUnitEntry>>;
+      units?: Record<string, Partial<RawUnitEntry> & { versions?: (Partial<RawUnitEntry> & { level: number; color?: string; prerequisites?: string[] })[] }>;
     };
   }
 >;
@@ -81,7 +84,8 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
   const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
   const usedFactionFiles: (Parameters<typeof buildFactionPromissoryNotesLookup>[0][number] &
     Parameters<typeof buildStartingDataLookup>[0][number] &
-    Parameters<typeof buildFactionLeadersLookup>[0][number] & { factionTechnologies?: { id: string }[] })[] = [];
+    Parameters<typeof buildFactionLeadersLookup>[0][number] &
+    Parameters<typeof buildFactionUnitUpgradesFromVersions>[0][number] & { factionTechnologies?: { id: string }[] })[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile = findFactionFile(rawFactionId);
@@ -97,7 +101,7 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
       baseUnits[unitType] = unitEntryToStats(entry, unitType as UnitType);
     }
     for (const [unitType, override] of Object.entries(factionFile.units ?? {})) {
-      baseUnits[unitType] = unitEntryToStats(override, unitType as UnitType);
+      baseUnits[unitType] = unitEntryToStats(resolveFactionUnitBaseEntry(override), unitType as UnitType);
     }
 
     factionUnits[asFactionId(rawFactionId)] = {
@@ -122,18 +126,40 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     };
   }
 
+  // RR 86 unit upgrades synthesized from faction files' own `versions`
+  // arrays (level 2+, e.g. "Letani Warrior II") — see
+  // buildFactionUnitUpgradesFromVersions's own doc comment for why these
+  // were previously invisible to the engine entirely. Merged in alongside
+  // the generic data/unitUpgrades.json ones built above; ids never
+  // collide (synthesized ones are always `${factionId}_${unitType}_${level}`,
+  // generic ones come straight from that file's own ids).
+  const factionUnitUpgrades = buildFactionUnitUpgradesFromVersions(usedFactionFiles);
+  for (const [id, upgrade] of Object.entries(factionUnitUpgrades.unitUpgrades)) {
+    unitUpgrades[asUnitUpgradeId(id)] = upgrade as UnitUpgradeStats;
+  }
+
   return {
     factionUnits,
     unitUpgrades,
     planets: buildPlanetsLookup(tilesFile as RawTilesFile),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
     objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
-    technologies: buildTechnologiesLookup(technologiesFile as Parameters<typeof buildTechnologiesLookup>[0]),
+    technologies: {
+      ...buildTechnologiesLookup(technologiesFile as Parameters<typeof buildTechnologiesLookup>[0]),
+      ...buildFactionTechnologyDataLookup(usedFactionFiles),
+    },
     factions,
-    unitUpgradeTechData: buildUnitUpgradeTechDataLookup(
-      (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
-    ),
-    factionTechIds: buildFactionTechIds(usedFactionFiles),
+    unitUpgradeTechData: {
+      ...buildUnitUpgradeTechDataLookup(
+        (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
+      ),
+      ...factionUnitUpgrades.unitUpgradeTechData,
+    },
+    // RR "own N faction techs"-style objectives: confirmed, a faction
+    // unit's own upgrade (e.g. Arborec's Letani Warrior II) counts as one
+    // of that faction's technologies too, alongside its own
+    // factionTechnologies entries (e.g. Bioplasmosis).
+    factionTechIds: new Set([...buildFactionTechIds(usedFactionFiles), ...Object.keys(factionUnitUpgrades.unitUpgrades)]),
     explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
     genericPromissoryNoteTemplates: buildGenericPromissoryNotesLookup(
       promissoryNotesFile as Parameters<typeof buildGenericPromissoryNotesLookup>[0],
