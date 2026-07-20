@@ -315,12 +315,13 @@ export function buildStartingDataLookup(
   return { startingUnits, startingTechnologies, startingTechnologyChoices };
 }
 
-/** Shared by both loaders — RR PoK "Leaders": each faction's agent/commander/hero (data/factions/*.json's leaders field), synthesizing a stable id for each since the raw data doesn't carry one. */
+/** Shared by both loaders — RR PoK "Leaders": each faction's agent(s)/commander/hero (data/factions/*.json's leaders field), synthesizing a stable id for each since the raw data doesn't carry one. Normalizes the raw data's own two shapes for the agent slot — a single `agent` object (nearly every faction) or a plural `agents` array (confirmed: only the Nomad, whose own "The Company" faction ability grants 2 extra) — into the SAME `agents: [...]` array shape either way, so callers never have to branch on which faction they're looking at. */
 export function buildFactionLeadersLookup(
   factionFiles: {
     id: string;
     leaders?: {
-      agent: { name: string; unlock: string; ability: string };
+      agent?: { name: string; unlock: string; ability: string };
+      agents?: { name: string; unlock: string; ability: string }[];
       commander: { name: string; unlock: string; ability: string };
       hero: { name: string; unlock: string; ability: string };
     };
@@ -328,7 +329,7 @@ export function buildFactionLeadersLookup(
 ): Record<
   string,
   {
-    agent: { id: string; name: string; unlock: string; ability: string };
+    agents: { id: string; name: string; unlock: string; ability: string }[];
     commander: { id: string; name: string; unlock: string; ability: string };
     hero: { id: string; name: string; unlock: string; ability: string };
   }
@@ -336,8 +337,9 @@ export function buildFactionLeadersLookup(
   const out: ReturnType<typeof buildFactionLeadersLookup> = {};
   for (const file of factionFiles) {
     if (!file.leaders) continue;
+    const rawAgents = file.leaders.agents ?? (file.leaders.agent ? [file.leaders.agent] : []);
     out[file.id] = {
-      agent: { id: `${file.id}_agent`, ...file.leaders.agent },
+      agents: rawAgents.map((a, i) => ({ id: rawAgents.length > 1 ? `${file.id}_agent_${i + 1}` : `${file.id}_agent`, ...a })),
       commander: { id: `${file.id}_commander`, ...file.leaders.commander },
       hero: { id: `${file.id}_hero`, ...file.leaders.hero },
     };
