@@ -1,5 +1,5 @@
 import { GameState, Player, SystemState, PlanetState } from "../types/GameState";
-import { PlayerId, FactionId, SystemId, PlanetId, TechId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId } from "../types/ids";
+import { PlayerId, FactionId, SystemId, PlanetId, TechId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId, asLeaderId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { GameMode, UnitType, AnomalyType, WormholeType } from "../types/enums";
 import { generateMap, fisherYatesShuffle, PlaceableTile } from "./mapGeneration";
@@ -202,7 +202,7 @@ export function createGame(input: CreateGameInput): GameState {
       promissoryNotesInHand: [...(promissoryNoteSetup.startingHands[p.id] ?? [])],
       promissoryNotesInPlayArea: [],
       secretObjectives: [],
-      leaders: [],
+      leaders: buildInitialLeaders(rules, factionId),
       relics: [],
       relicFragments: { cultural: 0, industrial: 0, hazardous: 0, unknown: 0 },
       explorationCardsInPlayArea: [],
@@ -264,6 +264,28 @@ export function createGame(input: CreateGameInput): GameState {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/**
+ * RR "Leaders": every faction's agent(s) start READIED and UNLOCKED (usable
+ * from the start of the game); commander and hero both start LOCKED (each
+ * has its own unlock condition — commander conditions are faction-specific
+ * and checked elsewhere as each faction's own logic is wired in; hero
+ * conditions are universally "3 scored objectives", checked generically in
+ * phases/actionPhase.ts's scoreObjectiveCore). Iterates ALL of
+ * rules.factionLeaders[factionId].agents — confirmed, this is 1 entry for
+ * nearly every faction, 3 for the Nomad (their own "The Company" faction
+ * ability), and buildFactionLeadersLookup already normalized both cases
+ * into the same array shape, so this loop needs no faction-specific branch.
+ */
+function buildInitialLeaders(rules: RuleData, factionId: FactionId): Player["leaders"] {
+  const leaders = rules.factionLeaders[factionId];
+  if (!leaders) return [];
+  return [
+    ...leaders.agents.map((agent) => ({ leaderId: asLeaderId(agent.id), locked: false, exhausted: false })),
+    { leaderId: asLeaderId(leaders.commander.id), locked: true, exhausted: false },
+    { leaderId: asLeaderId(leaders.hero.id), locked: true, exhausted: false },
+  ];
+}
 
 /** RR "Gather Starting Components": combines a faction's FIXED starting technologies with whatever this player CHOSE, for factions with a `startingTechnologyChoice` (e.g. Argent Flight: "choose two of the following"). Throws (same "bad setup input" pattern as this file's other RR-named errors) if a faction has a choice and the supplied pick doesn't satisfy it exactly — wrong count, an option not on the list, or a duplicate. */
 function resolveStartingTechnologies(rules: RuleData, factionId: FactionId, chosen: string[] | undefined): TechId[] {
