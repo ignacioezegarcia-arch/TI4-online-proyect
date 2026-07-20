@@ -139,6 +139,30 @@ export interface Player {
   /** Faction- or breakthrough-granted ability ids this player currently has, e.g. "genesis", "versatile", "red_yellow_synergy".
    *  This is the hook point for `player.hasAbility(id)` referenced throughout faction JSON. */
   abilityIds: AbilityId[];
+  /**
+   * RR "Capture": non-fighter ships and mechs this player has captured from
+   * another player (e.g. via Vuil'Raith's own DEVOUR faction ability),
+   * sitting on THIS player's own faction sheet rather than the board.
+   * `fromPlayerId` is tracked per entry since that's who it returns to
+   * (RR: a captured unit returns to ITS OWN owner's reinforcements, not
+   * bought/sold generically) — via a transaction agreement, an ability's
+   * own cost, or that original owner blockading one of THIS player's space
+   * docks (see rules/capture.ts's own note on why fighters/ground forces
+   * don't work this way at all). While captured, the original owner
+   * cannot produce or place that unit until it's returned.
+   */
+  capturedUnits: { unitType: UnitType; fromPlayerId: PlayerId; count: number }[];
+  /**
+   * RR "Capture": fighters/infantry captured by this player are NOT
+   * tracked per-original-owner the way ships/mechs are — confirmed, they
+   * go straight back to their own owner's reinforcements immediately, and
+   * this player instead gets a plain, colorless marker on their own
+   * faction sheet (not tradeable, not affected by blockades, only removed
+   * by a specific ability instructing it). Since they belong to no
+   * player color at all, a flat count per unit type is enough — no
+   * fromPlayerId needed.
+   */
+  capturedGenericUnits: { infantry: number; fighter: number };
 }
 
 /** RR 52.13 + 52.17: objective card pools. Card content (requirements, VP value) lives in data/objectives.json; this is only reveal/scoring state. */
@@ -260,6 +284,24 @@ export interface GameState {
    * finishing a tactical/component action is.
    */
   activePlayerActionsTaken?: number;
+  /**
+   * RR "Deploy": each deploy-ability instance (e.g. Titans of Ul's Ouranos
+   * flagship's own DEPLOY) can only be resolved once per occurrence of its
+   * own timing window — not a persistent exhausted-until-readied state
+   * like a tech card, closer to how AFB only fires once per combat. Since
+   * different factions' Deploy triggers open and close at different
+   * points (most are tactical-action-scoped, e.g. "after you activate a
+   * system", but not necessarily all of them), this is a flat list of
+   * deploy-ability ids already resolved in the CURRENTLY open window
+   * rather than anything more structured. Reset to `[]` alongside
+   * `recentEvents` whenever a new tactical action starts (see
+   * phases/tacticalAction.ts's activateSystem) — the natural reset point
+   * for the large majority of Deploy triggers, which are themselves
+   * tactical-action-scoped. See rules/deploy.ts for the shared
+   * check/mark helpers every per-faction Deploy implementation should use
+   * instead of rolling its own tracking.
+   */
+  usedDeployAbilities?: string[];
   /**
    * RR 52-adjacent: a short rolling buffer of this game's own already-typed
    * GameEvents (see Actions.ts), reused as-is rather than inventing a
