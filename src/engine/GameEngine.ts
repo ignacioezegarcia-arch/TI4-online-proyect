@@ -40,6 +40,7 @@ import {
   usePredictiveIntelligenceRedistribute,
   useTransitDiodes,
 } from "./phases/technologyAbilities";
+import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -192,6 +193,18 @@ export const GameEngine = {
         break;
       case "USE_TRANSIT_DIODES":
         result = useTransitDiodes(state, action);
+        break;
+      case "USE_ATRAMENT":
+        result = useAtrament(state, action);
+        break;
+      case "USE_IMPERIAL_ARMS_VAULT":
+        result = useImperialArmsVault(state, action);
+        break;
+      case "USE_EXTERRIX_HEADQUARTERS":
+        result = useExterrixHeadquarters(state, action);
+        break;
+      case "USE_MIRAGE_FLIGHT_ACADEMY":
+        result = useMirageFlightAcademy(state, action);
         break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
@@ -360,6 +373,11 @@ export const GameEngine = {
       if (player.technologies.includes(asTechId("transit_diodes")) && !player.exhaustedTechnologies.includes(asTechId("transit_diodes"))) {
         legal.push("USE_TRANSIT_DIODES");
       }
+      const controlledLegendaryPlanets = Object.values(state.systems).flatMap((s) => s.planets.filter((p) => p.controllerId === playerId && !p.legendaryAbilityExhausted));
+      if (controlledLegendaryPlanets.some((p) => p.planetId === "primor")) legal.push("USE_ATRAMENT");
+      if (controlledLegendaryPlanets.some((p) => p.planetId === "hopes_end")) legal.push("USE_IMPERIAL_ARMS_VAULT");
+      if (controlledLegendaryPlanets.some((p) => p.planetId === "mallice")) legal.push("USE_EXTERRIX_HEADQUARTERS");
+      if (controlledLegendaryPlanets.some((p) => p.planetId === "mirage")) legal.push("USE_MIRAGE_FLIGHT_ACADEMY");
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
