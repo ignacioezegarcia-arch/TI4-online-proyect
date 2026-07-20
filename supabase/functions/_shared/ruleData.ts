@@ -16,12 +16,15 @@ import { FactionId, UnitUpgradeId, asFactionId } from "./engine/types/ids.ts";
 import { UnitType } from "./engine/types/enums.ts";
 import {
   unitEntryToStats,
+  resolveFactionUnitBaseEntry,
+  buildFactionUnitUpgradesFromVersions,
   RawUnitEntry,
   buildPlanetsLookup,
   RawTilesFile,
   buildAgendasLookup,
   buildObjectivesLookup,
   buildTechnologiesLookup,
+  buildFactionTechnologyDataLookup,
   buildUnitUpgradeTechDataLookup,
   buildFactionTechIds,
   buildExplorationCardsLookup,
@@ -48,7 +51,7 @@ interface RawFactionFile {
     commander: { name: string; unlock: string; ability: string };
     hero: { name: string; unlock: string; ability: string };
   };
-  units?: Record<string, Partial<RawUnitEntry> & { name?: string }>;
+  units?: Record<string, Partial<RawUnitEntry> & { name?: string; versions?: (Partial<RawUnitEntry> & { level: number; color?: string; prerequisites?: string[] })[] }>;
   // factionSpecificUnits intentionally not consumed yet — its `versions[]`
   // entries use the same schema as units.json, but wiring "which version
   // is currently active" needs researched-tech tracking on Player that
@@ -84,9 +87,12 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
     }
 
     // Faction-sheet overrides for flagship/mech (units.json has no generic
-    // entry for these — they're only ever faction-specific).
+    // entry for these — they're only ever faction-specific). Some units
+    // (e.g. infantry with its own upgrade path) are a `{versions: [...]}`
+    // wrapper instead of a flat entry — resolveFactionUnitBaseEntry pulls
+    // out the level-1/base one; level 2+ become real unit upgrades below.
     for (const [unitType, override] of Object.entries(factionFile.units ?? {})) {
-      baseUnits[unitType] = unitEntryToStats(override, unitType as UnitType);
+      baseUnits[unitType] = unitEntryToStats(resolveFactionUnitBaseEntry(override), unitType as UnitType);
     }
 
     factionUnits[asFactionId(rawFactionId)] = {
@@ -121,18 +127,40 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
   const actionCardsFile = JSON.parse(await Deno.readTextFile(new URL("./data/actionCards.json", import.meta.url)));
   const relicsFile = JSON.parse(await Deno.readTextFile(new URL("./data/relics.json", import.meta.url)));
 
+  // RR 86 unit upgrades synthesized from faction files' own `versions`
+  // arrays (level 2+, e.g. "Letani Warrior II") — see
+  // buildFactionUnitUpgradesFromVersions's own doc comment for why these
+  // were previously invisible to the engine entirely. Merged in alongside
+  // the generic data/unitUpgrades.json ones built above; ids never
+  // collide (synthesized ones are always `${factionId}_${unitType}_${level}`,
+  // generic ones come straight from that file's own ids).
+  const factionUnitUpgrades = buildFactionUnitUpgradesFromVersions(usedFactionFiles);
+  for (const [id, upgrade] of Object.entries(factionUnitUpgrades.unitUpgrades)) {
+    unitUpgrades[id as UnitUpgradeId] = upgrade as UnitUpgradeStats;
+  }
+
   return {
     factionUnits,
     unitUpgrades,
     planets: buildPlanetsLookup(tilesFile as RawTilesFile),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
     objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
-    technologies: buildTechnologiesLookup(technologiesFile as Parameters<typeof buildTechnologiesLookup>[0]),
+    technologies: {
+      ...buildTechnologiesLookup(technologiesFile as Parameters<typeof buildTechnologiesLookup>[0]),
+      ...buildFactionTechnologyDataLookup(usedFactionFiles),
+    },
     factions,
-    unitUpgradeTechData: buildUnitUpgradeTechDataLookup(
-      (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
-    ),
-    factionTechIds: buildFactionTechIds(usedFactionFiles),
+    unitUpgradeTechData: {
+      ...buildUnitUpgradeTechDataLookup(
+        (unitUpgradesFile as { unitUpgrades: Parameters<typeof buildUnitUpgradeTechDataLookup>[0] }).unitUpgrades,
+      ),
+      ...factionUnitUpgrades.unitUpgradeTechData,
+    },
+    // RR "own N faction techs"-style objectives: confirmed, a faction
+    // unit's own upgrade (e.g. Arborec's Letani Warrior II) counts as one
+    // of that faction's technologies too, alongside its own
+    // factionTechnologies entries (e.g. Bioplasmosis).
+    factionTechIds: new Set([...buildFactionTechIds(usedFactionFiles), ...Object.keys(factionUnitUpgrades.unitUpgrades)]),
     explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
     genericPromissoryNoteTemplates: buildGenericPromissoryNotesLookup(
       promissoryNotesFile as Parameters<typeof buildGenericPromissoryNotesLookup>[0],
@@ -144,4 +172,4 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
     ...buildHomeSystemsLookup(tilesFile as RawTilesFile),
     factionLeaders: buildFactionLeadersLookup(usedFactionFiles),
   };
-      }
+}
