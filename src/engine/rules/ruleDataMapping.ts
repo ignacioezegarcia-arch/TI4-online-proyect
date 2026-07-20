@@ -58,6 +58,77 @@ export function unitEntryToStats(raw: Partial<RawUnitEntry>, unitType: UnitType)
   };
 }
 
+/**
+ * data/factions/*.json's `units` field mixes two shapes for a given unit
+ * type: a flat RawUnitEntry-compatible object (e.g. a faction's own
+ * flagship/mech, which never has an upgrade path), OR a wrapper
+ * `{ name, versions: [...] }` for a unit that DOES get upgraded via its own
+ * unit-upgrade tech (e.g. Arborec's infantry, upgraded by Bioplasmosis).
+ * This resolves EITHER shape down to "the level-1/base entry", which is
+ * what factionUnits.baseUnits needs — level 2+ are handled separately by
+ * buildFactionUnitUpgradesFromVersions below, since those are genuine unit
+ * UPGRADES (RR 86), not part of the base faction sheet.
+ */
+export function resolveFactionUnitBaseEntry(
+  override: Partial<RawUnitEntry> & { versions?: (Partial<RawUnitEntry> & { level: number })[] },
+): Partial<RawUnitEntry> {
+  if (!override.versions) return override;
+  return override.versions.find((v) => v.level === 1) ?? override.versions[0];
+}
+
+/**
+ * Synthesizes a proper RR 86 unit upgrade entry for every level-2-or-higher
+ * `versions` entry across however many faction files are passed in (e.g.
+ * Arborec's "Letani Warrior II", Argent Flight's "Strike Wing Alpha II") —
+ * these were previously invisible to the engine entirely, since
+ * factionFile.units[type] being a `{versions: [...]}` wrapper meant
+ * unitEntryToStats() read an object with none of the fields it expects
+ * (cost/combat/move/capacity/abilities all live one level deeper, inside
+ * versions[n]), silently producing a broken all-null/zero stats block.
+ *
+ * Id is synthesized as `${factionId}_${unitType}_${level}` (e.g.
+ * "arborec_infantry_2") since the raw data doesn't carry one of its own —
+ * same reasoning as this file's other synthesized ids (faction leaders,
+ * faction promissory notes). Every one of these is a genuine,
+ * independently-researchable RR 90.7 unit upgrade — confirmed, the SAME
+ * color-count prerequisite model as any generic unit upgrade, no
+ * exceptions — so it's registered in unitUpgradeTechData exactly like the
+ * generic ones are, and researched the same way (RESEARCH_UNIT_UPGRADE).
+ *
+ * Confirmed: since a faction-specific unit (e.g. Arborec's infantry) often
+ * has no GENERIC upgrade slot to begin with (infantry has none in the base
+ * tech tree at all), its own upgrade doubles as one of that faction's OWN
+ * faction technologies — see buildFactionTechIds' own note on why these
+ * ids get folded into that same set, not just factionTechnologies' own
+ * entries.
+ */
+export function buildFactionUnitUpgradesFromVersions(
+  factionFiles: {
+    id: string;
+    units?: Record<string, Partial<RawUnitEntry> & { versions?: (Partial<RawUnitEntry> & { level: number; color?: string; prerequisites?: string[] })[] }>;
+  }[],
+): {
+  unitUpgrades: Record<string, { id: string; unitType: UnitType; stats: UnitStats }>;
+  unitUpgradeTechData: Record<string, { color: string | null; prerequisites: string[] }>;
+} {
+  const unitUpgrades: ReturnType<typeof buildFactionUnitUpgradesFromVersions>["unitUpgrades"] = {};
+  const unitUpgradeTechData: ReturnType<typeof buildFactionUnitUpgradesFromVersions>["unitUpgradeTechData"] = {};
+
+  for (const file of factionFiles) {
+    for (const [unitType, override] of Object.entries(file.units ?? {})) {
+      if (!override.versions) continue;
+      for (const version of override.versions) {
+        if (version.level <= 1) continue; // level 1 is the base faction-sheet entry, handled elsewhere
+        const upgradeId = `${file.id}_${unitType}_${version.level}`;
+        unitUpgrades[upgradeId] = { id: upgradeId, unitType: unitType as UnitType, stats: unitEntryToStats(version, unitType as UnitType) };
+        unitUpgradeTechData[upgradeId] = { color: version.color ?? null, prerequisites: version.prerequisites ?? [] };
+      }
+    }
+  }
+
+  return { unitUpgrades, unitUpgradeTechData };
+}
+
 /** data/tiles.json's planet name -> lowercase-underscore id, matching PlanetId's own convention (e.g. "Mecatol Rex" -> "mecatol_rex"). */
 export function planetNameToId(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -85,6 +156,31 @@ export function buildTechnologiesLookup(technologiesFile: {
   return technologies;
 }
 
+/**
+ * Aggregates every faction's own factionTechnologies (data/factions/*.json)
+ * across however many faction files are passed in, into the SAME shape as
+ * buildTechnologiesLookup's own generic-tech output — a faction tech (e.g.
+ * Argent Flight's Aerie Hololattice, Arborec's Bioplasmosis) has a real
+ * color and its own RR 90.7 color-count prerequisites exactly like a
+ * generic tech does, so it belongs in the SAME `rules.technologies` map
+ * (merged in at the loader level), not a separate lookup — without this,
+ * RESEARCH_TECHNOLOGY has no rule data to validate a faction tech's
+ * prerequisites against, and once owned, its color is invisible to
+ * color-based objective checks (checkPrerequisitesAgainst /
+ * getOwnedTechColors both key off `rules.technologies[id]?.color`).
+ */
+export function buildFactionTechnologyDataLookup(
+  factionFiles: { factionTechnologies?: { id: string; color: string | null; prerequisites?: string[] }[] }[],
+): Record<string, { color: string | null; prerequisites: string[] }> {
+  const technologies: Record<string, { color: string | null; prerequisites: string[] }> = {};
+  for (const file of factionFiles) {
+    for (const t of file.factionTechnologies ?? []) {
+      technologies[t.id] = { color: t.color, prerequisites: t.prerequisites ?? [] };
+    }
+  }
+  return technologies;
+}
+
 /** Shared by both loaders — color + prerequisites for unit upgrade techs (data/unitUpgrades.json), for RR 90.7 prerequisite validation. Separate from the full unitEntryToStats mapping (that's for combat stats once owned; this is just enough to check "can this player research it yet"). */
 export function buildUnitUpgradeTechDataLookup(unitUpgradesFile: {
   id: string;
@@ -98,7 +194,7 @@ export function buildUnitUpgradeTechDataLookup(unitUpgradesFile: {
   return out;
 }
 
-/** Aggregates every faction's factionTechnologies ids across however many faction files are passed in — for "own N faction techs" objective checks (Player.technologies doesn't distinguish faction vs. generic). */
+/** Aggregates every faction's factionTechnologies ids across however many faction files are passed in — for "own N faction techs" objective checks (Player.technologies doesn't distinguish faction vs. generic techs). Confirmed: a faction-specific unit's own upgrade (e.g. Arborec's Letani Warrior II, synthesized by buildFactionUnitUpgradesFromVersions) ALSO counts as one of that faction's technologies — that merge happens at the loader level (loadRuleDataBrowser.ts / supabase's ruleData.ts), right after both functions run, rather than duplicating the versions-iteration here. */
 export function buildFactionTechIds(factionFiles: { factionTechnologies?: { id: string }[] }[]): Set<string> {
   const ids = new Set<string>();
   for (const file of factionFiles) {
