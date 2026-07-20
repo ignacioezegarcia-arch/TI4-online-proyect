@@ -2,92 +2,175 @@
   "id": "nomad",
   "name": "The Nomad",
   "set": "pok",
-  "commodities": 3,
-  "homePlanets": ["Arcturus"],
+  "commodities": 4,
+  "homePlanets": [
+    "Arcturus"
+  ],
   "startingUnits": {
+    "flagship": 1,
     "carrier": 1,
-    "cruiser": 1,
-    "fighter": 2,
+    "destroyer": 1,
+    "fighter": 3,
     "infantry": 4,
-    "spaceDock": 1,
-    "pds": 1
+    "spaceDock": 1
   },
-  "startingTechnologies": ["ai_development_algorithm"],
+  "startingTechnologies": [
+    "sling_relay"
+  ],
   "factionAbilities": [
     {
-      "id": "temporal_command",
-      "name": "TEMPORAL COMMAND",
-      "effect": "During the action phase, you may remove 1 command token from your fleet pool to place 1 command token from your reinforcements in any system that contains 1 or more of your units."
+      "id": "the_company",
+      "name": "THE COMPANY",
+      "effect": "During setup, take the 2 additional Nomad faction agents and place them next to your faction sheet; you have 3 agents."
     },
     {
-      "id": "future_space",
-      "name": "FUTURE SPACE",
-      "effect": "During the status phase, you may place 1 command token from your reinforcements in a system that contains 1 or more of your units."
+      "id": "future_sight",
+      "name": "FUTURE SIGHT",
+      "effect": "During the Agenda phase, after an outcome that you voted for or predicted is resolved, gain 1 trade good."
     }
   ],
   "promissoryNote": {
-    "name": "The Company",
+    "name": "The Cavalry",
     "versions": [
       {
         "version": "original",
-        "source": "pok",
-        "timing": "ACTION:",
-        "effect": "Place this card face up in your play area. When you activate a system that contains 1 or more of the Nomad player's units, you may place 1 command token from your reinforcements in that system. Then, return this card to the Nomad player.",
-        "placeInPlayArea": true
+        "source": "base",
+        "timing": "At the start of a space combat against a player other than the Nomad:",
+        "effect": "During this combat, treat 1 of your non-fighter ships as if it has the SUSTAIN DAMAGE ability, combat value, and ANTI-FIGHTER BARRAGE value of the Nomad's flagship. Return this card to the Nomad player at the end of this combat.",
+        "placeInPlayArea": false
       }
     ]
   },
   "factionTechnologies": [
     {
-      "id": "temporal_flux",
-      "name": "Temporal Flux",
-      "color": "blue",
-      "prerequisites": ["blue"],
-      "effect": "After you activate a system, you may place 1 command token from your reinforcements in that system."
-    },
-    {
-      "id": "supercharge_thrusters",
-      "name": "Supercharge Thrusters",
+      "id": "temporal_command_suite",
+      "name": "Temporal Command Suite",
       "color": "yellow",
-      "prerequisites": ["yellow"],
-      "effect": "During movement, you may apply +1 to the move value of each of your ships that begins its movement in a system that contains 1 or more of your command tokens."
+      "prerequisites": [
+        "yellow"
+      ],
+      "effect": "After any player's agent becomes exhausted, you may exhaust this card to ready that agent; if you ready another player's agent, you may perform a transaction with that player."
     }
   ],
   "units": {
     "flagship": {
       "name": "Memoria",
-      "cost": 8,
-      "combat": 5,
-      "move": 1,
-      "capacity": 3,
-      "abilities": [
-        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" },
+      "note": "This unit can be upgraded.",
+      "versions": [
         {
-          "name": "Temporal Jump",
-          "effect": "After you activate this system, you may remove 1 command token from your fleet pool to place 1 command token from your reinforcements in this system."
+          "level": 1,
+          "name": "Memoria",
+          "cost": 8,
+          "combat": 7,
+          "combatDiceCount": 2,
+          "move": 1,
+          "capacity": 3,
+          "abilities": [
+            {
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "name": "Anti-Fighter Barrage",
+              "value": 8,
+              "diceCount": 3,
+              "effect": "ANTI-FIGHTER BARRAGE 8 (x3)"
+            },
+            {
+              "name": "Mech Adjacency",
+              "effect": "You may treat this unit as if it were adjacent to systems that contain one or more of your mechs."
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Memoria II",
+          "cost": 8,
+          "combat": 5,
+          "combatDiceCount": 2,
+          "move": 2,
+          "capacity": 6,
+          "abilities": [
+            {
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "name": "Anti-Fighter Barrage",
+              "value": 5,
+              "diceCount": 3,
+              "effect": "ANTI-FIGHTER BARRAGE 5 (x3)"
+            },
+            {
+              "name": "Mech Adjacency",
+              "effect": "You may treat this unit as if it were adjacent to systems that contain one or more of your mechs."
+            }
+          ],
+          "prerequisites": [
+            "green",
+            "yellow",
+            "blue"
+          ]
         }
       ]
     },
     "mech": {
-      "name": "Chrono Legionnaire",
+      "name": "Quantum Manipulator",
       "cost": 2,
       "combat": 6,
-      "deploy": "After you activate a system, you may place this unit in that system.",
       "abilities": [
-        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" }
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Cancel Hit in Space",
+          "effect": "While this unit is in a space area during combat, you may use its SUSTAIN DAMAGE ability to cancel a hit that is produced against your ships in this system."
+        }
       ]
     }
   },
   "breakthrough": {
     "synergy": {
-      "colors": ["yellow", "green"],
-      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa."
+      "colors": [
+        "yellow",
+        "green"
+      ],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
     },
     "ability": {
-      "name": "Temporal Shift",
-      "effect": "ACTION: Exhaust this card to place 1 command token from your reinforcements in any system that contains 1 or more of your units."
+      "name": "Thunder's Paradox",
+      "effect": "At the start of any player's turn, you may exhaust 1 of your agents to ready any other agent."
     }
   },
   "leaders": {
-    "agent": {
-      "name": "The Conductor",
+    "agents": [
+      {
+        "name": "Artuno the Betrayer",
+        "unlock": "At Game Start",
+        "ability": "When you gain trade goods from the supply: You may exhaust this card to place an equal number of trade goods on this card. When this card readies, gain the trade goods on this card."
+      },
+      {
+        "name": "Field Marshal Mercer",
+        "unlock": "At Game Start",
+        "ability": "At the end of a player's turn: You may exhaust this card to allow that player to remove up to 2 of their ground forces from the game board and place them on planets they control in the active system."
+      },
+      {
+        "name": "The Thundarian",
+        "unlock": "At Game Start",
+        "ability": "After the \"Roll Dice\" step of combat: You may exhaust this card. If you do, hits are not assigned to either players' units. Return to the start of this combat round's \"Roll Dice\" step."
+      }
+    ],
+    "commander": {
+      "name": "Navarch Feng",
+      "unlock": "Have 1 scored secret objective.",
+      "ability": "You can produce your flagship without spending resources."
+    },
+    "hero": {
+      "name": "Ahk-Syl Sive",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "\"PROBABILITY MATRIX\" — ACTION: Place this card near the game board; your flagship and units it transports can move out of systems that contain your command tokens during this game round. At the end of that game round, purge this card."
+    }
+  }
+}
