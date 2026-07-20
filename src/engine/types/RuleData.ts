@@ -77,13 +77,13 @@ export interface RuleData {
   agendas: Record<AgendaId, { type: "law" | "directive" }>;
   /** RR 52: points + how to validate the condition (data/objectives.json's checkType/checkParams). Most public objectives have a real checkType; most secrets are "manual" for now — see that file's own note. */
   objectives: Record<ObjectiveId, ObjectiveStaticData>;
-  /** RR 90: only the color + prerequisites (data/technologies.json) — not the effect text. Prerequisites is a list of colors, one entry per required tech of that color (e.g. ["red","red"] = need 2 red techs already owned). Merged at the loader level from BOTH the generic data/technologies.json file AND every in-play faction's own factionTechnologies (e.g. Argent Flight's Aerie Hololattice, Arborec's Bioplasmosis) — a faction tech has a real color/prerequisites too, needed both to let RESEARCH_TECHNOLOGY validate it and for color-based objective checks (getOwnedTechColors) to see it at all once owned. */
+  /** RR 90: only the color + prerequisites (data/technologies.json) — not the effect text. Prerequisites is a list of colors, one entry per required tech of that color (e.g. ["red","red"] = need 2 red techs already owned). */
   technologies: Record<TechId, { color: string | null; prerequisites: string[] }>;
   /** RR 34/TE breakthrough: commodities max, plus the pair of colors (if any) whose techs can substitute for each other when satisfying prerequisites — never both at once for the same requirement. */
   factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }>;
   /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned, and is still an unresolved gap per this project's own notes); this is just enough to validate RR 90.7 prerequisites before letting a player research one. Every unit upgrade (generic or faction-specific) uses this SAME color-count model — confirmed, no TI4 tech/unit-upgrade is ever gated behind owning one specific named tech instead. */
   unitUpgradeTechData: Record<UnitUpgradeId, { color: string | null; prerequisites: string[] }>;
-  /** Every tech id that's a FACTION technology for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. Covers BOTH data/factions/*.json's own factionTechnologies entries (e.g. Bioplasmosis) AND a faction unit's own upgrade synthesized from its `versions` array (e.g. Arborec's Letani Warrior II) — confirmed, the latter counts as a faction tech too. */
+  /** Every tech id that's a FACTION technology (data/factions/*.json's factionTechnologies) for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. */
   factionTechIds: Set<string>;
   /** RR 35: exploration card mechanics (data/explorationCards.json) — attach bonuses are structured (see that file's own note), but a plain one-time `effect` isn't applied, same deferred-content pattern as action/agenda cards. */
   explorationCards: Record<
@@ -135,11 +135,11 @@ export interface RuleData {
   mecatolSystemId: string;
   /** RR PoK "Wormhole Nexus" — which SystemId (tile id) is the off-map Nexus tile, null in Base-only games (it doesn't exist there). See setup/createGame.ts for how it gets placed (off-map, not part of the physical hex board) and rules/adjacency.ts's maybeActivateWormholeNexus for the active-flip trigger. */
   wormholeNexusSystemId: string | null;
-  /** RR PoK "Leaders": each faction's agent/commander/hero (data/factions/*.json's leaders field). Ids are synthesized (`${factionId}_agent` etc, same reasoning as factionPromissoryNotes) since the raw data doesn't carry one. Base-only games don't use leaders at all — see setup/createGame.ts for where this gets skipped. */
+  /** RR PoK "Leaders": each faction's agent(s)/commander/hero (data/factions/*.json's leaders field). Ids are synthesized (`${factionId}_agent` etc, same reasoning as factionPromissoryNotes) since the raw data doesn't carry one. `agents` is ALWAYS an array — confirmed, only the Nomad has more than 1 (their own "The Company" faction ability grants 2 extra, for 3 total), but every other faction's single agent is just normalized into a 1-element array too, rather than having two different shapes depending on faction. Base-only games don't use leaders at all — see setup/createGame.ts for where this gets skipped. */
   factionLeaders: Record<
     FactionId,
     {
-      agent: { id: string; name: string; unlock: string; ability: string };
+      agents: { id: string; name: string; unlock: string; ability: string }[];
       commander: { id: string; name: string; unlock: string; ability: string };
       hero: { id: string; name: string; unlock: string; ability: string };
     }
