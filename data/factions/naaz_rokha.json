@@ -1,108 +1,173 @@
 {
   "id": "naaz_rokha",
-  "name": "The Naaz‑Rokha Alliance",
+  "name": "The Naaz-Rokha Alliance",
   "set": "pok",
   "commodities": 3,
-  "homePlanets": ["Naazir", "Rokha"],
+  "homePlanets": [
+    "Naazir",
+    "Rokha"
+  ],
   "startingUnits": {
-    "carrier": 1,
-    "cruiser": 1,
+    "carrier": 2,
+    "destroyer": 1,
     "fighter": 2,
-    "infantry": 4,
-    "spaceDock": 1,
-    "pds": 1
+    "mech": 1,
+    "infantry": 3,
+    "spaceDock": 1
   },
-  "startingTechnologies": ["ai_development_algorithm"],
+  "startingTechnologies": [
+    "psychoarchaeology",
+    "ai_development_algorithm"
+  ],
   "factionAbilities": [
     {
-      "id": "datalink_protocols",
-      "name": "DATALINK PROTOCOLS",
-      "effect": "After you gain control of a planet, you may place 1 mech from your reinforcements on that planet."
+      "id": "distant_suns",
+      "name": "DISTANT SUNS",
+      "effect": "When you explore a planet that contains 1 of your mechs, you may draw 1 additional card; choose 1 to resolve and discard the rest."
     },
     {
-      "id": "supercharge",
-      "name": "SUPERCHARGE",
-      "effect": "After you produce units, you may exhaust this card to place 1 mech from your reinforcements in the produced units' system."
+      "id": "fabrication",
+      "name": "FABRICATION",
+      "effect": "ACTION: Either purge 2 of your relic fragments of the same type to gain 1 relic; or purge 1 of your relic fragments to gain 1 command token."
     }
   ],
   "promissoryNote": {
-    "name": "Research Agreement",
+    "name": "Black Market Forgery",
     "versions": [
       {
         "version": "original",
-        "source": "pok",
-        "timing": "When you research a technology:",
-        "effect": "Gain 1 technology that the Naaz‑Rokha player owns that is not a unit upgrade. Then, return this card to the Naaz‑Rokha player.",
-        "placeInPlayArea": true
+        "source": "base",
+        "timing": "ACTION:",
+        "effect": "Purge 2 of your relic fragments of the same type to gain 1 relic. Then, return this card to the Naaz-Rokha player.",
+        "placeInPlayArea": false
       }
     ]
   },
   "factionTechnologies": [
     {
-      "id": "nanoforge",
-      "name": "Nanoforge",
+      "id": "supercharge",
+      "name": "Supercharge",
       "color": "red",
-      "prerequisites": ["red"],
-      "effect": "ACTION: Exhaust this card and choose 1 planet you control; that planet gains +3 resources until the end of the round."
+      "prerequisites": [
+        "red"
+      ],
+      "effect": "At the start of a combat round, you may exhaust this card to apply +1 to the result of each of your unit's combat rolls during this combat round."
     },
     {
-      "id": "supercharge_tech",
-      "name": "Supercharge",
-      "color": "yellow",
-      "prerequisites": ["yellow"],
-      "effect": "After you produce units, you may place 1 mech from your reinforcements in the produced units' system."
+      "id": "pre_fab_arcologies",
+      "name": "Pre-Fab Arcologies",
+      "color": "green",
+      "prerequisites": [
+        "green",
+        "green",
+        "green"
+      ],
+      "effect": "After you explore a planet, ready that planet."
     }
   ],
   "units": {
     "flagship": {
-      "name": "Visz El Vir",
+      "name": "Visz el Vir",
       "cost": 8,
-      "combat": 5,
+      "combat": 9,
+      "combatDiceCount": 2,
       "move": 1,
-      "capacity": 3,
+      "capacity": 4,
       "abilities": [
-        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" },
         {
-          "name": "Mech Deployment",
-          "effect": "After you activate this system, you may place 1 mech from your reinforcements in this system."
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Mech Bonus Die",
+          "effect": "Your mechs in this system roll 1 additional die during combat."
         }
       ]
     },
     "mech": {
-      "name": "Rokha Sentinel",
-      "cost": 2,
-      "combat": 6,
-      "deploy": "When you gain control of a planet, you may place this unit on that planet.",
-      "abilities": [
-        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" }
-      ]
+      "name": "Eidolon",
+      "note": "NOT a researched unit-upgrade — a real-time double-sided unit card that flips based on combat timing, unrelated to the 'versions'/unitUpgrade mechanic used elsewhere in this project. Needs its own dedicated engine support later.",
+      "flipMechanic": {
+        "startsFaceUp": true,
+        "frontSide": {
+          "name": "Eidolon",
+          "cost": 2,
+          "combat": 6,
+          "combatDiceCount": 2,
+          "abilities": [
+            {
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "name": "Flip on Space Combat Start",
+              "effect": "If this unit is in the space area of the active system at the start of a space combat, flip this card."
+            }
+          ]
+        },
+        "backSide": {
+          "name": "Z-Grav Eidolon",
+          "cost": 2,
+          "combat": 8,
+          "combatDiceCount": 2,
+          "note": "Loses the Sustain Damage ability when in space.",
+          "abilities": [
+            {
+              "name": "Also a Ship",
+              "effect": "If this unit is in the space area of the active system, it is also a ship."
+            },
+            {
+              "name": "Flip at Battle End",
+              "effect": "At the end of a space battle in the active system, flip this card."
+            }
+          ]
+        }
+      }
     }
   },
   "breakthrough": {
     "synergy": {
-      "colors": ["green", "blue"],
-      "description": "Tus tecnologías verdes pueden usarse como azules para prerrequisitos, y viceversa."
+      "colors": [
+        "green",
+        "blue"
+      ],
+      "description": "Tus tecnologías verdes pueden usarse como azules para prerrequisitos, y viceversa (no ambas a la vez)."
     },
+    "note": "Doble cara, distinto de cualquier otro Breakthrough — el reverso reemplaza la carta de mech por una unidad especial mientras esté activa. Necesita soporte propio en el motor más adelante, no encaja en el patrón estándar de 'ability' de texto.",
     "ability": {
-      "name": "Datalink Surge",
-      "effect": "ACTION: Exhaust this card to place 1 mech from your reinforcements on a planet you control."
+      "name": "Absolute Synergy",
+      "effect": "When you have 4 mechs in the same system, you may return 3 of those mechs to your reinforcements to flip this card and place it on top of your mech card."
+    },
+    "backSide": {
+      "name": "Eidolon Maximum",
+      "cost": null,
+      "combat": 4,
+      "combatDiceCount": 4,
+      "move": 3,
+      "effect": "This unit is both a ship and a ground force. It cannot be assigned hits from unit abilities. Repair it at the start of every combat round. Game effects cannot place or produce your mechs. When this unit is destroyed or removed, flip this card and return it to your play area.",
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        }
+      ]
     }
   },
   "leaders": {
     "agent": {
-      "name": "Rokha T’lak",
+      "name": "Garv and Gunn",
       "unlock": "At Game Start",
-      "ability": "When you produce units: You may exhaust this card to place 1 mech from your reinforcements in the produced units' system."
+      "ability": "At the end of a player's turn: You may exhaust this card to allow that player to explore 1 of their planets."
     },
     "commander": {
-      "name": "Naazir K’tekk",
-      "unlock": "Have 3 mechs on the game board.",
-      "ability": "During production, you may produce 1 additional mech in a system that contains your space dock."
+      "name": "Dart and Tai",
+      "unlock": "Have 3 mechs in 3 systems.",
+      "ability": "After you gain control of a planet that was controlled by another player: You may explore that planet."
     },
     "hero": {
-      "name": "The Alloy Ascendant",
-      "unlock": "Have 3 Scored Objectives",
-      "ability": "ACTION: Purge this card to place 1 mech from your reinforcements on each planet you control."
+      "name": "Hesh and Prit",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "\"PERFECT SYNTHESIS\" — ACTION: Gain 1 relic and perform the secondary ability of up to 2 readied or unchosen strategy cards; during this action, spend command tokens from your reinforcements instead of your strategy pool. Then, purge this card."
     }
   }
 }
