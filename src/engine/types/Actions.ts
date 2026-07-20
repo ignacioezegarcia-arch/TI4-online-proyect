@@ -271,6 +271,17 @@ export type GameAction =
       placements: { planetId: PlanetId; unitType: "infantry" | "mech"; count: number }[];
     } // exhausts the tech; removed and placed totals must match, capped at 4 total
 
+  // --- Legendary planet abilities (RR 53) — see phases/legendaryPlanets.ts's own header note on why these are 4 dedicated actions rather than one generic dispatcher ---
+  | { type: "USE_ATRAMENT"; playerId: PlayerId; targetPlanetId: PlanetId } // Primor: exhausts the ability card; +2 free infantry on any planet this player controls
+  | {
+      type: "USE_IMPERIAL_ARMS_VAULT";
+      playerId: PlayerId;
+      choice: "mech" | "action_card";
+      targetPlanetId?: PlanetId; // required if choice is "mech"
+    } // Hope's End: exhausts the ability card
+  | { type: "USE_EXTERRIX_HEADQUARTERS"; playerId: PlayerId; choice: "gain_trade_goods" | "convert_commodities" } // Mallice: exhausts the ability card
+  | { type: "USE_MIRAGE_FLIGHT_ACADEMY"; playerId: PlayerId; targetSystemId: SystemId; count: number } // Mirage: exhausts the ability card; 1 or 2 free fighters in a system that contains this player's own ships
+
   // --- Transactions (RR 83) ---
   | {
       type: "PROPOSE_TRANSACTION";
