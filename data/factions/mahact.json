@@ -1,9 +1,11 @@
 {
-  "id": "mahact_gene_sorcerers",
-  "name": "The Mahact Gene‑Sorcerers",
+  "id": "mahact",
+  "name": "The Mahact Gene-Sorcerers",
   "set": "pok",
   "commodities": 3,
-  "homePlanets": ["Ixth"],
+  "homePlanets": [
+    "Ixth"
+  ],
   "startingUnits": {
     "dreadnought": 1,
     "carrier": 1,
@@ -12,7 +14,10 @@
     "infantry": 3,
     "spaceDock": 1
   },
-  "startingTechnologies": ["bio_stims", "predictive_intelligence"],
+  "startingTechnologies": [
+    "bio_stims",
+    "predictive_intelligence"
+  ],
   "factionAbilities": [
     {
       "id": "edict",
@@ -35,7 +40,7 @@
     "versions": [
       {
         "version": "original",
-        "source": "pok",
+        "source": "base",
         "timing": "At the start of the strategy phase:",
         "effect": "Choose 1 non-home system that contains your units; each other player who has a token on the Mahact player's command sheet places a token from their reinforcements in that system. Then, return this card to the Mahact player.",
         "placeInPlayArea": false
@@ -46,14 +51,17 @@
     {
       "id": "genetic_recombination",
       "name": "Genetic Recombination",
-      "color": "yellow",
-      "prerequisites": [],
+      "color": "green",
+      "prerequisites": [
+        "green"
+      ],
       "effect": "You may exhaust this card before a player casts votes; that player must cast at least 1 vote for an outcome of your choice or remove 1 token from their fleet pool and return it to their reinforcements."
     }
   ],
   "units": {
     "infantry": {
       "name": "Crimson Legionnaire",
+      "note": "Mahact Infantry turn into commodities or trade goods when they are destroyed.",
       "versions": [
         {
           "level": 1,
@@ -63,7 +71,7 @@
           "combat": 8,
           "abilities": [
             {
-              "name": "Commodity Conversion",
+              "name": "Commodity on Death",
               "effect": "After this unit is destroyed, gain 1 commodity or convert 1 of your commodities to a trade good."
             }
           ],
@@ -77,11 +85,18 @@
           "combat": 7,
           "abilities": [
             {
-              "name": "Commodity Conversion",
-              "effect": "After this unit is destroyed, gain 1 commodity or convert 1 of your commodities to a trade good. Then, place the unit on this card. At the start of your next turn, place each unit that is on this card on a planet you control in your home system."
+              "name": "Commodity on Death",
+              "effect": "After this unit is destroyed, gain 1 commodity or convert 1 of your commodities to a trade good."
+            },
+            {
+              "name": "Respawn",
+              "effect": "After this unit is destroyed, place the unit on this card. At the start of your next turn, place each unit that is on this card on a planet you control in your home system."
             }
           ],
-          "techPrerequisite": "genetic_recombination"
+          "prerequisites": [
+            "green",
+            "green"
+          ]
         }
       ]
     },
@@ -89,12 +104,16 @@
       "name": "Arvicon Rex",
       "cost": 8,
       "combat": 5,
+      "combatDiceCount": 2,
       "move": 1,
       "capacity": 3,
       "abilities": [
-        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" },
         {
-          "name": "Fleet Dominance",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Combat Bonus vs Non-Vassal",
           "effect": "During combat against an opponent whose command token is not in your fleet pool, apply +2 to the results of this unit's combat rolls."
         }
       ]
@@ -103,16 +122,25 @@
       "name": "Starlancer",
       "cost": 2,
       "combat": 6,
-      "deploy": "After a player whose command token is in your fleet pool activates this system, you may spend their token from your fleet pool to end their turn; they gain that token.",
       "abilities": [
-        { "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE" }
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "End Their Turn",
+          "effect": "After a player whose command token is in your fleet pool activates this system, you may spend their token from your fleet pool to end their turn; they gain that token."
+        }
       ]
     }
   },
   "breakthrough": {
     "synergy": {
-      "colors": ["yellow", "green"],
-      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa."
+      "colors": [
+        "yellow",
+        "green"
+      ],
+      "description": "Tus tecnologías amarillas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
     },
     "ability": {
       "name": "Vaults of the Heir",
@@ -121,19 +149,19 @@
   },
   "leaders": {
     "agent": {
-      "name": "Jaemer Kha",
+      "name": "Jae Mir Kan",
       "unlock": "At Game Start",
       "ability": "When you would spend a command token during the secondary ability of a strategic action: You may exhaust this card to remove 1 of the active player's command tokens from the board and use it instead."
     },
     "commander": {
-      "name": "Il Na",
+      "name": "Il Na Viroset",
       "unlock": "Have 2 other factions' command tokens in your fleet pool.",
-      "ability": "During your tactical actions, you can activate systems that contain your units even if they contain other players' ships."
+      "ability": "During your tactical actions, you can activate systems that contain your command tokens. If you do, return both command tokens to your reinforcements and end your turn."
     },
     "hero": {
-      "name": "Siirss",
-      "unlock": "Have 3 Scored Objectives",
-      "ability": "ACTION: Purge this card to place any number of your ships from any systems into any number of other systems that contain your command tokens and no other players' ships."
+      "name": "Airo Shir Aur",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "\"BENEDICTION\" — ACTION: Move all units in the space area of any system to an adjacent system that contains a different player's ships. Space Combat is resolved in that system; neither player can retreat or resolve abilities that would move their ships. Then, purge this card."
     }
   }
 }
