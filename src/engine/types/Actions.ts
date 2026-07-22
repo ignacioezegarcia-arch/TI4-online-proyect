@@ -222,6 +222,8 @@ export type GameAction =
       /** How this specific research is being paid for — 0/empty for a source that grants it free (e.g. some faction abilities); nonzero needs enough resources from the exhausted planets (falls back to trade goods for any shortfall). RR 90.7 prerequisites are always checked regardless of cost. */
       cost: number;
       exhaustPlanetIdsForResources: PlanetId[];
+      /** RR "Research Team" (any color variant): exhaust that SPECIFIC controlled planet's own attachment card to ignore 1 prerequisite of its matching color for this one research. */
+      useResearchTeamAttachmentPlanetId?: PlanetId;
     } // RR 90
   | {
       type: "RESEARCH_UNIT_UPGRADE";
@@ -231,6 +233,8 @@ export type GameAction =
       exhaustPlanetIdsForResources: PlanetId[];
       /** RR "AI Development Algorithm": exhaust that tech (if owned and readied) to ignore exactly ONE instance of this one color's prerequisite for this research (e.g. a "2 red" requirement becomes "1 red") — not the whole prerequisite list. */
       aiDevelopmentAlgorithmIgnoreColor?: string;
+      /** RR "Research Team" (any color variant): same effect, different source — see RESEARCH_TECHNOLOGY's own note. Mutually exclusive with aiDevelopmentAlgorithmIgnoreColor above (only one source's ignore-1-color applies per research). */
+      useResearchTeamAttachmentPlanetId?: PlanetId;
     } // RR 90/86
   | { type: "EXPLORE_PLANET"; playerId: PlayerId; planetId: PlanetId } // RR 35 — PoK only (rejected in Base-only games)
   | { type: "EXPLORE_FRONTIER"; playerId: PlayerId; systemId: SystemId } // RR 35 — PoK only
@@ -373,6 +377,23 @@ export type GameAction =
       /** RR "Executive Sanctions" ("against"): the trusted context's own random pick of which card this player discards — not a genuine player choice, same convention as pre-rolled dice. */
       cardId: ActionCardId;
     }
+  | {
+      type: "USE_IMPERIAL_ARBITER";
+      playerId: PlayerId;
+      /** RR "Imperial Arbiter": the owner's own choice, offered once the strategy phase ends — discard this card to swap one of THEIR strategy cards for one of another player's. */
+      ownCardId: StrategyCardId;
+      otherPlayerId: PlayerId;
+      otherCardId: StrategyCardId;
+    }
+  | { type: "USE_MINISTER_OF_PEACE"; playerId: PlayerId } // RR "Minister of Peace": discard to immediately end the active player's turn, right after they activate a system with another player's units in it
+  | { type: "USE_MINISTER_OF_WAR"; playerId: PlayerId; systemId: SystemId } // RR "Minister of War": discard to return 1 of this player's own on-board command tokens to their tactic pool, then take 1 additional action
+  | {
+      type: "USE_CROWN_OF_THALNOS_REROLL";
+      playerId: PlayerId;
+      /** RR "The Crown of Thalnos": per unit type this player owns in the current combat round, how many of THEIR OWN missed dice (never more than actually missed) to reroll, and the new values — whichever still miss destroys that many units of that type, mandatory. */
+      rerolls: { unitType: UnitType; newRolls: number[] }[];
+    }
+  | { type: "SKIP_CROWN_OF_THALNOS_REROLL"; playerId: PlayerId } // declines to reroll anything this round
 
   // --- Meta ---
   | { type: "END_TURN_TIMEOUT"; playerId: PlayerId }; // async safety valve: auto-pass a player who's gone silent, driven by a scheduled job, not a human click
