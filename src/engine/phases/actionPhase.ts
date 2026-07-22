@@ -6,6 +6,7 @@ import { RuleData } from "../types/RuleData";
 import { OBJECTIVE_CHECKS, SPEND_CHECK_TYPES } from "../rules/objectiveChecks";
 import { revealAgenda } from "./agendaPhase";
 import { drawActionCard } from "./actionCards";
+import { placeGainedCommandTokens } from "../rules/commandTokens";
 
 /**
  * RR 3.2-3.5 PASS.
@@ -116,9 +117,25 @@ export function autoAdvancePhase(state: GameState, rules: RuleData): { state: Ga
     );
     if (!allDone) return { state, events: [] };
 
-    const bookkeeping = runStatusPhaseBookkeeping(state);
-    let next = bookkeeping.state;
-    const events = [...bookkeeping.events];
+    // RR 20/70.5: bookkeeping (including queuing each player's own
+    // command-token gain) only runs ONCE — the first time every player's
+    // finished scoring. Later calls to this function while some of those
+    // gains are still unplaced must NOT re-run it (that would re-draw
+    // action cards, re-ready planets, etc. a second time).
+    let next = state;
+    let events: GameEvent[] = [];
+    if (state.pendingCommandTokenGains === undefined) {
+      const bookkeeping = runStatusPhaseBookkeeping(state);
+      next = bookkeeping.state;
+      events = [...bookkeeping.events];
+    }
+
+    // RR 20/70.5: the status phase can't actually finish until every
+    // player has placed their own newly-gained command tokens (their own
+    // choice of pool) — see PLACE_GAINED_COMMAND_TOKENS.
+    if (Object.keys(next.pendingCommandTokenGains ?? {}).length > 0) {
+      return { state: next, events };
+    }
 
     if (state.mecatolCustodiansRemoved) {
       next = { ...next, phase: "agenda", agendaPhaseAgendasResolved: 0 };
@@ -129,7 +146,7 @@ export function autoAdvancePhase(state: GameState, rules: RuleData): { state: Ga
         events.push(...revealed.events);
       }
     } else {
-      next = startNewRound(next);
+      next = startNewRound(next, rules);
       events.push({ type: "PHASE_CHANGED", from: "status", to: "strategy", round: next.round });
       events.push({ type: "ROUND_STARTED", round: next.round });
     }
@@ -484,6 +501,7 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
   let actionCardDeck = state.actionCardDeck ? [...state.actionCardDeck] : [];
   let actionCardDiscardPile = state.actionCardDiscardPile ? [...state.actionCardDiscardPile] : [];
   const players: GameState["players"] = {};
+  const pendingCommandTokenGains: Partial<Record<PlayerId, number>> = {};
   for (const [id, player] of Object.entries(state.players)) {
     let updatedPlayer: Player = {
       ...player,
@@ -495,10 +513,11 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
       exhaustedTechnologies: [],
     };
     // RR 70.5: gain 2 command tokens — 3 instead, with Hyper Metabolism.
-    // Simplification: auto-placed in the strategy pool; a future UI can
-    // offer redistribution as its own action before this runs.
+    // Confirmed: the PLAYER decides which pool(s) these go into — queued
+    // here (see GameState.ts's own doc comment on pendingCommandTokenGains)
+    // rather than auto-assigned, resolved via PLACE_GAINED_COMMAND_TOKENS.
     const commandTokenGain = player.technologies.includes(asTechId("hyper_metabolism")) ? 3 : 2;
-    updatedPlayer.commandTokens = { ...updatedPlayer.commandTokens, strategy: updatedPlayer.commandTokens.strategy + commandTokenGain };
+    pendingCommandTokenGains[id as PlayerId] = commandTokenGain;
 
     if (!player.eliminated) {
       // Neural Motivator: draw 2 action cards instead of 1 — just runs the
@@ -546,12 +565,12 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
   }
 
   return {
-    state: { ...state, players, systems, objectives, publicObjectiveDeck: nextDeck, actionCardDeck, actionCardDiscardPile },
+    state: { ...state, players, systems, objectives, publicObjectiveDeck: nextDeck, actionCardDeck, actionCardDiscardPile, pendingCommandTokenGains },
     events,
   };
 }
 
-export function startNewRound(state: GameState): GameState {
+export function startNewRound(state: GameState, rules: RuleData): GameState {
   const players: GameState["players"] = {};
   for (const [id, player] of Object.entries(state.players)) {
     players[id as PlayerId] = { ...player, hasPassed: false, strategyCards: [] };
@@ -566,9 +585,32 @@ export function startNewRound(state: GameState): GameState {
         .flatMap((p) => p.strategyCards)
         .map((c) => ({ cardId: c.cardId, tradeGoods: 0 }));
 
+  // RR "Representative Government" (either version, "against"): each
+  // queued voter's cultural planets all exhaust right as this new
+  // strategy phase starts — see phases/agendaPhase.ts for where this list
+  // gets built up.
+  const againstVoters = state.pendingRepresentativeGovernmentAgainstVoters ?? [];
+  const systems: GameState["systems"] =
+    againstVoters.length === 0
+      ? state.systems
+      : Object.fromEntries(
+          Object.entries(state.systems).map(([systemId, system]) => [
+            systemId,
+            {
+              ...system,
+              planets: system.planets.map((p) =>
+                p.controllerId && againstVoters.includes(p.controllerId) && (rules.planets[p.planetId]?.traits ?? []).includes("cultural")
+                  ? { ...p, exhausted: true }
+                  : p,
+              ),
+            },
+          ]),
+        );
+
   return {
     ...state,
     players,
+    systems,
     phase: "strategy",
     round: state.round + 1,
     activePlayerId: null,
@@ -576,5 +618,27 @@ export function startNewRound(state: GameState): GameState {
     unclaimedStrategyCards,
     lastPlayerToPass: undefined,
     activePlayerActionsTaken: undefined,
+    pendingRepresentativeGovernmentAgainstVoters: undefined,
   };
+}
+
+/** RR 20/70.5: resolves this player's own pending command-token gain (from GameState.pendingCommandTokenGains) — their own choice of how to split it across their 3 pools, subject to RR "Fleet Regulations"'s own cap when active. See rules/commandTokens.ts's shared validate+place logic. */
+export function placeGainedCommandTokensAction(
+  state: GameState,
+  action: { type: "PLACE_GAINED_COMMAND_TOKENS"; playerId: PlayerId; tactic: number; fleet: number; strategy: number },
+): ActionResult {
+  const pendingCount = state.pendingCommandTokenGains?.[action.playerId];
+  if (!pendingCount) return { ok: false, error: "This player has no pending command-token gain to place right now." };
+
+  const player = state.players[action.playerId];
+  const result = placeGainedCommandTokens(state, player, pendingCount, { tactic: action.tactic, fleet: action.fleet, strategy: action.strategy });
+  if (!result.ok) return result;
+
+  const { [action.playerId]: _removed, ...remainingGains } = state.pendingCommandTokenGains ?? {};
+  const nextState: GameState = {
+    ...state,
+    players: { ...state.players, [action.playerId]: result.player },
+    pendingCommandTokenGains: remainingGains,
+  };
+  return { ok: true, state: nextState, events: [] };
 }
