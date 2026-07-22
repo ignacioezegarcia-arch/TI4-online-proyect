@@ -1,4 +1,4 @@
-import { GameState, Player } from "../types/GameState";
+import { GameState, Player, PlanetState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
 import { PlayerId, TechId, UnitUpgradeId, PlanetId, AgendaId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
@@ -28,6 +28,8 @@ export function researchTechnology(
   cost: number,
   exhaustPlanetIdsForResources: PlanetId[],
   rules: RuleData,
+  /** RR "Research Team" (any of the 4 color variants): exhaust that SPECIFIC planet's own attachment card (not a normal tech) — only legal if this player controls a planet with a matching-color Research Team attached, it isn't already exhausted, and the color actually matches one of THIS tech's own prerequisites. */
+  useResearchTeamAttachmentPlanetId?: PlanetId,
 ): ActionResult {
   const player = state.players[playerId];
   if (!player) return { ok: false, error: "Unknown player." };
@@ -35,10 +37,19 @@ export function researchTechnology(
     return { ok: false, error: `RR 90: this player already owns ${techId}.` };
   }
 
-  const prereqCheck = checkTechPrerequisites(state, playerId, techId, rules);
+  let workingState = state;
+  let researchTeamIgnoreColor: string | undefined;
+  if (useResearchTeamAttachmentPlanetId) {
+    const teamResult = useResearchTeamAttachment(workingState, playerId, useResearchTeamAttachmentPlanetId, rules);
+    if (!teamResult.ok) return teamResult;
+    workingState = teamResult.state;
+    researchTeamIgnoreColor = teamResult.color;
+  }
+
+  const prereqCheck = checkTechPrerequisites(workingState, playerId, techId, rules, researchTeamIgnoreColor);
   if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
 
-  const spend = spendForCost(state, playerId, cost, exhaustPlanetIdsForResources, rules);
+  const spend = spendForCost(workingState, playerId, cost, exhaustPlanetIdsForResources, rules);
   if (!spend.ok) return spend;
 
   const updatedPlayer: Player = { ...spend.state.players[playerId], technologies: [...player.technologies, techId] };
@@ -49,17 +60,47 @@ export function researchTechnology(
   return { ok: true, state: nextState, events: [] };
 }
 
+/** RR "Research Team" (any color): validates + exhausts the given planet's own attachment card, returning which color's prerequisite it ignores. Shared by researchTechnology/researchUnitUpgrade below. */
+function useResearchTeamAttachment(
+  state: GameState,
+  playerId: PlayerId,
+  planetId: PlanetId,
+  rules: RuleData,
+): { ok: true; state: GameState; color: string } | { ok: false; error: string } {
+  const entry = Object.entries(state.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
+  const planet = entry?.[1].planets.find((p) => p.planetId === planetId);
+  if (!planet) return { ok: false, error: `No planet ${planetId}.` };
+  if (planet.controllerId !== playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+
+  const researchTeamId = planet.attachmentIds.find((id) => rules.agendas[id as AgendaId]?.attachTechColor);
+  const color = researchTeamId ? rules.agendas[researchTeamId as AgendaId]?.attachTechColor : undefined;
+  if (!researchTeamId || !color) return { ok: false, error: `${planetId} has no Research Team attached.` };
+  if ((planet.exhaustedAttachmentIds ?? []).includes(researchTeamId)) {
+    return { ok: false, error: `The Research Team on ${planetId} is already exhausted.` };
+  }
+
+  const [systemId, system] = entry!;
+  const updatedPlanet: PlanetState = { ...planet, exhaustedAttachmentIds: [...(planet.exhaustedAttachmentIds ?? []), researchTeamId] };
+  const nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } },
+  };
+  return { ok: true, state: nextState, color };
+}
+
 /** RR 90.7: does this player already own enough techs of the required color(s) to research `techId`? Accounts for the player's faction's Breakthrough synergy pair, if any (one color substitutes for the other, never both at once for the same requirement). */
 export function checkTechPrerequisites(
   state: GameState,
   playerId: PlayerId,
   techId: TechId,
   rules: RuleData,
+  /** RR "Research Team": ignore exactly ONE instance of this one color's requirement — same shape as AI Development Algorithm's own equivalent for unit upgrades below. */
+  ignoreOnePrerequisiteOfColor?: string,
 ): { met: boolean; reason?: string } {
   const techData = rules.technologies[techId];
   if (!techData) return { met: false, reason: `No rule data for ${techId}.` };
   const synergy = rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null;
-  return checkPrerequisitesAgainst(techData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy);
+  return checkPrerequisitesAgainst(techData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreOnePrerequisiteOfColor);
 }
 
 export function researchUnitUpgrade(
@@ -71,6 +112,8 @@ export function researchUnitUpgrade(
   rules: RuleData,
   /** RR "AI Development Algorithm": exhaust that tech (if owned and readied) to ignore exactly ONE instance of this one color's prerequisite for this specific research (e.g. a "2 red" requirement becomes "1 red") — not the whole prerequisite list. */
   aiDevelopmentAlgorithmIgnoreColor?: string,
+  /** RR "Research Team": exhaust that SPECIFIC planet's own attachment card instead — same effect, different source, and the two can't both apply to the same research (only one color gets ignored, from whichever source the caller picks). */
+  useResearchTeamAttachmentPlanetId?: PlanetId,
 ): ActionResult {
   const player = state.players[playerId];
   if (!player) return { ok: false, error: "Unknown player." };
@@ -79,20 +122,26 @@ export function researchUnitUpgrade(
   }
 
   let workingPlayer = player;
-  if (aiDevelopmentAlgorithmIgnoreColor) {
+  let workingState: GameState = state;
+  let ignoreColor = aiDevelopmentAlgorithmIgnoreColor;
+
+  if (useResearchTeamAttachmentPlanetId) {
+    const teamResult = useResearchTeamAttachment(workingState, playerId, useResearchTeamAttachmentPlanetId, rules);
+    if (!teamResult.ok) return teamResult;
+    workingState = teamResult.state;
+    ignoreColor = teamResult.color;
+  } else if (aiDevelopmentAlgorithmIgnoreColor) {
     const techId = asTechId("ai_development_algorithm");
     if (!player.technologies.includes(techId)) return { ok: false, error: "This player doesn't own AI Development Algorithm." };
     if (player.exhaustedTechnologies.includes(techId)) return { ok: false, error: "AI Development Algorithm is already exhausted." };
-    const prereqCheck = checkUnitUpgradePrerequisites(state, playerId, upgradeId, rules, aiDevelopmentAlgorithmIgnoreColor);
-    if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
     workingPlayer = { ...player, exhaustedTechnologies: [...player.exhaustedTechnologies, techId] };
-  } else {
-    const prereqCheck = checkUnitUpgradePrerequisites(state, playerId, upgradeId, rules);
-    if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
+    workingState = { ...workingState, players: { ...workingState.players, [playerId]: workingPlayer } };
   }
 
-  const stateWithExhaust: GameState = { ...state, players: { ...state.players, [playerId]: workingPlayer } };
-  const spend = spendForCost(stateWithExhaust, playerId, cost, exhaustPlanetIdsForResources, rules);
+  const prereqCheck = checkUnitUpgradePrerequisites(workingState, playerId, upgradeId, rules, ignoreColor);
+  if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
+
+  const spend = spendForCost(workingState, playerId, cost, exhaustPlanetIdsForResources, rules);
   if (!spend.ok) return spend;
 
   const updatedPlayer: Player = { ...spend.state.players[playerId], unitUpgrades: [...player.unitUpgrades, upgradeId] };
