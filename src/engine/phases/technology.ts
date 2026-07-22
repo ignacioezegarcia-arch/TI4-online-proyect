@@ -2,6 +2,7 @@ import { GameState, Player } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
 import { PlayerId, TechId, UnitUpgradeId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
+import { maybeQueueAntiIntellectualRevolutionDestruction } from "./agendaEffects";
 
 /**
  * RR 90 TECHNOLOGY. There's no general "spend resources, research anything"
@@ -41,7 +42,10 @@ export function researchTechnology(
   if (!spend.ok) return spend;
 
   const updatedPlayer: Player = { ...spend.state.players[playerId], technologies: [...player.technologies, techId] };
-  const nextState: GameState = { ...spend.state, players: { ...spend.state.players, [playerId]: updatedPlayer } };
+  let nextState: GameState = { ...spend.state, players: { ...spend.state.players, [playerId]: updatedPlayer } };
+  // RR "Anti-Intellectual Revolution" ("for"): queues a mandatory ship
+  // destruction if that law is currently active — see phases/agendaEffects.ts.
+  nextState = maybeQueueAntiIntellectualRevolutionDestruction(nextState, playerId);
   return { ok: true, state: nextState, events: [] };
 }
 
