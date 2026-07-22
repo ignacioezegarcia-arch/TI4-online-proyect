@@ -4,7 +4,7 @@ import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
-import { getEffectiveProducesQuantity, isLawActiveWithOutcome } from "./agendaEffects";
+import { getEffectiveProducesQuantity, isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 
 /**
@@ -79,6 +79,9 @@ export function executeProduction(
   if (planet.controllerId !== playerId) {
     return { ok: false, error: `RR 58: this player doesn't control ${planetId}.` };
   }
+  if (isDemilitarizedZone(planet)) {
+    return { ok: false, error: 'RR "Demilitarized Zone": units cannot be produced on this planet.' };
+  }
 
   const player = state.players[playerId];
   const producerStacks = planet.unitsByPlayer[playerId] ?? [];
@@ -94,6 +97,24 @@ export function executeProduction(
   }
   if (productionLimit === null) {
     return { ok: false, error: `RR 58: no Production-capable unit (e.g. a Space Dock) on ${planetId}.` };
+  }
+
+  // RR "Minister of Industry": confirmed, the owner isn't limited to ONE
+  // producer per system — every one of THEIR OWN Production-capable
+  // units anywhere in this system (any planet, not just the one they're
+  // producing from) contributes its own planet's "resources + 2" to a
+  // single COMBINED limit for this production action. A no-op (limit
+  // stays exactly as computed above) for every other player, and for the
+  // owner too whenever they only have the one producer this system
+  // already found.
+  if (getLawOwner(state, "minister_of_industry" as AgendaId) === playerId) {
+    let combinedLimit = 0;
+    for (const otherPlanet of system.planets) {
+      const stacksHere = otherPlanet.unitsByPlayer[playerId] ?? [];
+      const hasProducerHere = stacksHere.some((s) => s.count > 0 && getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades)?.abilities.includes("production"));
+      if (hasProducerHere) combinedLimit += getEffectivePlanetStats(otherPlanet, otherPlanet.planetId, rules).resources + 2;
+    }
+    if (combinedLimit > productionLimit) productionLimit = combinedLimit;
   }
 
   let totalCost = 0;
@@ -194,8 +215,18 @@ export function executeProduction(
     planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
   };
 
+  // RR "Prophecy of Ixth": confirmed, checked on EVERY Production use by
+  // the owner (not just this one specific dock) — if fewer than 2
+  // fighters are produced this time, the card is discarded immediately.
+  const fightersProduced = resolvedUnits.filter((u) => u.unitType === "fighter").reduce((sum, u) => sum + u.count, 0);
+  const isProphecyOfIxthOwner = getLawOwner(state, "prophecy_of_ixth" as AgendaId) === playerId;
+  const agendaDeck = isProphecyOfIxthOwner && fightersProduced < 2
+    ? { ...state.agendaDeck, lawsInPlay: state.agendaDeck.lawsInPlay.filter((l) => l.agendaId !== "prophecy_of_ixth") }
+    : state.agendaDeck;
+
   const nextState: GameState = {
     ...state,
+    agendaDeck,
     systems: { ...state.systems, [systemId]: updatedSystem },
     players: {
       ...state.players,
