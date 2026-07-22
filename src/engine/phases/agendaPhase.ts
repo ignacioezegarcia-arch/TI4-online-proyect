@@ -373,51 +373,6 @@ export function finalizeAgendaResolution(
     }
   }
 
-  // RR "attach" agendas (Core Mining, Demilitarized Zone, Holy Planet of
-  // Ixth, the 4 Research Team, Senate Sanctuary, Terraforming Initiative):
-  // confirmed via data/agendas.json's own `isAttachment` flag — ALL 8
-  // share the exact same first step (attach this card to whichever planet
-  // was elected), checked generically here instead of listing every id.
-  // Each one's own FURTHER one-time effect (if any) still needs its own
-  // specific handling below, since those genuinely differ card to card —
-  // numeric resource/influence bonuses are read back out in
-  // rules/planetStats.ts's getEffectivePlanetStats; Research Team's own
-  // ongoing "ignore 1 prerequisite" ability is checked generically in
-  // phases/technology.ts via this same agenda's own `attachTechColor`.
-  if (rules.agendas[agendaId]?.isAttachment && winner) {
-    const planetId = winner as PlanetId;
-    const entry = Object.entries(nextState.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
-    if (entry) {
-      const [systemId, system] = entry;
-      const planet = system.planets.find((p) => p.planetId === planetId)!;
-      let updatedPlanet: PlanetState = { ...planet, attachmentIds: [...planet.attachmentIds, agendaId] };
-
-      // RR "Core Mining": destroy 1 infantry on the planet (any owner's — the card's own text doesn't specify whose, if more than one player somehow has infantry there, this takes the first found).
-      if (agendaId === "core_mining") {
-        const infantryOwnerId = Object.entries(updatedPlanet.unitsByPlayer).find(([, stacks]) => (stacks ?? []).some((s) => s.unitType === "infantry" && s.count > 0))?.[0] as PlayerId | undefined;
-        if (infantryOwnerId) {
-          const stacks = (updatedPlanet.unitsByPlayer[infantryOwnerId] ?? []).map((s) => (s.unitType === "infantry" ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
-          updatedPlanet = { ...updatedPlanet, unitsByPlayer: { ...updatedPlanet.unitsByPlayer, [infantryOwnerId]: stacks } };
-        }
-      }
-
-      // RR "Demilitarized Zone": destroy EVERY unit (any player's) currently there. Its OWN ongoing restriction ("units cannot land, be produced, or be placed on this planet") is enforced separately — see phases/invasion.ts's commitGroundForces, phases/production.ts's executeProduction, and phases/technologyAbilities.ts's useTransitDiodes (this project's own 3 "place a ground force on a planet" call sites).
-      if (agendaId === "demilitarized_zone") {
-        updatedPlanet = { ...updatedPlanet, unitsByPlayer: {} };
-      }
-
-      nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } } };
-
-      // RR "Holy Planet of Ixth": the planet's OWNER (controller, if any — it might be uncontrolled/contested at election time) gains 1 VP right away, in addition to its own ongoing "gain/lose 1 VP on control change" rule (see phases/invasion.ts's setPlanetController).
-      if (agendaId === "holy_planet_of_ixth" && updatedPlanet.controllerId) {
-        const owner = nextState.players[updatedPlanet.controllerId];
-        if (owner) {
-          nextState = { ...nextState, players: { ...nextState.players, [updatedPlanet.controllerId]: { ...owner, victoryPoints: { ...owner.victoryPoints, current: owner.victoryPoints.current + 1 } } } };
-        }
-      }
-    }
-  }
-
   const events: GameEvent[] = [{ type: "AGENDA_RESOLVED", agendaId, outcome: winner ?? "", becameLaw }];
 
   if ((nextState.agendaPhaseAgendasResolved ?? 0) < 2 && nextState.agendaDeck.deckIds.length > 0) {
