@@ -5,6 +5,7 @@ import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus } from "./anomalies";
 import { getAdjacentSystems } from "./adjacency";
 import { usesCodex4Version } from "./gameMode";
+import { getEffectiveUnitAbilities } from "../phases/agendaEffects";
 
 /**
  * RR 61 (space combat) / RR 38 (ground combat) — presence queries.
@@ -288,6 +289,7 @@ export type ApplyHitAssignmentsResult =
  * took away a real decision).
  */
 export function applyHitAssignments(
+  state: GameState,
   stacks: UnitStack[],
   assignments: HitAssignment[],
   hitsOwed: number,
@@ -315,8 +317,8 @@ export function applyHitAssignments(
     if (!stack) return { ok: false, error: `No ${unitType} left to assign a hit to.` };
 
     if (outcome === "flip") {
-      const stats = getUnitStats(rules, factionId, unitType, ownedUnitUpgrades);
-      if (!stats?.abilities.includes("sustainDamage")) {
+      const effectiveAbilities = getEffectiveUnitAbilities(state, rules, factionId, unitType, ownedUnitUpgrades);
+      if (!effectiveAbilities.includes("sustainDamage")) {
         return { ok: false, error: `RR 76: ${unitType} doesn't have Sustain Damage.` };
       }
       if (stack.damagedCount >= stack.count) {
