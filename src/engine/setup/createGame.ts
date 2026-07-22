@@ -208,6 +208,8 @@ export function createGame(input: CreateGameInput): GameState {
       explorationCardsInPlayArea: [],
       actionCardsDiscardedCount: 0,
       abilityIds: [],
+      capturedUnits: [],
+      capturedGenericUnits: { infantry: 0, fighter: 0 },
     };
 
     placeStartingUnits(homeSystem, p.id, factionId, rules);
