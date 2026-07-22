@@ -4,7 +4,7 @@ import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
 import { UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
-import { isLawActiveWithOutcome } from "./agendaEffects";
+import { isLawActiveWithOutcome, isDemilitarizedZone } from "./agendaEffects";
 import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
 import { applyExplorationCard } from "./exploration";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
@@ -431,6 +431,7 @@ export function useTransitDiodes(
     if (!found) return { ok: false, error: `No planet ${planetId}.` };
     const { systemId, system, planet } = found;
     if (planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    if (isDemilitarizedZone(planet)) return { ok: false, error: 'RR "Demilitarized Zone": units cannot be placed on this planet.' };
 
     const stacks = planet.unitsByPlayer[action.playerId] ?? [];
     const existing = stacks.find((s) => s.unitType === unitType && !s.upgradeId);
