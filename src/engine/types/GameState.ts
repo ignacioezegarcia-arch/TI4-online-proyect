@@ -176,7 +176,8 @@ export interface ObjectiveState {
 export interface AgendaDeckState {
   deckIds: AgendaId[]; // remaining, order matters (top of deck = index 0)
   discardIds: AgendaId[];
-  lawsInPlay: { agendaId: AgendaId; ownerId: PlayerId | "common" }[]; // RR 7.4
+  /** RR 7.4: laws currently in effect. `outcome` records WHICH result elected it (e.g. "for" vs "against") — needed because a law's own text is often completely different depending on which side won (e.g. Anti-Intellectual Revolution's "for" is an ongoing per-research trigger, its "against" is a one-time effect) — see phases/agendaEffects.ts for where each law's own effect is actually implemented. Absent/undefined `outcome` for laws resolved before this field existed. */
+  lawsInPlay: { agendaId: AgendaId; ownerId: PlayerId | "common"; outcome?: string }[]; // RR 7.4
 }
 
 /**
@@ -302,6 +303,24 @@ export interface GameState {
    * instead of rolling its own tracking.
    */
   usedDeployAbilities?: string[];
+  /**
+   * RR "Anti-Intellectual Revolution" ("for" outcome, an ONGOING law once
+   * in effect): players who currently owe destroying 1 of their own
+   * non-fighter ships, because they just researched a technology while
+   * this law's "for" side was active — a real choice of WHICH ship,
+   * same "player picks, not auto-selected" pattern as everywhere else in
+   * this project. See phases/agendaEffects.ts.
+   */
+  pendingAntiIntellectualRevolutionDestruction?: PlayerId[];
+  /**
+   * RR "Anti-Intellectual Revolution" ("against" outcome, a ONE-TIME
+   * effect at the start of the next strategy phase): players who still
+   * need to submit which planets they're exhausting (one per technology
+   * they currently own) — blocks that next strategy phase from actually
+   * starting until every listed player has submitted, since RR "at the
+   * start of" effects resolve before anything else in that phase can.
+   */
+  pendingAntiIntellectualRevolutionExhaustion?: PlayerId[];
   /**
    * RR 52-adjacent: a short rolling buffer of this game's own already-typed
    * GameEvents (see Actions.ts), reused as-is rather than inventing a
