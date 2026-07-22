@@ -73,8 +73,8 @@ export interface RuleData {
   unitUpgrades: Record<UnitUpgradeId, UnitUpgradeStats>;
   /** Static resources/influence per planet (data/tiles.json), keyed by the same lowercase-underscore id as PlanetId (e.g. "jord", "mecatol_rex"). */
   planets: Record<PlanetId, PlanetStaticData>;
-  /** RR 7: only the law-vs-directive split (data/agendas.json) — NOT the outcome/effect text, same "mechanics only" scope cut as objectives (see data/objectives.json's own note). Needed just to know whether a resolved agenda becomes a permanent law or gets discarded after one use. */
-  agendas: Record<AgendaId, { type: "law" | "directive" }>;
+  /** RR 7: only the law-vs-directive split (data/agendas.json) — NOT the outcome/effect text, same "mechanics only" scope cut as objectives (see data/objectives.json's own note). Needed just to know whether a resolved agenda becomes a permanent law or gets discarded after one use. `removedByPoK`: confirmed, 13 base-game agendas are pulled from the deck entirely whenever Prophecy of Kings content is in play (interactions with newer PoK-era mechanics/factions) — filtered out at setup, see setup/createGame.ts's shuffleAndSeedDecks. */
+  agendas: Record<AgendaId, { type: "law" | "directive"; removedByPoK?: boolean }>;
   /** RR 52: points + how to validate the condition (data/objectives.json's checkType/checkParams). Most public objectives have a real checkType; most secrets are "manual" for now — see that file's own note. */
   objectives: Record<ObjectiveId, ObjectiveStaticData>;
   /** RR 90: only the color + prerequisites (data/technologies.json) — not the effect text. Prerequisites is a list of colors, one entry per required tech of that color (e.g. ["red","red"] = need 2 red techs already owned). */
