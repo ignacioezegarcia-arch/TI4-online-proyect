@@ -1,8 +1,9 @@
 import { GameState } from "../types/GameState";
-import { PlayerId, SystemId } from "../types/ids";
+import { PlayerId, SystemId, AgendaId } from "../types/ids";
 import { getAdjacentSystems } from "./adjacency";
 import { canShipEnterTile, canShipPassThroughTile, hasGravityRift, hasNebula } from "./anomalies";
 import { playersWithShipsInSystem } from "./combat";
+import { isLawActiveWithOutcome } from "../phases/agendaEffects";
 
 /**
  * RR 49 MOVEMENT (matches this codebase's existing citation convention for
@@ -56,7 +57,10 @@ export function canShipReachSystem(
   // A gravity-rift-plus-nebula combo tile would be a genuine rules edge case
   // (which wins?) — rare enough in practice that we take nebula's clamp as
   // authoritative here rather than guess an interaction order.
-  const maxBudget = hasNebula(originAnomalies) ? 1 : baseMoveValue;
+  // RR "Shared Research" ("for"): units can move through nebulae as normal
+  // while this law is active — the clamp below is simply skipped.
+  const nebulaClampLifted = isLawActiveWithOutcome(state, "shared_research" as AgendaId, "for");
+  const maxBudget = hasNebula(originAnomalies) && !nebulaClampLifted ? 1 : baseMoveValue;
   if (maxBudget <= 0) return false;
 
   // BFS where the state is (system, hasUsedRiftBonus) rather than just
