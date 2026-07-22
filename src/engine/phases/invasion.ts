@@ -1,9 +1,10 @@
 import { GameState, PlanetState, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId, PlanetId, asTechId } from "../types/ids";
+import { PlayerId, SystemId, PlanetId, AgendaId, asTechId } from "../types/ids";
 import { UnitType, STRUCTURE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { usesCodex4Version } from "../rules/gameMode";
+import { isLawActiveWithOutcome, getLawOwner } from "./agendaEffects";
 import {
   playersWithGroundForces,
   buildBombardmentEntries,
@@ -93,6 +94,10 @@ export function bombard(
   if (planetHasShield(planet, defenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules)) {
     return { ok: false, error: `RR 15/44.1: ${action.targetPlanetId} has Planetary Shield — Bombardment can't target it.` };
   }
+  // RR "Conventions of War" ("for"): Bombardment can't target units on a cultural planet while this law is active.
+  if (isLawActiveWithOutcome(state, "conventions_of_war" as AgendaId, "for") && (rules.planets[action.targetPlanetId]?.traits ?? []).includes("cultural")) {
+    return { ok: false, error: 'RR "Conventions of War": Bombardment cannot target units on a cultural planet while this law is active.' };
+  }
 
   const entries = buildBombardmentEntries(state, rules, systemId, action.playerId, action.plasmaScoringUnitType);
   if (entries.length === 0) {
@@ -160,7 +165,7 @@ export function assignBombardmentHits(
   const player = state.players[action.playerId];
   const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
   if (!result.ok) return { ok: false, error: `RR 44.1: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -477,7 +482,7 @@ export function assignMagenDefenseGridHit(
   const attackerId = pending.playerId;
   const attackerPlayer = state.players[attackerId];
   const attackerStacks = (planet.unitsByPlayer[attackerId] ?? []) as UnitStack[];
-  const result = applyHitAssignments(attackerStacks, [action.assignment], 1, attackerPlayer.factionId, attackerPlayer.unitUpgrades, rules);
+  const result = applyHitAssignments(state, attackerStacks, [action.assignment], 1, attackerPlayer.factionId, attackerPlayer.unitUpgrades, rules);
   if (!result.ok) return { ok: false, error: `RR: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -595,7 +600,7 @@ export function assignSpaceCannonDefenseHits(
   const player = state.players[action.playerId];
   const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
   if (!result.ok) return { ok: false, error: `RR 44: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -702,7 +707,7 @@ export function assignGroundCombatHits(
   const player = state.players[action.playerId];
   const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
   if (!result.ok) return { ok: false, error: `RR 38.2: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -822,7 +827,8 @@ function setPlanetController(state: GameState, systemId: SystemId, planetId: Pla
   const planet = system.planets.find((p) => p.planetId === planetId);
   if (!planet || planet.controllerId === controllerId) return state;
 
-  const wasUncontrolled = planet.controllerId === null;
+  const previousControllerId = planet.controllerId;
+  const wasUncontrolled = previousControllerId === null;
   const isLegendary = rules.planets[planetId]?.isLegendary ?? false;
 
   const updatedPlanet: PlanetState = {
@@ -835,7 +841,28 @@ function setPlanetController(state: GameState, systemId: SystemId, planetId: Pla
     ...system,
     planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
   };
-  const nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+
+  // RR "Minister of Exploration": the owner gains 1 trade good whenever THEY gain control of a planet (any planet, doesn't have to be a new one).
+  const ministerOfExplorationOwnerId = getLawOwner(nextState, "minister_of_exploration" as AgendaId);
+  if (ministerOfExplorationOwnerId === controllerId) {
+    const owner = nextState.players[controllerId];
+    nextState = { ...nextState, players: { ...nextState.players, [controllerId]: { ...owner, tradeGoods: owner.tradeGoods + 1 } } };
+  }
+
+  // RR "Holy Planet of Ixth": gaining/losing control of ITS OWN attached
+  // planet specifically gains/loses 1 VP — checked by whether this
+  // planet actually has that card attached, not by which planet it is by
+  // name, since attachment (not identity) is what the card's own text
+  // keys off.
+  if (planet.attachmentIds.includes("holy_planet_of_ixth")) {
+    nextState = { ...nextState, players: { ...nextState.players, [controllerId]: { ...nextState.players[controllerId], victoryPoints: { ...nextState.players[controllerId].victoryPoints, current: nextState.players[controllerId].victoryPoints.current + 1 } } } };
+    if (previousControllerId && nextState.players[previousControllerId]) {
+      const prev = nextState.players[previousControllerId];
+      nextState = { ...nextState, players: { ...nextState.players, [previousControllerId]: { ...prev, victoryPoints: { ...prev.victoryPoints, current: Math.max(0, prev.victoryPoints.current - 1) } } } };
+    }
+  }
+
   // RR PoK "Wormhole Nexus": gaining control of Mallice is the OTHER trigger for the active-flip (the first being a ship arriving there — see tacticalAction.ts's moveShips).
   return maybeActivateWormholeNexus(nextState, rules, systemId);
 }
