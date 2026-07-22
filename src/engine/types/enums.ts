@@ -118,7 +118,7 @@ export const STRATEGY_CARDS = {
 export type BaseStrategyCard = keyof typeof STRATEGY_CARDS;
 
 /** RR 52.1: objective category. */
-export type ObjectiveKind = "publicI" | "publicII" | "secret";
+export type ObjectiveKind = "publicI" | "publicII" | "secret" | "convertedFromSecret";
 
 /** RR 52.3: when an objective can be scored. */
 export type ObjectiveTiming = "actionPhase" | "statusPhase" | "agendaPhase";
