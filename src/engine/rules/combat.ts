@@ -1,11 +1,11 @@
 import { GameState, Player, PlanetState, UnitStack } from "../types/GameState";
-import { PlayerId, SystemId, FactionId, UnitUpgradeId, asTechId } from "../types/ids";
+import { PlayerId, SystemId, FactionId, UnitUpgradeId, AgendaId, asTechId } from "../types/ids";
 import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus } from "./anomalies";
 import { getAdjacentSystems } from "./adjacency";
 import { usesCodex4Version } from "./gameMode";
-import { getEffectiveUnitAbilities } from "../phases/agendaEffects";
+import { getEffectiveUnitAbilities, getLawOwner } from "../phases/agendaEffects";
 
 /**
  * RR 61 (space combat) / RR 38 (ground combat) — presence queries.
@@ -71,11 +71,15 @@ export interface CombatUnitEntry {
   diceCount: number;
   /** Effective threshold AFTER modifiers (e.g. Nebula's defender bonus already subtracted) — a die result >= this scores a hit. */
   hitOn: number;
+  /** RR "The Crown of Thalnos": which unit type this entry's dice belong to — every entry built by buildSpaceCombatEntries/buildGroundCombatEntries already corresponds to exactly ONE (player, unitType) pair (stacks are already split by type), so this is populated there. Optional/undefined for entries where per-type tracking doesn't matter (bombardment, Space Cannon, AFB — none of those are ever rerollable). */
+  unitType?: UnitType;
 }
 
 export interface CombatRoundResult {
   /** Hits *scored by* each player's units this round (i.e. what that player did to their opponent(s) — the caller decides who those hits land on). */
   hitsScoredByPlayer: Partial<Record<PlayerId, number>>;
+  /** RR "The Crown of Thalnos": how many of THIS player's OWN dice, per unit type, did NOT score a hit this round — needed so its owner can choose how many of a given type to reroll afterward. Only populated for entries that carried a `unitType` (i.e. normal space/ground combat dice). */
+  missedDiceByPlayerAndType: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>>;
 }
 
 export function resolveCombatRound(entries: CombatUnitEntry[], diceRolls: number[]): CombatRoundResult {
@@ -85,16 +89,21 @@ export function resolveCombatRound(entries: CombatUnitEntry[], diceRolls: number
   }
 
   const hitsScoredByPlayer: Partial<Record<PlayerId, number>> = {};
+  const missedDiceByPlayerAndType: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>> = {};
   let i = 0;
   for (const entry of entries) {
     for (let d = 0; d < entry.diceCount; d++) {
       const roll = diceRolls[i++];
       if (roll >= entry.hitOn) {
         hitsScoredByPlayer[entry.playerId] = (hitsScoredByPlayer[entry.playerId] ?? 0) + 1;
+      } else if (entry.unitType) {
+        const byType = missedDiceByPlayerAndType[entry.playerId] ?? {};
+        byType[entry.unitType] = (byType[entry.unitType] ?? 0) + 1;
+        missedDiceByPlayerAndType[entry.playerId] = byType;
       }
     }
   }
-  return { hitsScoredByPlayer };
+  return { hitsScoredByPlayer, missedDiceByPlayerAndType };
 }
 
 /**
@@ -152,12 +161,18 @@ export function buildSpaceCombatEntries(
       if (!stats || stats.combat == null) continue; // e.g. a transported ground force accidentally in the space stack list — shouldn't happen, but no combat value means no dice
 
       const diceCountPerUnit = stats.combatDiceCount ?? 1;
-      const hitOn = isDefender ? stats.combat - anomalyBonus : stats.combat;
+      // RR "Prophecy of Ixth": the owner's fighters get +1 to their combat
+      // roll result — expressed here as -1 to hitOn (mathematically
+      // identical, same convention as this file's other die-modifier
+      // agendas/techs, e.g. Antimass Deflectors).
+      const prophecyOfIxthBonus = stack.unitType === "fighter" && getLawOwner(state, "prophecy_of_ixth" as AgendaId) === playerId ? 1 : 0;
+      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus;
 
       entries.push({
         playerId,
         diceCount: stack.count * diceCountPerUnit,
         hitOn,
+        unitType: stack.unitType,
       });
     }
   }
@@ -202,7 +217,7 @@ export function buildGroundCombatEntries(
       // half of this version's text.
       const diceMultiplier =
         usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier, hitOn: stats.combat });
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier, hitOn: stats.combat, unitType: stack.unitType });
     }
   }
   return entries;
