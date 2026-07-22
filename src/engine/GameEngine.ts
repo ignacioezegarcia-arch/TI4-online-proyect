@@ -41,6 +41,7 @@ import {
   useTransitDiodes,
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
+import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution } from "./phases/agendaEffects";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -205,6 +206,12 @@ export const GameEngine = {
         break;
       case "USE_MIRAGE_FLIGHT_ACADEMY":
         result = useMirageFlightAcademy(state, action);
+        break;
+      case "DESTROY_SHIP_FOR_ANTI_INTELLECTUAL_REVOLUTION":
+        result = destroyShipForAntiIntellectualRevolution(state, action);
+        break;
+      case "EXHAUST_PLANETS_FOR_ANTI_INTELLECTUAL_REVOLUTION":
+        result = exhaustPlanetsForAntiIntellectualRevolution(state, action);
         break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
@@ -378,6 +385,18 @@ export const GameEngine = {
       if (controlledLegendaryPlanets.some((p) => p.planetId === "hopes_end")) legal.push("USE_IMPERIAL_ARMS_VAULT");
       if (controlledLegendaryPlanets.some((p) => p.planetId === "mallice")) legal.push("USE_EXTERRIX_HEADQUARTERS");
       if (controlledLegendaryPlanets.some((p) => p.planetId === "mirage")) legal.push("USE_MIRAGE_FLIGHT_ACADEMY");
+    }
+
+    // RR "Anti-Intellectual Revolution": both of its own pending decisions
+    // are cross-phase (a ship destruction can be owed any time research
+    // happens; the one-time exhaustion can be owed right as the agenda
+    // phase hands off to strategy) — checked independently of `state.phase`
+    // for that reason, unlike most of this function's other blocks.
+    if ((state.pendingAntiIntellectualRevolutionDestruction ?? []).includes(playerId)) {
+      legal.push("DESTROY_SHIP_FOR_ANTI_INTELLECTUAL_REVOLUTION");
+    }
+    if ((state.pendingAntiIntellectualRevolutionExhaustion ?? []).includes(playerId)) {
+      legal.push("EXHAUST_PLANETS_FOR_ANTI_INTELLECTUAL_REVOLUTION");
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
