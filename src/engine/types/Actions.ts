@@ -326,6 +326,21 @@ export type GameAction =
     }
   | { type: "REVEAL_AGENDA" } // RR 8.2: engine-driven (no playerId) — pops the agenda deck and opens voting; wired into autoAdvancePhase so nothing needs to remember to call it, but kept as a real action for direct/manual triggering too.
 
+  // --- Agenda EFFECTS (RR 7) — see phases/agendaEffects.ts's own header note on why these are per-agenda dedicated actions rather than one generic dispatcher ---
+  | {
+      type: "DESTROY_SHIP_FOR_ANTI_INTELLECTUAL_REVOLUTION";
+      playerId: PlayerId;
+      systemId: SystemId;
+      /** RR "Anti-Intellectual Revolution" ("for"): mandatory (no skip) — the player's own choice of WHICH non-fighter ship to destroy, only offered right after they've researched a technology while this law's "for" side is active. */
+      unitType: UnitType;
+    }
+  | {
+      type: "EXHAUST_PLANETS_FOR_ANTI_INTELLECTUAL_REVOLUTION";
+      playerId: PlayerId;
+      /** RR "Anti-Intellectual Revolution" ("against"): must be exactly 1 planet per technology this player currently owns — the one-time effect at the start of the strategy phase this agenda's resolution led into. */
+      planetIds: PlanetId[];
+    }
+
   // --- Meta ---
   | { type: "END_TURN_TIMEOUT"; playerId: PlayerId }; // async safety valve: auto-pass a player who's gone silent, driven by a scheduled job, not a human click
 
