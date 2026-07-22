@@ -41,7 +41,7 @@ import {
   useTransitDiodes,
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
-import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions } from "./phases/agendaEffects";
+import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll } from "./phases/agendaEffects";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -146,7 +146,7 @@ export const GameEngine = {
         result = resolveStrategySecondary(state, action, rules);
         break;
       case "RESEARCH_TECHNOLOGY":
-        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules);
+        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId);
         break;
       case "RESEARCH_UNIT_UPGRADE":
         result = researchUnitUpgrade(
@@ -157,6 +157,7 @@ export const GameEngine = {
           action.exhaustPlanetIdsForResources,
           rules,
           action.aiDevelopmentAlgorithmIgnoreColor,
+          action.useResearchTeamAttachmentPlanetId,
         );
         break;
       case "EXPLORE_PLANET":
@@ -227,6 +228,21 @@ export const GameEngine = {
         break;
       case "RANDOM_DISCARD_FOR_EXECUTIVE_SANCTIONS":
         result = discardRandomActionCardForExecutiveSanctions(state, action);
+        break;
+      case "USE_IMPERIAL_ARBITER":
+        result = useImperialArbiter(state, action);
+        break;
+      case "USE_MINISTER_OF_PEACE":
+        result = useMinisterOfPeace(state, action);
+        break;
+      case "USE_MINISTER_OF_WAR":
+        result = useMinisterOfWar(state, action);
+        break;
+      case "USE_CROWN_OF_THALNOS_REROLL":
+        result = useCrownOfThalnosReroll(state, action, rules);
+        break;
+      case "SKIP_CROWN_OF_THALNOS_REROLL":
+        result = skipCrownOfThalnosReroll(state, action);
         break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
@@ -424,6 +440,45 @@ export const GameEngine = {
     }
     if ((state.pendingExecutiveSanctionsRandomDiscard ?? []).includes(playerId)) {
       legal.push("RANDOM_DISCARD_FOR_EXECUTIVE_SANCTIONS");
+    }
+    // RR "Imperial Arbiter": approximated as "any time during the action
+    // phase" rather than strictly gated to the exact instant the strategy
+    // phase ends — a reasonable, bounded approximation (same category as
+    // this project's other "not strictly gated to the precise instant"
+    // timing notes, e.g. technologyAbilities.ts's own header comment).
+    if (state.phase === "action" && state.agendaDeck.lawsInPlay.some((l) => l.agendaId === "imperial_arbiter" && l.ownerId === playerId)) {
+      legal.push("USE_IMPERIAL_ARBITER");
+    }
+    // RR "Minister of Peace": offered right after ANY player activates a
+    // system with another player's units in it — deliberately checked
+    // independently of whose turn it currently is, and independently of
+    // `state.phase`'s usual "is this player active" gate elsewhere in this
+    // function, since the OWNER (not necessarily the active player) is who
+    // reacts here.
+    if (
+      state.pendingTacticalAction &&
+      (state.pendingTacticalAction.step === "activation" || state.pendingTacticalAction.step === "movement") &&
+      state.agendaDeck.lawsInPlay.some((l) => l.agendaId === "minister_of_peace" && l.ownerId === playerId)
+    ) {
+      const activatedSystem = state.systems[state.pendingTacticalAction.systemId];
+      const activatorId = state.pendingTacticalAction.playerId;
+      const hasOtherPlayerUnits =
+        Object.entries(activatedSystem?.spaceUnitsByPlayer ?? {}).some(([pid, stacks]) => pid !== activatorId && (stacks ?? []).some((s) => s.count > 0)) ||
+        (activatedSystem?.planets ?? []).some((p) => Object.entries(p.unitsByPlayer).some(([pid, stacks]) => pid !== activatorId && (stacks ?? []).some((s) => s.count > 0)));
+      if (hasOtherPlayerUnits) legal.push("USE_MINISTER_OF_PEACE");
+    }
+    // RR "Minister of War": offered on this player's own turn during the
+    // action phase, whenever they have at least 1 on-board command token
+    // to return.
+    if (state.phase === "action" && state.activePlayerId === playerId && (player.commandTokens.onBoard.length > 0) && state.agendaDeck.lawsInPlay.some((l) => l.agendaId === "minister_of_war" && l.ownerId === playerId)) {
+      legal.push("USE_MINISTER_OF_WAR");
+    }
+    // RR "The Crown of Thalnos": cross-phase in the same sense as the
+    // other pending-decision blocks above — checked independently of
+    // whose turn it currently is (it's about who's a COMBATANT this
+    // round, not who's active).
+    if ((state.pendingTacticalAction?.crownOfThalnosPendingPlayers ?? []).includes(playerId)) {
+      legal.push("USE_CROWN_OF_THALNOS_REROLL", "SKIP_CROWN_OF_THALNOS_REROLL");
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
