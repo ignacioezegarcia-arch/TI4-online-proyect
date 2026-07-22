@@ -46,5 +46,17 @@ export function getEffectivePlanetStats(
     influence += card.influenceBonus ?? 0;
   }
 
+  // RR agenda-attachment cards (Core Mining, Senate Sanctuary, Terraforming
+  // Initiative) — a small, fixed set of numeric bonuses, hardcoded here
+  // rather than adding a whole parallel RuleData lookup for just 3 cases
+  // (unlike exploration-card attachments above, which are genuinely
+  // data-driven across ~11 different cards).
+  if (planet.attachmentIds.includes("core_mining")) resources += 2;
+  if (planet.attachmentIds.includes("senate_sanctuary")) influence += 2;
+  if (planet.attachmentIds.includes("terraforming_initiative")) {
+    resources += 1;
+    influence += 1;
+  }
+
   return { resources, influence, techSpecialties };
 }
