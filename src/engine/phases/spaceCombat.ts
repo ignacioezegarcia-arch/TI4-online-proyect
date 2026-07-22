@@ -4,7 +4,7 @@ import { PlayerId, SystemId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { isAdjacent } from "../rules/adjacency";
-import { getEffectiveUnitAbilities } from "./agendaEffects";
+import { getEffectiveUnitAbilities, maybeApplyShardOfTheThroneOnCombatWin, maybeQueueCrownOfThalnosReroll } from "./agendaEffects";
 import {
   playersWithShipsInSystem,
   buildSpaceCombatEntries,
@@ -364,17 +364,16 @@ export function resolveSpaceCombatRound(
   if (result.hitsScoredByPlayer[b]) pendingHits[a] = result.hitsScoredByPlayer[b];
 
   const round = pending.combatRound ?? 1;
-  let nextState: GameState = {
-    ...state,
-    pendingTacticalAction: { ...pending, combatRound: round, pendingHits },
-  };
+  const updatedPending = maybeQueueCrownOfThalnosReroll(state, { ...pending, combatRound: round, pendingHits }, result.missedDiceByPlayerAndType);
+  let nextState: GameState = { ...state, pendingTacticalAction: updatedPending };
 
   const events: GameEvent[] = [
     { type: "COMBAT_ROUND_RESOLVED", systemId, round, hitsScoredByPlayer: result.hitsScoredByPlayer },
   ];
 
-  // Nobody hit anything — nothing to assign, go straight to end-of-round checks.
-  if (Object.keys(pendingHits).length === 0) {
+  // Nobody hit anything, and no Crown of Thalnos reroll decision is
+  // pending either — nothing to assign, go straight to end-of-round checks.
+  if (Object.keys(pendingHits).length === 0 && (nextState.pendingTacticalAction?.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpCombatRound(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
@@ -450,7 +449,7 @@ export function assignHits(
     pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, duraniumArmorPendingPlayers },
   };
 
-  if (Object.keys(remainingPendingHits).length === 0 && (duraniumArmorPendingPlayers ?? []).length === 0) {
+  if (Object.keys(remainingPendingHits).length === 0 && (duraniumArmorPendingPlayers ?? []).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpCombatRound(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
@@ -495,7 +494,7 @@ export function useDuraniumArmor(
   };
   const events: GameEvent[] = [{ type: "UNIT_REPAIRED", playerId: action.playerId, systemId, unitType: action.unitType, count: 1 }];
 
-  if (Object.keys(nextState.pendingTacticalAction!.pendingHits ?? {}).length === 0 && remainingPending.length === 0) {
+  if (Object.keys(nextState.pendingTacticalAction!.pendingHits ?? {}).length === 0 && remainingPending.length === 0 && (nextState.pendingTacticalAction!.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpCombatRound(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
@@ -518,7 +517,7 @@ export function skipDuraniumArmor(
   const remainingPending = pending.duraniumArmorPendingPlayers.filter((id) => id !== action.playerId);
   let nextState: GameState = { ...state, pendingTacticalAction: { ...pending, duraniumArmorPendingPlayers: remainingPending } };
 
-  if (Object.keys(pending.pendingHits ?? {}).length === 0 && remainingPending.length === 0) {
+  if (Object.keys(pending.pendingHits ?? {}).length === 0 && remainingPending.length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpCombatRound(nextState, rules);
     return { ok: true, state: wrap.state, events: wrap.events };
   }
@@ -541,14 +540,22 @@ function wrapUpCombatRound(state: GameState, _rules: RuleData): { state: GameSta
     nextState = moveAllShips(nextState, systemId, r.toSystemId, r.playerId);
   }
 
+  // Object.keys here (not playersWithShipsInSystem) on purpose — a
+  // combatant wiped out to 0 ships this round still has their (now empty)
+  // stacks entry in spaceUnitsByPlayer, so this is the only reliable way
+  // to recover "who was actually fighting here" for RR "Shard of the
+  // Throne"'s own check below, once one side has been fully eliminated.
+  const combatantsBeforeEnd = Object.keys(state.systems[systemId]?.spaceUnitsByPlayer ?? {}) as PlayerId[];
   const survivors = playersWithShipsInSystem(nextState, systemId);
 
   if (survivors.length <= 1) {
+    const winnerId = survivors[0] ?? null;
+    if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
     nextState = {
       ...nextState,
       pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" },
     };
-    events.push({ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: survivors[0] ?? null });
+    events.push({ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId });
     return { state: nextState, events };
   }
 
