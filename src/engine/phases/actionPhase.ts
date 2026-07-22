@@ -1,12 +1,13 @@
 import { GameState, Player, PlanetState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, ObjectiveId, PlanetId, SystemId, asTechId } from "../types/ids";
+import { PlayerId, ObjectiveId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
 import { ObjectiveKind } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { OBJECTIVE_CHECKS, SPEND_CHECK_TYPES } from "../rules/objectiveChecks";
 import { revealAgenda } from "./agendaPhase";
 import { drawActionCard } from "./actionCards";
 import { placeGainedCommandTokens } from "../rules/commandTokens";
+import { getLawOwner } from "./agendaEffects";
 
 /**
  * RR 3.2-3.5 PASS.
@@ -500,7 +501,7 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
   // other future draw site rather than duplicating the reshuffle-check.
   let actionCardDeck = state.actionCardDeck ? [...state.actionCardDeck] : [];
   let actionCardDiscardPile = state.actionCardDiscardPile ? [...state.actionCardDiscardPile] : [];
-  const players: GameState["players"] = {};
+  let players: GameState["players"] = {};
   const pendingCommandTokenGains: Partial<Record<PlayerId, number>> = {};
   for (const [id, player] of Object.entries(state.players)) {
     let updatedPlayer: Player = {
@@ -562,6 +563,19 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
         ]),
       ),
     };
+  }
+
+  // RR "Minister of Policy": at the end of the status phase, the owner draws 1 additional action card — same reshuffle-on-empty draw as everyone else's RR 70.3 draw above.
+  const ministerOfPolicyOwnerId = getLawOwner({ ...state, players }, "minister_of_policy" as AgendaId);
+  if (ministerOfPolicyOwnerId && players[ministerOfPolicyOwnerId]) {
+    const drawResult = drawActionCard({ ...state, actionCardDeck, actionCardDiscardPile });
+    actionCardDeck = drawResult.deck;
+    actionCardDiscardPile = drawResult.discardPile;
+    if (drawResult.drawn) {
+      const owner = players[ministerOfPolicyOwnerId];
+      players = { ...players, [ministerOfPolicyOwnerId]: { ...owner, actionCards: [...owner.actionCards, drawResult.drawn] } };
+      events.push({ type: "ACTION_CARD_DRAWN", playerId: ministerOfPolicyOwnerId, cardId: drawResult.drawn });
+    }
   }
 
   return {
