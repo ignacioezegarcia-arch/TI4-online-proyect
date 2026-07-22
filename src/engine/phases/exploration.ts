@@ -133,4 +133,76 @@ export function applyExplorationCard(
     };
     events.push({ type: "RELIC_FRAGMENT_GAINED", playerId, fragmentType: card.fragmentType });
   } else if (card.attach && planetId) {
-    const system = nextState.systems[sy
+    const system = nextState.systems[systemId];
+    const updatedPlanet: PlanetState = {
+      ...system.planets.find((p) => p.planetId === planetId)!,
+      attachmentIds: [...system.planets.find((p) => p.planetId === planetId)!.attachmentIds, cardId],
+    };
+    const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: updatedSystem } };
+  } else if (card.keepInPlayArea) {
+    nextState = {
+      ...nextState,
+      players: {
+        ...nextState.players,
+        [playerId]: { ...nextState.players[playerId], explorationCardsInPlayArea: [...nextState.players[playerId].explorationCardsInPlayArea, cardId as never] },
+      },
+    };
+  }
+  // Plain one-time effect: card is consumed (already popped by the caller), no further state change — see this file's own scope note.
+
+  return { state: nextState, events };
+}
+
+function setExplored(state: GameState, systemId: SystemId, planetId: PlanetId): GameState {
+  const system = state.systems[systemId];
+  const updatedSystem: SystemState = {
+    ...system,
+    planets: system.planets.map((p) => (p.planetId === planetId ? { ...p, explored: true } : p)),
+  };
+  return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+}
+
+export function purgeRelicFragments(
+  state: GameState,
+  action: {
+    type: "PURGE_RELIC_FRAGMENTS";
+    playerId: PlayerId;
+    fragmentType: "cultural" | "industrial" | "hazardous";
+    useCount: number;
+    useUnknownCount: number;
+  },
+): ActionResult {
+  if (!hasPoKContent(state.mode)) {
+    return { ok: false, error: "RR 35.9: Relics are a Prophecy of Kings mechanic, not available without Prophecy of Kings + Codex content (base-only or Thunder's-Edge-only games)." };
+  }
+  if (action.useCount + action.useUnknownCount !== 3) {
+    return { ok: false, error: "RR 35.9: purging a relic needs exactly 3 fragments total (same type + any Unknown substituting)." };
+  }
+  const player = state.players[action.playerId];
+  if (player.relicFragments[action.fragmentType] < action.useCount) {
+    return { ok: false, error: `Not enough ${action.fragmentType} fragments.` };
+  }
+  if (player.relicFragments.unknown < action.useUnknownCount) {
+    return { ok: false, error: "Not enough Unknown fragments." };
+  }
+  const deck = state.relicDeck ?? [];
+  if (deck.length === 0) return { ok: false, error: "The relic deck is empty." };
+
+  const [relicId, ...rest] = deck;
+  const updatedPlayer: Player = {
+    ...player,
+    relicFragments: {
+      ...player.relicFragments,
+      [action.fragmentType]: player.relicFragments[action.fragmentType] - action.useCount,
+      unknown: player.relicFragments.unknown - action.useUnknownCount,
+    },
+    relics: [...player.relics, relicId],
+  };
+
+  return {
+    ok: true,
+    state: { ...state, relicDeck: rest, players: { ...state.players, [action.playerId]: updatedPlayer } },
+    events: [{ type: "RELIC_GAINED", playerId: action.playerId, relicId }],
+  };
+}
