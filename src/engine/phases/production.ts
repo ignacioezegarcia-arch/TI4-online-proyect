@@ -1,9 +1,10 @@
 import { GameState, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId, asTechId } from "../types/ids";
+import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
+import { getEffectiveProducesQuantity, isLawActiveWithOutcome } from "./agendaEffects";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 
 /**
@@ -101,7 +102,7 @@ export function executeProduction(
     if (count <= 0) continue;
     const stats = getUnitStats(rules, player.factionId, unitType, player.unitUpgrades);
     if (!stats) return { ok: false, error: `No stats for ${unitType}.` };
-    const perToken = stats.producesQuantity ?? 1;
+    const perToken = getEffectiveProducesQuantity(state, unitType, stats.producesQuantity ?? 1);
     if (count % perToken !== 0) {
       return { ok: false, error: `RR 58: ${unitType} is produced ${perToken} at a time — ${count} isn't a multiple of that.` };
     }
@@ -147,6 +148,26 @@ export function executeProduction(
   let updatedPlanetStacks = producerStacks.map((s) => ({ ...s }));
   const events: GameEvent[] = [];
 
+  // RR 58 (structures): confirmed limits — at most 2 PDS and 1 space dock
+  // per planet, counting ALL players' units there together (these are
+  // physical board limits, not per-player). RR "Homeland Defense Act"
+  // ("for"): while that law is active, the PDS limit specifically is
+  // lifted — the space dock limit is untouched, the card's own text only
+  // ever mentions PDS.
+  const pdsLimitLifted = isLawActiveWithOutcome(state, "homeland_defense_act" as AgendaId, "for");
+  for (const { unitType, count } of resolvedUnits) {
+    if (unitType !== "pds" && unitType !== "space_dock") continue;
+    const limit = unitType === "pds" ? 2 : 1;
+    if (unitType === "pds" && pdsLimitLifted) continue;
+    const existingOnPlanet = Object.values(planet.unitsByPlayer)
+      .flat()
+      .filter((s): s is NonNullable<typeof s> => Boolean(s) && s!.unitType === unitType)
+      .reduce((sum, s) => sum + s!.count, 0);
+    if (existingOnPlanet + count > limit) {
+      return { ok: false, error: `RR 58: ${planetId} can have at most ${limit} ${unitType}(s); it already has ${existingOnPlanet}.` };
+    }
+  }
+
   for (const { unitType, count, unitCost } of resolvedUnits) {
     const isShip = SHIP_TYPES.includes(unitType);
     const target = isShip ? updatedSpaceStacks : updatedPlanetStacks;
@@ -162,7 +183,7 @@ export function executeProduction(
       planetId,
       unitType,
       count,
-      totalCost: (count / (getUnitStats(rules, player.factionId, unitType, player.unitUpgrades)?.producesQuantity ?? 1)) * unitCost,
+      totalCost: (count / getEffectiveProducesQuantity(state, unitType, getUnitStats(rules, player.factionId, unitType, player.unitUpgrades)?.producesQuantity ?? 1)) * unitCost,
     });
   }
 
