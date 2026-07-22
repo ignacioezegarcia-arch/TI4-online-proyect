@@ -322,6 +322,58 @@ export interface GameState {
    */
   pendingAntiIntellectualRevolutionExhaustion?: PlayerId[];
   /**
+   * RR "Committee Formation": confirmed, this check happens BEFORE any
+   * vote opens on an agenda whose own outcome elects a player — if
+   * someone currently owns Committee Formation, THEY get first refusal:
+   * discard it to directly pick the elected player (no vote at all for
+   * this agenda), or decline and let the normal vote proceed as usual.
+   * Set by revealAgenda instead of immediately opening pendingAgendaVote;
+   * cleared (one way or the other) by USE_COMMITTEE_FORMATION or
+   * SKIP_COMMITTEE_FORMATION — see phases/agendaEffects.ts.
+   */
+  pendingCommitteeFormationDecision?: { agendaId: AgendaId; ownerId: PlayerId };
+  /**
+   * RR "Homeland Defense Act" ("against"): players who still owe
+   * destroying 1 of their own PDS units — a real choice of WHICH one (they
+   * may have PDS on more than one planet), same "player picks" pattern as
+   * everywhere else in this project. See phases/agendaEffects.ts.
+   */
+  pendingHomelandDefenseActDestruction?: PlayerId[];
+  /**
+   * RR "Executive Sanctions" ("against"): players who still owe discarding
+   * 1 random action card — the RANDOMNESS itself is resolved by whichever
+   * trusted context applies the action (same convention as pre-rolled
+   * dice elsewhere in this project: the client can guess locally for an
+   * instant animation, but the Edge Function's own random pick is what
+   * actually gets persisted), not a genuine player choice, so this still
+   * needs its own pending+action pair even though nobody's really
+   * "deciding" anything. See phases/agendaEffects.ts.
+   */
+  pendingExecutiveSanctionsRandomDiscard?: PlayerId[];
+  /**
+   * RR "Representative Government" (either version, "against"): players
+   * who voted "against" and so owe exhausting ALL of their cultural
+   * planets — accumulates across however many agendas trigger it in the
+   * same agenda phase, applied automatically (no player choice needed,
+   * it's unconditionally "all" of them) right when the next strategy
+   * phase actually starts — see phases/actionPhase.ts's startNewRound.
+   */
+  pendingRepresentativeGovernmentAgainstVoters?: PlayerId[];
+  /**
+   * RR 20/70.5: confirmed — whenever a player gains a NEW command token
+   * from any source (RR 70.5's status-phase gain is the only source this
+   * engine currently implements, but there are several others in the
+   * full game), the PLAYER decides which of their 3 pools it goes into,
+   * it's never auto-assigned. This tracks how many still-unplaced tokens
+   * each player owes from whatever they most recently gained — see
+   * rules/commandTokens.ts's placeGainedCommandTokens (the shared
+   * validate+place logic, including RR "Fleet Regulations"'s own fleet-
+   * pool cap when active) and PLACE_GAINED_COMMAND_TOKENS. Blocks the
+   * status phase from finishing until every listed player has placed
+   * theirs — see phases/actionPhase.ts's autoAdvancePhase.
+   */
+  pendingCommandTokenGains?: Partial<Record<PlayerId, number>>;
+  /**
    * RR 52-adjacent: a short rolling buffer of this game's own already-typed
    * GameEvents (see Actions.ts), reused as-is rather than inventing a
    * parallel "combat history" structure. Needed for actionPhase-timed
