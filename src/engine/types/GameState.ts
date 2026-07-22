@@ -46,6 +46,8 @@ export interface PlanetState {
   explored: boolean;
   /** RR 53: legendary planets have a separate ability card that exhausts/readies INDEPENDENTLY of the planet card itself (RR: "an ability that readies a planet cannot be used to ready a legendary planet ability card"). Undefined/irrelevant for non-legendary planets. See phases/invasion.ts's setPlanetController for the RR 25.1/53.2 rule on what happens to each when control changes. */
   legendaryAbilityExhausted?: boolean;
+  /** RR agenda-attachment cards with their OWN exhaustable ability (currently just the 4 Research Team variants) — separate from the planet's own readied/exhausted state, same "own independent exhausted-state" pattern as legendaryAbilityExhausted above. Which specific attachment ids (from `attachmentIds`) are currently exhausted. */
+  exhaustedAttachmentIds?: string[];
   /**
    * Ground forces and structures physically on the planet (RR 39, 74), keyed
    * by owning player — mirrors SystemState.spaceUnitsByPlayer. Needs to be
@@ -500,6 +502,23 @@ export interface PendingTacticalAction {
    */
   assaultCannonPendingPlayer?: PlayerId;
   assaultCannonStage?: "attacker" | "defender";
+  /**
+   * RR "The Crown of Thalnos": which combatant(s) still owe this decision
+   * for the round that JUST resolved — the owner's own choice of how many
+   * dice, PER UNIT TYPE they own in this fight, to reroll (only from among
+   * that type's own MISSED dice this round — see
+   * rules/combat.ts's CombatRoundResult.missedDiceByPlayerAndType, snapshotted
+   * here the moment the round resolves). Whichever of the new rolls still
+   * miss destroys that many units of that type — mandatory, but the
+   * PLAYER decides how many (if any) of each type to even attempt,
+   * per the confirmed example: 5 cruisers all miss, owner rerolls only 2,
+   * only those 2 are ever at risk. Cleared (all types) once the owner
+   * either uses or explicitly skips it for this round — doesn't block
+   * `pendingHits` from being assigned in parallel, since this only ever
+   * affects the OWNER's own units, never the opponent's.
+   */
+  crownOfThalnosPendingPlayers?: PlayerId[];
+  crownOfThalnosMissedDiceByPlayer?: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>>;
 }
 
 export interface PendingAgendaVote {
