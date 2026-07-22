@@ -1,8 +1,8 @@
 import { GameState, Player } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, TechId, UnitUpgradeId, PlanetId, asTechId } from "../types/ids";
+import { PlayerId, TechId, UnitUpgradeId, PlanetId, AgendaId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
-import { maybeQueueAntiIntellectualRevolutionDestruction } from "./agendaEffects";
+import { maybeQueueAntiIntellectualRevolutionDestruction, isLawActiveWithOutcome } from "./agendaEffects";
 
 /**
  * RR 90 TECHNOLOGY. There's no general "spend resources, research anything"
@@ -111,6 +111,18 @@ export function checkUnitUpgradePrerequisites(
 ): { met: boolean; reason?: string } {
   const upgradeData = rules.unitUpgradeTechData[upgradeId];
   if (!upgradeData) return { met: false, reason: `No rule data for ${upgradeId}.` };
+
+  // RR "Publicize Weapon Schematics" ("for"): confirmed, if ANY player
+  // already owns a war sun technology, every player may ignore ALL
+  // prerequisites when researching a war sun technology of their own —
+  // not just one color's worth, the whole list, only for war-sun-unit-
+  // upgrade techs specifically.
+  const isWarSunUpgrade = rules.unitUpgrades[upgradeId]?.unitType === "war_sun";
+  if (isWarSunUpgrade && isLawActiveWithOutcome(state, "publicize_weapon_schematics" as AgendaId, "for")) {
+    const anyoneOwnsWarSun = Object.values(state.players).some((p) => p.unitUpgrades.some((id) => rules.unitUpgrades[id]?.unitType === "war_sun"));
+    if (anyoneOwnsWarSun) return { met: true };
+  }
+
   const synergy = rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null;
   return checkPrerequisitesAgainst(upgradeData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreOnePrerequisiteOfColor);
 }
