@@ -1,7 +1,8 @@
 import { GameState, Player } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, ActionCardId } from "../types/ids";
+import { PlayerId, ActionCardId, AgendaId } from "../types/ids";
 import { fisherYatesShuffle } from "../setup/mapGeneration";
+import { getLawOwner } from "./agendaEffects";
 
 /**
  * RR 2 ACTION CARDS.
@@ -31,6 +32,10 @@ export function playActionCard(
 ): ActionResult {
   const player = state.players[action.playerId];
   if (!player) return { ok: false, error: "Unknown player." };
+  // RR "Political Censure": the elected player cannot play action cards while they own this card.
+  if (getLawOwner(state, "political_censure" as AgendaId) === action.playerId) {
+    return { ok: false, error: 'RR "Political Censure": this player cannot play action cards while they own this card.' };
+  }
   if (!player.actionCards.includes(action.cardId)) {
     return { ok: false, error: "This player doesn't have that action card in hand." };
   }
