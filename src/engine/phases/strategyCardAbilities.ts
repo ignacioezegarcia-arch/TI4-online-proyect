@@ -1,12 +1,12 @@
 import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId, PlanetId, TechId, UnitUpgradeId, ObjectiveId } from "../types/ids";
+import { PlayerId, SystemId, PlanetId, TechId, UnitUpgradeId, ObjectiveId, AgendaId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { isAdjacent } from "../rules/adjacency";
 import { executeProduction } from "./production";
 import { researchTechnology, researchUnitUpgrade } from "./technology";
 import { scoreObjectiveCore } from "./actionPhase";
-import { maybeApplyMinisterOfCommerce } from "./agendaEffects";
+import { maybeApplyMinisterOfCommerce, getLawOwner } from "./agendaEffects";
 
 /**
  * RR 20-ish, one section per strategy card (data/strategyCards.json has the
@@ -216,7 +216,10 @@ export function resolveStrategyPrimary(
       const free = researchTechnology(state, action.playerId, freeTechId, 0, [], rules);
       if (!free.ok) return free;
       if (!paidTechId) return free;
-      return researchTechnology(free.state, action.playerId, paidTechId, 6, paidSpendIds, rules);
+      // RR "Minister of Sciences": the owner doesn't need to spend resources when resolving Technology's primary/secondary — the SECOND research this ability grants is free for them, same as the first always is for everyone.
+      const ministerOfSciencesOwnerId = getLawOwner(free.state, "minister_of_sciences" as AgendaId);
+      const paidCost = ministerOfSciencesOwnerId === action.playerId ? 0 : 6;
+      return researchTechnology(free.state, action.playerId, paidTechId, paidCost, paidSpendIds, rules);
     }
 
     case "imperial": {
@@ -317,7 +320,10 @@ export function resolveStrategySecondary(
     case "technology": {
       const techId = p.techId as TechId;
       const spendIds = (p.exhaustPlanetIds as PlanetId[]) ?? [];
-      return researchTechnology(working, action.playerId, techId, 4, spendIds, rules);
+      // RR "Minister of Sciences": see the primary handler's own note — same free-research treatment for the owner here.
+      const ministerOfSciencesOwnerId = getLawOwner(working, "minister_of_sciences" as AgendaId);
+      const cost = ministerOfSciencesOwnerId === action.playerId ? 0 : 4;
+      return researchTechnology(working, action.playerId, techId, cost, spendIds, rules);
     }
     case "imperial": {
       const deck = working.secretObjectiveDeck;
