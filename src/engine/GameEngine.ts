@@ -20,7 +20,7 @@ import {
   skipMagenDefenseGrid,
   assignMagenDefenseGridHit,
 } from "./phases/invasion";
-import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring } from "./phases/actionPhase";
+import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring, placeGainedCommandTokensAction } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
 import { playActionCard, discardActionCard } from "./phases/actionCards";
 import { revealAgenda, castVotes } from "./phases/agendaPhase";
@@ -41,7 +41,7 @@ import {
   useTransitDiodes,
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
-import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution } from "./phases/agendaEffects";
+import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions } from "./phases/agendaEffects";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -130,6 +130,9 @@ export const GameEngine = {
       case "FINISH_STATUS_PHASE_SCORING":
         result = finishStatusPhaseScoring(state, action);
         break;
+      case "PLACE_GAINED_COMMAND_TOKENS":
+        result = placeGainedCommandTokensAction(state, action);
+        break;
       case "CAST_VOTES":
         result = castVotes(state, action, rules);
         break;
@@ -211,7 +214,19 @@ export const GameEngine = {
         result = destroyShipForAntiIntellectualRevolution(state, action);
         break;
       case "EXHAUST_PLANETS_FOR_ANTI_INTELLECTUAL_REVOLUTION":
-        result = exhaustPlanetsForAntiIntellectualRevolution(state, action);
+        result = exhaustPlanetsForAntiIntellectualRevolution(state, action, rules);
+        break;
+      case "USE_COMMITTEE_FORMATION":
+        result = useCommitteeFormation(state, action, rules);
+        break;
+      case "SKIP_COMMITTEE_FORMATION":
+        result = skipCommitteeFormation(state, action, rules);
+        break;
+      case "DESTROY_PDS_FOR_HOMELAND_DEFENSE_ACT":
+        result = destroyPdsForHomelandDefenseAct(state, action);
+        break;
+      case "RANDOM_DISCARD_FOR_EXECUTIVE_SANCTIONS":
+        result = discardRandomActionCardForExecutiveSanctions(state, action);
         break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
@@ -319,6 +334,9 @@ export const GameEngine = {
     if (state.phase === "status" && !state.statusPhaseScoring?.[playerId]?.done) {
       legal.push("SCORE_OBJECTIVE", "FINISH_STATUS_PHASE_SCORING");
     }
+    if (state.pendingCommandTokenGains?.[playerId]) {
+      legal.push("PLACE_GAINED_COMMAND_TOKENS");
+    }
 
     // RR 2.4/2.7: discarding (voluntary, e.g. hand-limit compliance) and
     // playing an action card aren't tied to a specific phase the way most
@@ -397,6 +415,15 @@ export const GameEngine = {
     }
     if ((state.pendingAntiIntellectualRevolutionExhaustion ?? []).includes(playerId)) {
       legal.push("EXHAUST_PLANETS_FOR_ANTI_INTELLECTUAL_REVOLUTION");
+    }
+    if (state.pendingCommitteeFormationDecision?.ownerId === playerId) {
+      legal.push("USE_COMMITTEE_FORMATION", "SKIP_COMMITTEE_FORMATION");
+    }
+    if ((state.pendingHomelandDefenseActDestruction ?? []).includes(playerId)) {
+      legal.push("DESTROY_PDS_FOR_HOMELAND_DEFENSE_ACT");
+    }
+    if ((state.pendingExecutiveSanctionsRandomDiscard ?? []).includes(playerId)) {
+      legal.push("RANDOM_DISCARD_FOR_EXECUTIVE_SANCTIONS");
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
