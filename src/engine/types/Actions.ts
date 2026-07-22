@@ -30,7 +30,13 @@ import { UnitType, ObjectiveKind } from "./enums";
  */
 export type GameAction =
   // --- Strategy phase (RR 73) ---
-  | { type: "CHOOSE_STRATEGY_CARD"; playerId: PlayerId; cardId: StrategyCardId }
+  | {
+      type: "CHOOSE_STRATEGY_CARD";
+      playerId: PlayerId;
+      cardId: StrategyCardId;
+      /** RR "Checks and Balances" ("for"): while this law is active, the chosen card doesn't stay with the choosing player — it must go to another player who doesn't yet have their full strategy-card count for the round, if any such player exists. This is the choosing player's own pick of WHO receives it; ignored entirely when the law isn't active. */
+      giveToPlayerId?: PlayerId;
+    }
 
   // --- Action phase / turn structure (RR 3) ---
   | { type: "PASS"; playerId: PlayerId }
@@ -312,6 +318,14 @@ export type GameAction =
       };
     } // RR 52/70.1
   | { type: "FINISH_STATUS_PHASE_SCORING"; playerId: PlayerId } // RR 70.1: player signals done scoring (0, 1, or 2 objectives) for this status phase
+  | {
+      type: "PLACE_GAINED_COMMAND_TOKENS";
+      playerId: PlayerId;
+      /** RR 20/70.5: the player's own choice of how to split their newly-gained command tokens (from GameState.pendingCommandTokenGains) across their 3 pools — must sum to exactly that many. See rules/commandTokens.ts. */
+      tactic: number;
+      fleet: number;
+      strategy: number;
+    }
 
   // --- Agenda phase (RR 8) ---
   | {
@@ -339,6 +353,25 @@ export type GameAction =
       playerId: PlayerId;
       /** RR "Anti-Intellectual Revolution" ("against"): must be exactly 1 planet per technology this player currently owns — the one-time effect at the start of the strategy phase this agenda's resolution led into. */
       planetIds: PlanetId[];
+    }
+  | {
+      type: "USE_COMMITTEE_FORMATION";
+      playerId: PlayerId;
+      /** RR "Committee Formation": the owner's own choice of who to directly elect (skipping the vote entirely) for the pending Player-elect agenda — only offered while PendingCommitteeFormationDecision names them as the owner. */
+      chosenPlayerId: PlayerId;
+    }
+  | { type: "SKIP_COMMITTEE_FORMATION"; playerId: PlayerId } // declines to use it this time; the normal vote opens instead
+  | {
+      type: "DESTROY_PDS_FOR_HOMELAND_DEFENSE_ACT";
+      playerId: PlayerId;
+      /** RR "Homeland Defense Act" ("against"): mandatory (no skip) — the player's own choice of WHICH planet's PDS to destroy, since they may have PDS on more than one. */
+      planetId: PlanetId;
+    }
+  | {
+      type: "RANDOM_DISCARD_FOR_EXECUTIVE_SANCTIONS";
+      playerId: PlayerId;
+      /** RR "Executive Sanctions" ("against"): the trusted context's own random pick of which card this player discards — not a genuine player choice, same convention as pre-rolled dice. */
+      cardId: ActionCardId;
     }
 
   // --- Meta ---
