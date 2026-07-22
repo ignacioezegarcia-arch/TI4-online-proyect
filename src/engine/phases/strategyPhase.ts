@@ -1,7 +1,8 @@
 import { GameState, Player } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, StrategyCardId } from "../types/ids";
+import { PlayerId, StrategyCardId, AgendaId } from "../types/ids";
 import { computeInitiativeOrder } from "../rules/initiative";
+import { isLawActiveWithOutcome } from "./agendaEffects";
 
 /**
  * RR 73 STRATEGY PHASE.
@@ -16,7 +17,7 @@ import { computeInitiativeOrder } from "../rules/initiative";
  */
 export function chooseStrategyCard(
   state: GameState,
-  action: { type: "CHOOSE_STRATEGY_CARD"; playerId: PlayerId; cardId: StrategyCardId },
+  action: { type: "CHOOSE_STRATEGY_CARD"; playerId: PlayerId; cardId: StrategyCardId; giveToPlayerId?: PlayerId },
 ): ActionResult {
   if (state.phase !== "strategy") {
     return { ok: false, error: "RR 73: strategy cards can only be chosen during the strategy phase." };
@@ -38,22 +39,37 @@ export function chooseStrategyCard(
     return { ok: false, error: "RR 73.1: it's not this player's turn to choose a strategy card." };
   }
 
+  // RR "Checks and Balances" ("for"): the chosen card must go to another
+  // player who doesn't yet have their full count for the round, if any —
+  // the CHOOSING player's own turn/pick of the CARD is unaffected, only
+  // who ends up holding it changes.
+  const checksAndBalances = isLawActiveWithOutcome(state, "checks_and_balances" as AgendaId, "for");
+  const eligibleRecipients = Object.values(state.players).filter((p) => p.id !== action.playerId && p.strategyCards.length < cardsNeeded);
+  let recipientId = action.playerId;
+  if (checksAndBalances && eligibleRecipients.length > 0) {
+    if (!action.giveToPlayerId || !eligibleRecipients.some((p) => p.id === action.giveToPlayerId)) {
+      return { ok: false, error: 'RR "Checks and Balances": must give this card to another player who doesn\'t yet have their strategy card(s) for the round.' };
+    }
+    recipientId = action.giveToPlayerId;
+  }
+
   // Gain any trade goods sitting on the card (RR 73.1 bullet, carried over from a previous round's step 2).
   const tradeGoodsGained = entry.tradeGoods;
 
-  const updatedPlayer: Player = {
-    ...player,
-    strategyCards: [...player.strategyCards, { cardId: action.cardId, exhausted: false }],
-    tradeGoods: player.tradeGoods + tradeGoodsGained,
+  const recipient = state.players[recipientId];
+  const updatedRecipient: Player = {
+    ...recipient,
+    strategyCards: [...recipient.strategyCards, { cardId: action.cardId, exhausted: false }],
+    tradeGoods: recipient.tradeGoods + tradeGoodsGained,
   };
 
   let nextState: GameState = {
     ...state,
-    players: { ...state.players, [player.id]: updatedPlayer },
+    players: { ...state.players, [recipientId]: updatedRecipient },
     unclaimedStrategyCards: state.unclaimedStrategyCards.filter((c) => c.cardId !== action.cardId),
   };
 
-  const events: GameEvent[] = [{ type: "STRATEGY_CARD_CHOSEN", playerId: player.id, cardId: action.cardId }];
+  const events: GameEvent[] = [{ type: "STRATEGY_CARD_CHOSEN", playerId: recipientId, cardId: action.cardId }];
 
   // RR 73.2: once every player holds their strategy card(s) for the round,
   // place 1 trade good on every card that ended up unchosen (a no-op in 4p,
