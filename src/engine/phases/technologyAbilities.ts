@@ -1,9 +1,10 @@
 import { GameState, Player, PlanetState, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId, asTechId } from "../types/ids";
+import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
 import { UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
+import { isLawActiveWithOutcome } from "./agendaEffects";
 import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
 import { applyExplorationCard } from "./exploration";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
@@ -361,6 +362,14 @@ export function usePredictiveIntelligenceRedistribute(
   const newTotal = action.tactic + action.fleet + action.strategy;
   if (newTotal !== currentTotal) {
     return { ok: false, error: `RR "Predictive Intelligence": redistribution must keep the same total (${currentTotal}), got ${newTotal}.` };
+  }
+  // RR "Fleet Regulations" ("for"): confirmed, a player can never place a
+  // new command token into their fleet pool once it's at 4 — this is the
+  // one place in this engine today where a player actually chooses how
+  // many tokens sit in each of their own pools, so it's the one place
+  // this cap can currently be violated.
+  if (action.fleet > 4 && isLawActiveWithOutcome(state, "fleet_regulations" as AgendaId, "for")) {
+    return { ok: false, error: 'RR "Fleet Regulations": a player\'s fleet pool cannot exceed 4 command tokens while this law is active.' };
   }
 
   const updatedPlayer = exhaustTech(
