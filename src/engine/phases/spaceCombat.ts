@@ -4,6 +4,7 @@ import { PlayerId, SystemId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { isAdjacent } from "../rules/adjacency";
+import { getEffectiveUnitAbilities } from "./agendaEffects";
 import {
   playersWithShipsInSystem,
   buildSpaceCombatEntries,
@@ -223,7 +224,7 @@ export function assignAntiFighterBarrageHits(
   const player = state.players[action.playerId];
   const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
   if (!result.ok) return { ok: false, error: `RR 67.1: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -401,7 +402,7 @@ export function assignHits(
   const player = state.players[action.playerId];
   const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
   if (!result.ok) return { ok: false, error: `RR 67.6: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -432,7 +433,7 @@ export function assignHits(
   // is resolved.
   const eligibleForDuraniumArmor =
     player.technologies.includes(asTechId("duranium_armor")) &&
-    stacks.some((s) => s.damagedCount > 0 && (getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades)?.abilities.includes("sustainDamage") ?? false));
+    stacks.some((s) => s.damagedCount > 0 && getEffectiveUnitAbilities(state, rules, player.factionId, s.unitType, player.unitUpgrades).includes("sustainDamage"));
 
   const duraniumArmorPendingPlayers = eligibleForDuraniumArmor
     ? [...(pending.duraniumArmorPendingPlayers ?? []), action.playerId]
@@ -478,8 +479,8 @@ export function useDuraniumArmor(
   if (!stack || stack.damagedCount <= 0) {
     return { ok: false, error: `No damaged ${action.unitType} to repair.` };
   }
-  const unitStats = getUnitStats(rules, player.factionId, action.unitType, player.unitUpgrades);
-  if (!unitStats?.abilities.includes("sustainDamage")) {
+  const effectiveAbilities = getEffectiveUnitAbilities(state, rules, player.factionId, action.unitType, player.unitUpgrades);
+  if (!effectiveAbilities.includes("sustainDamage")) {
     return { ok: false, error: `RR 76: ${action.unitType} doesn't have Sustain Damage.` };
   }
 
