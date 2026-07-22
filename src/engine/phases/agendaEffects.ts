@@ -1,10 +1,11 @@
-import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
+import { GameState, Player, PlanetState, SystemState, PendingTacticalAction } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, AgendaId } from "../types/ids";
 import { UnitType, UnitAbility, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
-import { startNewRound } from "./actionPhase";
+import { startNewRound, maybeAdvanceActivePlayer } from "./actionPhase";
 import { arePlayersNeighbors } from "../rules/adjacency";
+import { buildGroundCombatEntries, buildSpaceCombatEntries } from "../rules/combat";
 import { finalizeAgendaResolution, revealAgenda } from "./agendaPhase";
 
 /**
@@ -114,6 +115,51 @@ export function applyAgendaResolutionSideEffects(state: GameState, rules: RuleDa
     }
   }
 
+  // RR "attach" agendas (Core Mining, Demilitarized Zone, Holy Planet of
+  // Ixth, the 4 Research Team, Senate Sanctuary, Terraforming Initiative):
+  // confirmed via data/agendas.json's own `isAttachment` flag — ALL 8
+  // share the exact same first step (attach this card to whichever planet
+  // was elected), checked generically here instead of listing every id.
+  // Each one's own FURTHER one-time effect (if any) still needs its own
+  // specific handling below, since those genuinely differ card to card —
+  // numeric resource/influence bonuses are read back out in
+  // rules/planetStats.ts's getEffectivePlanetStats; Research Team's own
+  // ongoing "ignore 1 prerequisite" ability is checked generically in
+  // phases/technology.ts via this same agenda's own `attachTechColor`.
+  if (rules.agendas[agendaId]?.isAttachment && winner) {
+    const planetId = winner as PlanetId;
+    const entry = Object.entries(nextState.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
+    if (entry) {
+      const [systemId, system] = entry;
+      const planet = system.planets.find((p) => p.planetId === planetId)!;
+      let updatedPlanet: PlanetState = { ...planet, attachmentIds: [...planet.attachmentIds, agendaId] };
+
+      // RR "Core Mining": destroy 1 infantry on the planet (any owner's — the card's own text doesn't specify whose, if more than one player somehow has infantry there, this takes the first found).
+      if (agendaId === "core_mining") {
+        const infantryOwnerId = Object.entries(updatedPlanet.unitsByPlayer).find(([, stacks]) => (stacks ?? []).some((s) => s.unitType === "infantry" && s.count > 0))?.[0] as PlayerId | undefined;
+        if (infantryOwnerId) {
+          const stacks = (updatedPlanet.unitsByPlayer[infantryOwnerId] ?? []).map((s) => (s.unitType === "infantry" ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+          updatedPlanet = { ...updatedPlanet, unitsByPlayer: { ...updatedPlanet.unitsByPlayer, [infantryOwnerId]: stacks } };
+        }
+      }
+
+      // RR "Demilitarized Zone": destroy EVERY unit (any player's) currently there. Its OWN ongoing restriction ("units cannot land, be produced, or be placed on this planet") is enforced separately — see phases/invasion.ts's commitGroundForces, phases/production.ts's executeProduction, and phases/technologyAbilities.ts's useTransitDiodes (this project's own 3 "place a ground force on a planet" call sites).
+      if (agendaId === "demilitarized_zone") {
+        updatedPlanet = { ...updatedPlanet, unitsByPlayer: {} };
+      }
+
+      nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } } };
+
+      // RR "Holy Planet of Ixth": the planet's OWNER (controller, if any — it might be uncontrolled/contested at election time) gains 1 VP right away, in addition to its own ongoing "gain/lose 1 VP on control change" rule (see phases/invasion.ts's setPlanetController).
+      if (agendaId === "holy_planet_of_ixth" && updatedPlanet.controllerId) {
+        const owner = nextState.players[updatedPlanet.controllerId];
+        if (owner) {
+          nextState = { ...nextState, players: { ...nextState.players, [updatedPlanet.controllerId]: { ...owner, victoryPoints: { ...owner.victoryPoints, current: owner.victoryPoints.current + 1 } } } };
+        }
+      }
+    }
+  }
+
   return nextState;
 }
 
@@ -123,6 +169,11 @@ export function getEffectiveProducesQuantity(state: GameState, unitType: UnitTyp
     return 1;
   }
   return basePerToken;
+}
+
+/** RR "Demilitarized Zone": is this planet currently under this agenda's own permanent restriction (units cannot land, be produced, or be placed there)? Checked at every "place a unit on a planet" call site this project has. */
+export function isDemilitarizedZone(planet: { attachmentIds: string[] }): boolean {
+  return planet.attachmentIds.includes("demilitarized_zone");
 }
 
 // ---------------------------------------------------------------------
@@ -355,4 +406,270 @@ export function maybeApplyMinisterOfCommerce(state: GameState, rules: RuleData, 
   if (neighborCount === 0) return state;
   const owner = state.players[ownerId];
   return { ...state, players: { ...state.players, [ownerId]: { ...owner, tradeGoods: owner.tradeGoods + neighborCount } } };
+}
+
+/** RR "Imperial Arbiter": the owner's own choice, offered once the strategy phase ends — discard this card to swap one of THEIR strategy cards with one of another player's. */
+export function useImperialArbiter(
+  state: GameState,
+  action: { type: "USE_IMPERIAL_ARBITER"; playerId: PlayerId; ownCardId: import("../types/ids").StrategyCardId; otherPlayerId: PlayerId; otherCardId: import("../types/ids").StrategyCardId },
+): ActionResult {
+  const ownerId = getLawOwner(state, "imperial_arbiter" as AgendaId);
+  if (ownerId !== action.playerId) return { ok: false, error: "This player doesn't own Imperial Arbiter." };
+  if (action.otherPlayerId === action.playerId) return { ok: false, error: "RR \"Imperial Arbiter\": must swap with ANOTHER player." };
+
+  const owner = state.players[action.playerId];
+  const other = state.players[action.otherPlayerId];
+  if (!other) return { ok: false, error: `Unknown player ${action.otherPlayerId}.` };
+  const ownEntry = owner.strategyCards.find((c) => c.cardId === action.ownCardId);
+  const otherEntry = other.strategyCards.find((c) => c.cardId === action.otherCardId);
+  if (!ownEntry) return { ok: false, error: "This player doesn't hold that strategy card." };
+  if (!otherEntry) return { ok: false, error: "The other player doesn't hold that strategy card." };
+
+  const updatedOwner: Player = { ...owner, strategyCards: owner.strategyCards.map((c) => (c.cardId === action.ownCardId ? otherEntry : c)) };
+  const updatedOther: Player = { ...other, strategyCards: other.strategyCards.map((c) => (c.cardId === action.otherCardId ? ownEntry : c)) };
+
+  const nextState: GameState = {
+    ...state,
+    agendaDeck: { ...state.agendaDeck, lawsInPlay: state.agendaDeck.lawsInPlay.filter((l) => l.agendaId !== "imperial_arbiter") },
+    players: { ...state.players, [action.playerId]: updatedOwner, [action.otherPlayerId]: updatedOther },
+  };
+  return { ok: true, state: nextState, events: [] };
+}
+
+/**
+ * RR "Minister of Peace": the owner's own choice, offered right after the
+ * active player activates a system containing 1+ of ANY other player's
+ * units (not necessarily the owner's own) — discard this card to
+ * immediately end the active player's turn. Simplification, flagged: only
+ * offered before any combat/invasion has actually started this tactical
+ * action (i.e. still at "activation" or "movement") — ending a turn
+ * cleanly mid-combat, with hits already partially resolved, is a much
+ * messier state to unwind safely, and RR's own text ("immediately end the
+ * active player's turn") is most naturally read as reacting right when
+ * the system is activated anyway, not deep into an already-unfolding fight.
+ */
+export function useMinisterOfPeace(
+  state: GameState,
+  action: { type: "USE_MINISTER_OF_PEACE"; playerId: PlayerId },
+): ActionResult {
+  const ownerId = getLawOwner(state, "minister_of_peace" as AgendaId);
+  if (ownerId !== action.playerId) return { ok: false, error: "This player doesn't own Minister of Peace." };
+
+  const pending = state.pendingTacticalAction;
+  if (!pending || (pending.step !== "activation" && pending.step !== "movement")) {
+    return { ok: false, error: 'RR "Minister of Peace": no eligible tactical action to end right now.' };
+  }
+  const system = state.systems[pending.systemId];
+  const hasOtherPlayerUnits =
+    Object.entries(system?.spaceUnitsByPlayer ?? {}).some(([pid, stacks]) => pid !== pending.playerId && (stacks ?? []).some((s) => s.count > 0)) ||
+    (system?.planets ?? []).some((p) => Object.entries(p.unitsByPlayer).some(([pid, stacks]) => pid !== pending.playerId && (stacks ?? []).some((s) => s.count > 0)));
+  if (!hasOtherPlayerUnits) {
+    return { ok: false, error: 'RR "Minister of Peace": the activated system has no other player\'s units in it.' };
+  }
+
+  const stateWithoutCard: GameState = {
+    ...state,
+    agendaDeck: { ...state.agendaDeck, lawsInPlay: state.agendaDeck.lawsInPlay.filter((l) => l.agendaId !== "minister_of_peace") },
+    pendingTacticalAction: null,
+  };
+  const nextState = maybeAdvanceActivePlayer(stateWithoutCard, pending.playerId);
+  return { ok: true, state: nextState, events: [] };
+}
+
+/** RR "Minister of War": the owner's own choice, after performing an action — discard this card to remove 1 of their own command tokens from the board back into their tactic pool (the pool spent by RR 78's own "activate a system"), then take 1 additional action (they stay the active player, same as Fleet Logistics's own extra-action allowance). */
+export function useMinisterOfWar(
+  state: GameState,
+  action: { type: "USE_MINISTER_OF_WAR"; playerId: PlayerId; systemId: SystemId },
+): ActionResult {
+  const ownerId = getLawOwner(state, "minister_of_war" as AgendaId);
+  if (ownerId !== action.playerId) return { ok: false, error: "This player doesn't own Minister of War." };
+  if (state.phase !== "action" || state.activePlayerId !== action.playerId) {
+    return { ok: false, error: 'RR "Minister of War": only usable on this player\'s own turn during the action phase.' };
+  }
+  const player = state.players[action.playerId];
+  if (!player.commandTokens.onBoard.includes(action.systemId)) {
+    return { ok: false, error: "This player has no command token in that system." };
+  }
+
+  const updatedPlayer: Player = {
+    ...player,
+    commandTokens: { ...player.commandTokens, tactic: player.commandTokens.tactic + 1, onBoard: player.commandTokens.onBoard.filter((id) => id !== action.systemId) },
+  };
+  const nextState: GameState = {
+    ...state,
+    agendaDeck: { ...state.agendaDeck, lawsInPlay: state.agendaDeck.lawsInPlay.filter((l) => l.agendaId !== "minister_of_war") },
+    players: { ...state.players, [action.playerId]: updatedPlayer },
+    // Stays the active player, free to take 1 more action — same "extra action" shape as Fleet Logistics elsewhere in this project.
+    activePlayerActionsTaken: 0,
+  };
+  return { ok: true, state: nextState, events: [] };
+}
+
+/**
+ * RR "Shard of the Throne" / "The Crown of Emphidia": both share the exact
+ * same shape — a VP-carrying card that jumps to whoever triggers its own
+ * specific condition (winning a combat against the current owner; gaining
+ * control of a planet in the owner's home system), giving the NEW owner
+ * the card + 1 VP, and the PREVIOUS owner losing 1 VP. A no-op if nobody
+ * currently owns the card (hasn't been elected into play yet this game),
+ * if the triggering player already IS the current owner (can't "win"
+ * against themselves / it's already their own home system), or — for
+ * Shard of the Throne specifically — if the current owner wasn't even a
+ * combatant in THIS fight at all (`requireOwnerAmong`, when supplied,
+ * confirms that).
+ */
+function maybeTransferVpCard(state: GameState, agendaId: AgendaId, newOwnerId: PlayerId, requireOwnerAmong?: PlayerId[]): GameState {
+  const law = state.agendaDeck.lawsInPlay.find((l) => l.agendaId === agendaId);
+  if (!law || law.ownerId === "common" || law.ownerId === newOwnerId) return state;
+  if (requireOwnerAmong && !requireOwnerAmong.includes(law.ownerId)) return state;
+  const previousOwnerId = law.ownerId;
+  const previousOwner = state.players[previousOwnerId];
+  const newOwner = state.players[newOwnerId];
+  if (!previousOwner || !newOwner) return state;
+
+  return {
+    ...state,
+    agendaDeck: { ...state.agendaDeck, lawsInPlay: state.agendaDeck.lawsInPlay.map((l) => (l.agendaId === agendaId ? { ...l, ownerId: newOwnerId } : l)) },
+    players: {
+      ...state.players,
+      [previousOwnerId]: { ...previousOwner, victoryPoints: { ...previousOwner.victoryPoints, current: Math.max(0, previousOwner.victoryPoints.current - 1) } },
+      [newOwnerId]: { ...newOwner, victoryPoints: { ...newOwner.victoryPoints, current: newOwner.victoryPoints.current + 1 } },
+    },
+  };
+}
+
+/** RR "Shard of the Throne": called wherever a space or ground combat concludes with a clear winner — see phases/spaceCombat.ts's wrapUpCombatRound and phases/invasion.ts's wrapUpGroundCombat. `combatantIds` confirms the current owner was actually IN this specific fight (and therefore the one who lost it) — a card owner uninvolved in this combat never loses it just because someone else won somewhere else. */
+export function maybeApplyShardOfTheThroneOnCombatWin(state: GameState, winnerId: PlayerId, combatantIds: PlayerId[]): GameState {
+  return maybeTransferVpCard(state, "shard_of_the_throne" as AgendaId, winnerId, combatantIds);
+}
+
+/** RR "The Crown of Emphidia": called wherever a player gains control of a planet — see phases/invasion.ts's setPlanetController. Only actually transfers if that planet sits in the CURRENT owner's own home system (checked by the caller, since only it knows which system this planet is in). */
+export function maybeApplyCrownOfEmphidiaOnControlGain(state: GameState, gainerId: PlayerId): GameState {
+  return maybeTransferVpCard(state, "the_crown_of_emphidia" as AgendaId, gainerId);
+}
+
+/**
+ * RR "The Crown of Thalnos": called right after a space/ground combat
+ * round resolves (before wrapping up) — if the current owner is one of
+ * this round's combatants AND missed at least 1 die, queues their own
+ * reroll decision. A no-op (returns the pending action unchanged) if
+ * nobody owns the card, or the owner had no misses this round at all.
+ */
+export function maybeQueueCrownOfThalnosReroll(
+  state: GameState,
+  pending: PendingTacticalAction,
+  missedDiceByPlayerAndType: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>>,
+): PendingTacticalAction {
+  const ownerId = getLawOwner(state, "the_crown_of_thalnos" as AgendaId);
+  if (!ownerId) return pending;
+  const ownerMisses = missedDiceByPlayerAndType[ownerId];
+  if (!ownerMisses || Object.values(ownerMisses).every((c) => !c)) return pending;
+
+  return {
+    ...pending,
+    crownOfThalnosPendingPlayers: [...(pending.crownOfThalnosPendingPlayers ?? []), ownerId],
+    crownOfThalnosMissedDiceByPlayer: { ...pending.crownOfThalnosMissedDiceByPlayer, [ownerId]: ownerMisses },
+  };
+}
+
+/** RR "The Crown of Thalnos": the owner's own choice of how many of THEIR OWN missed dice, per unit type, to reroll — whichever of the supplied `newRolls` still miss destroys that many units of that type, mandatory. Only rerolling a subset (or none at all, via skipCrownOfThalnosReroll) is fully legal — the owner never has to risk a unit they'd rather leave alone. */
+export function useCrownOfThalnosReroll(
+  state: GameState,
+  action: { type: "USE_CROWN_OF_THALNOS_REROLL"; playerId: PlayerId; rerolls: { unitType: UnitType; newRolls: number[] }[] },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || !(pending.crownOfThalnosPendingPlayers ?? []).includes(action.playerId)) {
+    return { ok: false, error: "This player has no pending Crown of Thalnos reroll decision right now." };
+  }
+  const missedByType = pending.crownOfThalnosMissedDiceByPlayer?.[action.playerId] ?? {};
+  const player = state.players[action.playerId];
+
+  // Recompute this player's OWN current hitOn per type, from the SAME
+  // entry-building logic the original round used — a reroll still has to
+  // beat the unit's normal (post-modifier) threshold, nothing about
+  // Crown of Thalnos changes what counts as a hit.
+  const isGroundCombat = pending.step === "invasion";
+  const systemOrPlanetEntries = isGroundCombat
+    ? buildGroundCombatEntries(state, rules, state.systems[pending.systemId].planets.find((p) => p.planetId === pending.currentInvasionPlanetId)!, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined)
+    : buildSpaceCombatEntries(state, rules, pending.systemId, pending.playerId);
+  const hitOnByType = new Map<UnitType, number>();
+  for (const e of systemOrPlanetEntries) {
+    if (e.playerId === action.playerId && e.unitType) hitOnByType.set(e.unitType, e.hitOn);
+  }
+
+  let unitsToDestroy: { unitType: UnitType; count: number }[] = [];
+  for (const { unitType, newRolls } of action.rerolls) {
+    const availableMisses = missedByType[unitType] ?? 0;
+    if (newRolls.length > availableMisses) {
+      return { ok: false, error: `RR "The Crown of Thalnos": tried to reroll ${newRolls.length} ${unitType} dice, only ${availableMisses} missed this round.` };
+    }
+    const hitOn = hitOnByType.get(unitType);
+    if (hitOn === undefined) return { ok: false, error: `This player has no ${unitType} in this combat.` };
+    const stillMissed = newRolls.filter((r) => r < hitOn).length;
+    if (stillMissed > 0) unitsToDestroy.push({ unitType, count: stillMissed });
+  }
+
+  const systemId = pending.systemId;
+  const events: GameEvent[] = [];
+  let nextState = state;
+
+  if (isGroundCombat) {
+    const planetId = pending.currentInvasionPlanetId!;
+    const planet = nextState.systems[systemId].planets.find((p) => p.planetId === planetId)!;
+    let stacks = (planet.unitsByPlayer[action.playerId] ?? []).map((s) => ({ ...s }));
+    for (const { unitType, count } of unitsToDestroy) {
+      const stack = stacks.find((s) => s.unitType === unitType);
+      if (stack) {
+        const removed = Math.min(count, stack.count);
+        stack.count -= removed;
+        if (stack.damagedCount > stack.count) stack.damagedCount = stack.count;
+        events.push({ type: "UNITS_DESTROYED", playerId: action.playerId, systemId, planetId, unitType, count: removed });
+      }
+    }
+    stacks = stacks.filter((s) => s.count > 0);
+    const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: stacks } };
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...nextState.systems[systemId], planets: nextState.systems[systemId].planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } } };
+  } else {
+    const system = nextState.systems[systemId];
+    let stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []).map((s) => ({ ...s }));
+    for (const { unitType, count } of unitsToDestroy) {
+      const stack = stacks.find((s) => s.unitType === unitType);
+      if (stack) {
+        const removed = Math.min(count, stack.count);
+        stack.count -= removed;
+        if (stack.damagedCount > stack.count) stack.damagedCount = stack.count;
+        events.push({ type: "UNITS_DESTROYED", playerId: action.playerId, systemId, unitType, count: removed });
+      }
+    }
+    stacks = stacks.filter((s) => s.count > 0);
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: stacks } } } };
+  }
+
+  const remainingPending = (pending.crownOfThalnosPendingPlayers ?? []).filter((id) => id !== action.playerId);
+  const remainingMissed = { ...nextState.pendingTacticalAction?.crownOfThalnosMissedDiceByPlayer };
+  delete remainingMissed[action.playerId];
+  nextState = {
+    ...nextState,
+    players: { ...nextState.players, [action.playerId]: player },
+    pendingTacticalAction: { ...nextState.pendingTacticalAction!, crownOfThalnosPendingPlayers: remainingPending, crownOfThalnosMissedDiceByPlayer: remainingMissed },
+  };
+
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "The Crown of Thalnos": the owner declines to reroll anything this round. */
+export function skipCrownOfThalnosReroll(state: GameState, action: { type: "SKIP_CROWN_OF_THALNOS_REROLL"; playerId: PlayerId }): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || !(pending.crownOfThalnosPendingPlayers ?? []).includes(action.playerId)) {
+    return { ok: false, error: "This player has no pending Crown of Thalnos reroll decision right now." };
+  }
+  const remainingPending = pending.crownOfThalnosPendingPlayers!.filter((id) => id !== action.playerId);
+  const remainingMissed = { ...pending.crownOfThalnosMissedDiceByPlayer };
+  delete remainingMissed[action.playerId];
+  return {
+    ok: true,
+    state: { ...state, pendingTacticalAction: { ...pending, crownOfThalnosPendingPlayers: remainingPending, crownOfThalnosMissedDiceByPlayer: remainingMissed } },
+    events: [],
+  };
 }
