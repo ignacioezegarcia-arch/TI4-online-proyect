@@ -100,7 +100,7 @@ export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): 
  *     36.1 (agenda phase if Mecatol's custodians are gone, else a new
  *     strategy phase).
  */
-export function autoAdvancePhase(state: GameState): { state: GameState; events: GameEvent[] } {
+export function autoAdvancePhase(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   if (state.phase === "action") {
     if (state.activePlayerId !== null) return { state, events: [] };
     if (!Object.values(state.players).every((p) => p.hasPassed || p.eliminated)) {
@@ -123,7 +123,7 @@ export function autoAdvancePhase(state: GameState): { state: GameState; events: 
     if (state.mecatolCustodiansRemoved) {
       next = { ...next, phase: "agenda", agendaPhaseAgendasResolved: 0 };
       events.push({ type: "PHASE_CHANGED", from: "status", to: "agenda", round: next.round });
-      const revealed = revealAgenda(next);
+      const revealed = revealAgenda(next, rules);
       if (revealed.ok) {
         next = revealed.state;
         events.push(...revealed.events);
