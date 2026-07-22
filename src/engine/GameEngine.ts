@@ -134,7 +134,7 @@ export const GameEngine = {
         result = castVotes(state, action, rules);
         break;
       case "REVEAL_AGENDA":
-        result = revealAgenda(state);
+        result = revealAgenda(state, rules);
         break;
       case "RESOLVE_STRATEGY_PRIMARY":
         result = resolveStrategyPrimary(state, action, rules);
@@ -277,7 +277,7 @@ export const GameEngine = {
 
     if (!result.ok || !result.state) return result;
 
-    const { state: advancedState, events: advanceEvents } = autoAdvancePhase(result.state);
+    const { state: advancedState, events: advanceEvents } = autoAdvancePhase(result.state, rules);
     const allEvents = [...(result.events ?? []), ...advanceEvents];
 
     // See GameState.ts's own doc comment on recentEvents for why this
