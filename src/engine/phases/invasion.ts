@@ -4,7 +4,7 @@ import { PlayerId, SystemId, PlanetId, AgendaId, asTechId } from "../types/ids";
 import { UnitType, STRUCTURE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { usesCodex4Version } from "../rules/gameMode";
-import { isLawActiveWithOutcome, getLawOwner } from "./agendaEffects";
+import { isLawActiveWithOutcome, getLawOwner, maybeApplyShardOfTheThroneOnCombatWin, maybeApplyCrownOfEmphidiaOnControlGain, maybeQueueCrownOfThalnosReroll, isDemilitarizedZone } from "./agendaEffects";
 import {
   playersWithGroundForces,
   buildBombardmentEntries,
@@ -238,6 +238,9 @@ export function commitGroundForces(
   const system = state.systems[systemId];
   const planet = system.planets.find((p) => p.planetId === action.targetPlanetId);
   if (!planet) return { ok: false, error: `No planet ${action.targetPlanetId} in ${systemId}.` };
+  if (isDemilitarizedZone(planet)) {
+    return { ok: false, error: 'RR "Demilitarized Zone": units cannot land on this planet.' };
+  }
 
   const spaceStacks = system.spaceUnitsByPlayer[action.playerId] ?? [];
   let updatedSpaceStacks = spaceStacks.map((s) => ({ ...s }));
@@ -674,12 +677,13 @@ export function resolveGroundCombatRound(
   if (result.hitsScoredByPlayer[b]) pendingHits[a] = result.hitsScoredByPlayer[b];
 
   const round = pending.combatRound ?? 1;
-  let nextState: GameState = { ...state, pendingTacticalAction: { ...pending, combatRound: round, pendingHits } };
+  const updatedPending = maybeQueueCrownOfThalnosReroll(state, { ...pending, combatRound: round, pendingHits }, result.missedDiceByPlayerAndType);
+  let nextState: GameState = { ...state, pendingTacticalAction: updatedPending };
   const events: GameEvent[] = [
     { type: "COMBAT_ROUND_RESOLVED", systemId, planetId, round, hitsScoredByPlayer: result.hitsScoredByPlayer },
   ];
 
-  if (Object.keys(pendingHits).length === 0) {
+  if (Object.keys(pendingHits).length === 0 && (updatedPending.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpGroundCombat(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
@@ -735,7 +739,7 @@ export function assignGroundCombatHits(
     pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
   };
 
-  if (Object.keys(remainingPendingHits).length === 0) {
+  if (Object.keys(remainingPendingHits).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpGroundCombat(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
@@ -783,6 +787,12 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
   const system = state.systems[systemId];
   const planet = system.planets.find((p) => p.planetId === planetId)!;
 
+  // Object.keys here (not playersWithGroundForces) on purpose — a
+  // combatant wiped out to 0 units this round still has their (now empty)
+  // stacks entry in unitsByPlayer, so this is the only reliable way to
+  // recover "who was actually fighting here" for RR "Shard of the
+  // Throne"'s own check below, once one side has been fully eliminated.
+  const combatantsBeforeEnd = Object.keys(planet.unitsByPlayer) as PlayerId[];
   const survivors = playersWithGroundForces(planet);
   const events: GameEvent[] = [];
   let nextState = state;
@@ -791,6 +801,7 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
     const winner = survivors[0] ?? null;
     if (winner) {
       nextState = setPlanetController(nextState, systemId, planetId, winner, rules);
+      nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winner, combatantsBeforeEnd);
       events.push({ type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
     }
     events.push({ type: "GROUND_COMBAT_ENDED", systemId, planetId, survivingPlayerId: winner });
@@ -861,6 +872,15 @@ function setPlanetController(state: GameState, systemId: SystemId, planetId: Pla
       const prev = nextState.players[previousControllerId];
       nextState = { ...nextState, players: { ...nextState.players, [previousControllerId]: { ...prev, victoryPoints: { ...prev.victoryPoints, current: Math.max(0, prev.victoryPoints.current - 1) } } } };
     }
+  }
+
+  // RR "The Crown of Emphidia": transfers to `controllerId` if the planet
+  // they just gained control of sits in the CURRENT owner's own home
+  // system — checked here (not via maybeTransferVpCard's own generic
+  // shape) since only this function knows which system this planet is in.
+  const crownOwnerId = getLawOwner(nextState, "the_crown_of_emphidia" as AgendaId);
+  if (crownOwnerId && crownOwnerId !== controllerId && rules.homeSystemByFaction[nextState.players[crownOwnerId]?.factionId] === systemId) {
+    nextState = maybeApplyCrownOfEmphidiaOnControlGain(nextState, controllerId);
   }
 
   // RR PoK "Wormhole Nexus": gaining control of Mallice is the OTHER trigger for the active-flip (the first being a ship arriving there — see tacticalAction.ts's moveShips).
