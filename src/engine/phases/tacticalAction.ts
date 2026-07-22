@@ -7,6 +7,7 @@ import { canShipReachSystem } from "../rules/movement";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { usesCodex4Version } from "../rules/gameMode";
 import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
+import { maybeReturnCapturedUnitsOnBlockade } from "../rules/capture";
 import { computeSpaceCombatEntry } from "./spaceCombat";
 
 /**
@@ -249,6 +250,11 @@ export function moveShips(
   // first time, it flips active at the END of this step (not mid-move) —
   // hence doing this last, right before returning.
   workingState = maybeActivateWormholeNexus(workingState, rules, activeSystemId);
+  // RR "Capture": ship movement is the only way blockade state can change
+  // in this engine, so this is the natural place to auto-return any
+  // captured non-fighter ship/mech whose original owner is now
+  // blockading the capturing player's own space dock.
+  workingState = maybeReturnCapturedUnitsOnBlockade(workingState);
 
   const spaceCannonResponders = getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
   const willHaveCombat = playersWithShipsInSystem(workingState, activeSystemId).length > 1;
