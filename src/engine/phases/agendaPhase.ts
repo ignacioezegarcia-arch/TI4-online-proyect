@@ -25,7 +25,7 @@ import { startNewRound } from "./actionPhase";
  *    (e.g. Committee Formation) who should own the card instead.
  */
 
-export function revealAgenda(state: GameState): ActionResult {
+export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
   if (state.phase !== "agenda") {
     return { ok: false, error: `RR 8.2: expected phase "agenda", got "${state.phase}".` };
   }
@@ -39,6 +39,22 @@ export function revealAgenda(state: GameState): ActionResult {
     return { ok: false, error: "RR 8.2: the agenda deck is empty." };
   }
 
+  const [agendaId, ...rest] = state.agendaDeck.deckIds;
+
+  // RR "Classified Document Leaks": confirmed, this agenda's own reveal
+  // text is checked BEFORE any vote even opens — if no player has scored
+  // ANY secret objective anywhere in the game yet, this card is discarded
+  // outright and the next agenda is revealed instead, recursively (in the
+  // rare case that next one has the same problem, or itself needs the
+  // same treatment for some other reason down the line).
+  if (agendaId === "classified_document_leaks" && !hasAnyScoredSecretObjective(state, rules)) {
+    const stateAfterDiscard: GameState = {
+      ...state,
+      agendaDeck: { ...state.agendaDeck, deckIds: rest, discardIds: [...state.agendaDeck.discardIds, agendaId] },
+    };
+    return revealAgenda(stateAfterDiscard, rules);
+  }
+
   const speakerId = state.seatOrder.find((id) => state.players[id]?.isSpeaker);
   if (!speakerId) return { ok: false, error: "No speaker set — can't determine voting order." };
   const speakerIndex = state.seatOrder.indexOf(speakerId);
@@ -47,7 +63,6 @@ export function revealAgenda(state: GameState): ActionResult {
   const rotated = [...state.seatOrder.slice(speakerIndex + 1), ...state.seatOrder.slice(0, speakerIndex + 1)];
   const votingOrder = rotated.filter((id) => eligibleSeatOrder.includes(id));
 
-  const [agendaId, ...rest] = state.agendaDeck.deckIds;
   const pendingAgendaVote: PendingAgendaVote = { agendaId, votingOrder, nextVoterIndex: 0, votesByOutcome: {} };
 
   return {
@@ -55,6 +70,11 @@ export function revealAgenda(state: GameState): ActionResult {
     state: { ...state, agendaDeck: { ...state.agendaDeck, deckIds: rest }, pendingAgendaVote },
     events: [{ type: "AGENDA_REVEALED", agendaId }],
   };
+}
+
+/** RR "Classified Document Leaks": is there at least 1 secret objective, scored by ANY player, anywhere in the current game? (Game-wide — not scoped to whoever's speaker or about to vote.) */
+function hasAnyScoredSecretObjective(state: GameState, rules: RuleData): boolean {
+  return Object.values(state.players).some((p) => p.victoryPoints.scoredObjectiveIds.some((id) => rules.objectives[id]?.kind === "secret"));
 }
 
 export function castVotes(
@@ -192,10 +212,27 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
     };
   }
 
+  // RR "Classified Document Leaks": the elected outcome IS the id of the
+  // scored secret objective players chose — it becomes a public objective
+  // from here on, alongside the ones drawn from the normal stage I/II
+  // decks. Modeling choice, flagged rather than silently assumed: it
+  // doesn't slot into either predetermined stage, so it's tagged with its
+  // own distinct kind ("convertedFromSecret") rather than "publicI" or
+  // "publicII" — it's still just as scoreable by anyone (scoreObjective's
+  // own check only cares whether an entry here is `revealed`, not which
+  // kind), this only matters for anything downstream that specifically
+  // counts stage I/II objectives.
+  if (agendaId === "classified_document_leaks" && winner) {
+    nextState = {
+      ...nextState,
+      objectives: [...nextState.objectives, { kind: "convertedFromSecret", objectiveId: winner as never, revealed: true }],
+    };
+  }
+
   const events: GameEvent[] = [{ type: "AGENDA_RESOLVED", agendaId, outcome: winner ?? "", becameLaw }];
 
   if ((nextState.agendaPhaseAgendasResolved ?? 0) < 2 && nextState.agendaDeck.deckIds.length > 0) {
-    const revealed = revealAgenda(nextState);
+    const revealed = revealAgenda(nextState, rules);
     if (revealed.ok) return { state: revealed.state, events: [...events, ...revealed.events] };
     return { state: nextState, events };
   }
