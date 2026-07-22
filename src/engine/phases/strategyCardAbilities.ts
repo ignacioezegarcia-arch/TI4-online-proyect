@@ -6,6 +6,7 @@ import { isAdjacent } from "../rules/adjacency";
 import { executeProduction } from "./production";
 import { researchTechnology, researchUnitUpgrade } from "./technology";
 import { scoreObjectiveCore } from "./actionPhase";
+import { maybeApplyMinisterOfCommerce } from "./agendaEffects";
 
 /**
  * RR 20-ish, one section per strategy card (data/strategyCards.json has the
@@ -180,11 +181,13 @@ export function resolveStrategyPrimary(
           [action.playerId]: { ...player, tradeGoods: player.tradeGoods + 3, commodities: max },
         },
       };
+      next = maybeApplyMinisterOfCommerce(next, rules, action.playerId);
       for (const otherId of chosenIds) {
         const other = next.players[otherId];
         if (!other || other.eliminated) continue;
         const otherMax = rules.factions[other.factionId]?.commoditiesMax ?? 0;
         next = { ...next, players: { ...next.players, [otherId]: { ...other, commodities: otherMax } } };
+        next = maybeApplyMinisterOfCommerce(next, rules, otherId);
       }
       return { ok: true, state: next, events: [] };
     }
@@ -298,7 +301,8 @@ export function resolveStrategySecondary(
     }
     case "trade": {
       const max = rules.factions[charged.factionId]?.commoditiesMax ?? 0;
-      return { ok: true, state: { ...working, players: { ...working.players, [action.playerId]: { ...charged, commodities: max } } }, events: [] };
+      const next: GameState = { ...working, players: { ...working.players, [action.playerId]: { ...charged, commodities: max } } };
+      return { ok: true, state: maybeApplyMinisterOfCommerce(next, rules, action.playerId), events: [] };
     }
     case "warfare": {
       const systemId = p.systemId as SystemId;
