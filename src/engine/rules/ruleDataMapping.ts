@@ -136,11 +136,11 @@ export function planetNameToId(name: string): string {
 
 /** Shared by both loaders — the law/directive split RuleData.agendas needs, from data/agendas.json. Doesn't touch outcomes/effect text (see RuleData.ts's own scope note on this field). */
 export function buildAgendasLookup(agendasFile: {
-  agendas: { id: string; type: "law" | "directive" }[];
-}): Record<string, { type: "law" | "directive" }> {
-  const agendas: Record<string, { type: "law" | "directive" }> = {};
+  agendas: { id: string; type: "law" | "directive"; removedByPoK?: boolean }[];
+}): Record<string, { type: "law" | "directive"; removedByPoK?: boolean }> {
+  const agendas: Record<string, { type: "law" | "directive"; removedByPoK?: boolean }> = {};
   for (const a of agendasFile.agendas) {
-    agendas[a.id] = { type: a.type };
+    agendas[a.id] = { type: a.type, removedByPoK: a.removedByPoK };
   }
   return agendas;
 }
