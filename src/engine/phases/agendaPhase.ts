@@ -3,6 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, AgendaId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
+import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome } from "./agendaEffects";
 
 /**
  * RR 8 AGENDA PHASE. Exactly 2 agendas resolve per phase (fewer if the deck
@@ -55,6 +56,26 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
     return revealAgenda(stateAfterDiscard, rules);
   }
 
+  // RR "Committee Formation": confirmed, checked here — BEFORE any vote
+  // opens — for every agenda whose own outcome elects a player. If
+  // someone currently owns Committee Formation, they get first refusal
+  // (see phases/agendaEffects.ts's useCommitteeFormation/
+  // skipCommitteeFormation) instead of a normal vote opening immediately.
+  if (rules.agendas[agendaId]?.elect === "Player") {
+    const committeeFormationOwner = state.agendaDeck.lawsInPlay.find((l) => l.agendaId === "committee_formation" && l.ownerId !== "common");
+    if (committeeFormationOwner) {
+      return {
+        ok: true,
+        state: {
+          ...state,
+          agendaDeck: { ...state.agendaDeck, deckIds: rest },
+          pendingCommitteeFormationDecision: { agendaId, ownerId: committeeFormationOwner.ownerId as PlayerId },
+        },
+        events: [{ type: "AGENDA_REVEALED", agendaId }],
+      };
+    }
+  }
+
   const speakerId = state.seatOrder.find((id) => state.players[id]?.isSpeaker);
   if (!speakerId) return { ok: false, error: "No speaker set — can't determine voting order." };
   const speakerIndex = state.seatOrder.indexOf(speakerId);
@@ -98,6 +119,38 @@ export function castVotes(
   }
 
   const player = state.players[action.playerId];
+  // RR "Representative Government" (either version, "for"): confirmed,
+  // while this law is active, planets are never exhausted for votes at
+  // all — every player simply casts exactly 1 vote per agenda. The PoK
+  // version's own text explicitly rules out "additional votes" too (e.g.
+  // Predictive Intelligence's own +3 bonus); the base version doesn't
+  // restate that, but the same underlying rule (votes = 1, full stop, no
+  // exhausting anything to change that) applies either way here.
+  const representativeGovernment =
+    isLawActiveWithOutcome(state, "representative_government" as AgendaId, "for") ||
+    isLawActiveWithOutcome(state, "representative_government_pok" as AgendaId, "for");
+
+  if (representativeGovernment) {
+    if (action.exhaustPlanetIds.length > 0) {
+      return { ok: false, error: 'RR "Representative Government": planets cannot be exhausted to cast votes while this law is active.' };
+    }
+    if (action.usePredictiveIntelligenceBonus) {
+      return { ok: false, error: 'RR "Representative Government": additional votes (e.g. Predictive Intelligence\'s bonus) cannot be cast while this law is active.' };
+    }
+    const updatedVote: PendingAgendaVote = {
+      ...pending,
+      nextVoterIndex: pending.nextVoterIndex + 1,
+      votesByOutcome: { ...pending.votesByOutcome, [action.outcome]: [...(pending.votesByOutcome[action.outcome] ?? []), { playerId: action.playerId, votes: 1 }] },
+    };
+    const nextState: GameState = { ...state, pendingAgendaVote: updatedVote };
+    const events: GameEvent[] = [{ type: "VOTES_CAST", playerId: action.playerId, outcome: action.outcome, votes: 1 }];
+    if (updatedVote.nextVoterIndex >= updatedVote.votingOrder.length) {
+      const resolved = resolveAgendaVote(nextState, rules);
+      return { ok: true, state: resolved.state, events: [...events, ...resolved.events] };
+    }
+    return { ok: true, state: nextState, events };
+  }
+
   let votes = 0;
   for (const planetId of action.exhaustPlanetIds) {
     const owningSystem = Object.values(state.systems).find((s) => s.planets.some((p) => p.planetId === planetId));
@@ -171,10 +224,6 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
   // RR 8.5 ties are the speaker's call — not modeled as a real choice yet, see this file's own scope note.
   const winner = totals.find((t) => t.total === maxVotes)?.outcome ?? null;
 
-  const agendaId = pending.agendaId;
-  const agendaType = rules.agendas[agendaId]?.type ?? "directive";
-  const becameLaw = agendaType === "law" && winner !== null;
-
   // RR "Predictive Intelligence": conditionally exhaust for whoever used
   // its +3-votes bonus this agenda — only if THEIR outcome did NOT win
   // (RR: "if you do, and the outcome you voted for is not resolved,
@@ -189,12 +238,36 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
     }
   }
 
+  return finalizeAgendaResolution({ ...state, players, pendingAgendaVote: null }, rules, pending.agendaId, winner, pending.votesByOutcome);
+}
+
+/**
+ * RR 8.4/8.5's own "given the winning outcome, apply it" tail — split out
+ * from resolveAgendaVote so RR "Committee Formation"'s own direct-elect
+ * (no vote at all) can share the exact same resolution logic instead of
+ * faking a completed vote just to reuse it.
+ */
+export function finalizeAgendaResolution(
+  state: GameState,
+  rules: RuleData,
+  agendaId: AgendaId,
+  winner: string | null,
+  /** Empty for a Committee-Formation-direct-elect resolution (no real vote happened) — only ever needed by side-effects that care WHO specifically voted which way (e.g. Conventions of War's "against" discards only THOSE voters' hands). */
+  votesByOutcome: Record<string, { playerId: PlayerId; votes: number }[]> = {},
+): { state: GameState; events: GameEvent[] } {
+  const agendaType = rules.agendas[agendaId]?.type ?? "directive";
+  const becameLaw = agendaType === "law" && winner !== null;
+  // RR: an "elect Player" agenda's own winning outcome IS the elected
+  // player's id (see Actions.ts's own note on CAST_VOTES's `outcome`
+  // field) — so THAT player, not "common", owns the resulting law. Every
+  // other elect type (a planet, a strategy card, etc.) still uses
+  // "common", same as a plain For/Against law always has.
+  const lawOwnerId = rules.agendas[agendaId]?.elect === "Player" && winner ? (winner as PlayerId) : ("common" as const);
+
   let nextState: GameState = {
     ...state,
-    players,
-    pendingAgendaVote: null,
     agendaDeck: becameLaw
-      ? { ...state.agendaDeck, lawsInPlay: [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: "common" as const, outcome: winner ?? undefined }] }
+      ? { ...state.agendaDeck, lawsInPlay: [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: lawOwnerId, outcome: winner ?? undefined }] }
       : { ...state.agendaDeck, discardIds: [...state.agendaDeck.discardIds, agendaId] },
     agendaPhaseAgendasResolved: (state.agendaPhaseAgendasResolved ?? 0) + 1,
     // For the "elected by an agenda" secret objective (drive_the_debate) — only the most recent resolution matters, so this just overwrites each time.
@@ -209,6 +282,40 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
     nextState = {
       ...nextState,
       pendingAntiIntellectualRevolutionExhaustion: Object.keys(nextState.players) as PlayerId[],
+    };
+  }
+
+  // RR "Homeland Defense Act" ("against"): queues the mandatory (no skip)
+  // PDS-destruction choice for every player, resolved via
+  // destroyPdsForHomelandDefenseAct — see phases/agendaEffects.ts.
+  if (agendaId === "homeland_defense_act" && winner === "against") {
+    nextState = {
+      ...nextState,
+      pendingHomelandDefenseActDestruction: Object.keys(nextState.players) as PlayerId[],
+    };
+  }
+
+  // RR "Executive Sanctions" ("against"): queues the mandatory random
+  // discard for every player — see phases/agendaEffects.ts's own note on
+  // why this still needs a pending+action pair despite being "random".
+  if (agendaId === "executive_sanctions" && winner === "against") {
+    nextState = {
+      ...nextState,
+      pendingExecutiveSanctionsRandomDiscard: Object.values(nextState.players)
+        .filter((p) => p.actionCards.length > 0)
+        .map((p) => p.id),
+    };
+  }
+
+  // RR "Representative Government" (either version, "against"): queues
+  // those specific "against" voters' cultural-planet exhaustion for the
+  // start of the next strategy phase — see phases/actionPhase.ts's
+  // startNewRound for where this actually applies.
+  if ((agendaId === "representative_government" || agendaId === "representative_government_pok") && winner === "against") {
+    const againstVoterIds = (votesByOutcome["against"] ?? []).map((v) => v.playerId);
+    nextState = {
+      ...nextState,
+      pendingRepresentativeGovernmentAgainstVoters: [...(nextState.pendingRepresentativeGovernmentAgainstVoters ?? []), ...againstVoterIds],
     };
   }
 
@@ -229,6 +336,9 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
     };
   }
 
+  // Every other agenda's own fully-automatic (no player choice needed) one-time resolution effect — see phases/agendaEffects.ts's own header note on why this dispatcher only covers THOSE, not ones needing a real choice.
+  nextState = applyAgendaResolutionSideEffects(nextState, rules, agendaId, winner, votesByOutcome);
+
   const events: GameEvent[] = [{ type: "AGENDA_RESOLVED", agendaId, outcome: winner ?? "", becameLaw }];
 
   if ((nextState.agendaPhaseAgendasResolved ?? 0) < 2 && nextState.agendaDeck.deckIds.length > 0) {
@@ -248,7 +358,7 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
   }
 
   // Agenda phase done — a new round always starts with a Strategy phase.
-  nextState = startNewRound(nextState);
+  nextState = startNewRound(nextState, rules);
   events.push({ type: "PHASE_CHANGED", from: "agenda", to: "strategy", round: nextState.round });
   events.push({ type: "ROUND_STARTED", round: nextState.round });
   return { state: nextState, events };
