@@ -427,7 +427,17 @@ function shuffleAndSeedDecks(
 
   return {
     actionCardDeck: fisherYatesShuffle(rules.allActionCardIds.map(asActionCardId), rng),
-    agendaDeck: fisherYatesShuffle(Object.keys(rules.agendas).map(asAgendaId), rng),
+    // RR "Prepare Agenda Deck": confirmed, 13 base-game agendas are pulled
+    // from the deck entirely whenever Prophecy of Kings content is in
+    // play — filtered here rather than at buildAgendasLookup, since
+    // whether they're removed depends on THIS game's mode, not anything
+    // fixed about the agenda itself.
+    agendaDeck: fisherYatesShuffle(
+      Object.entries(rules.agendas)
+        .filter(([, a]) => !(hasPoKContent(mode) && a.removedByPoK))
+        .map(([id]) => asAgendaId(id)),
+      rng,
+    ),
     publicObjectiveDeck: {
       stageI: fisherYatesShuffle(stageI.map(asObjectiveId), rng),
       stageII: fisherYatesShuffle(stageII.map(asObjectiveId), rng),
