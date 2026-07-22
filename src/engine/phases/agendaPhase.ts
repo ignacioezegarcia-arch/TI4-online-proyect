@@ -174,18 +174,39 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
     players,
     pendingAgendaVote: null,
     agendaDeck: becameLaw
-      ? { ...state.agendaDeck, lawsInPlay: [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: "common" as const }] }
+      ? { ...state.agendaDeck, lawsInPlay: [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: "common" as const, outcome: winner ?? undefined }] }
       : { ...state.agendaDeck, discardIds: [...state.agendaDeck.discardIds, agendaId] },
     agendaPhaseAgendasResolved: (state.agendaPhaseAgendasResolved ?? 0) + 1,
     // For the "elected by an agenda" secret objective (drive_the_debate) — only the most recent resolution matters, so this just overwrites each time.
     lastResolvedAgenda: winner !== null ? { agendaId, outcome: winner } : state.lastResolvedAgenda,
   };
 
+  // RR "Anti-Intellectual Revolution": if "against" won, queue its
+  // one-time "at the start of the next strategy phase" effect — applied
+  // in startAgendaPhaseFollowupEffects, right before this agenda phase
+  // actually hands off to the next strategy phase (see below).
+  if (agendaId === "anti_intellectual_revolution" && winner === "against") {
+    nextState = {
+      ...nextState,
+      pendingAntiIntellectualRevolutionExhaustion: Object.keys(nextState.players) as PlayerId[],
+    };
+  }
+
   const events: GameEvent[] = [{ type: "AGENDA_RESOLVED", agendaId, outcome: winner ?? "", becameLaw }];
 
   if ((nextState.agendaPhaseAgendasResolved ?? 0) < 2 && nextState.agendaDeck.deckIds.length > 0) {
     const revealed = revealAgenda(nextState);
     if (revealed.ok) return { state: revealed.state, events: [...events, ...revealed.events] };
+    return { state: nextState, events };
+  }
+
+  // RR "Anti-Intellectual Revolution" ("against"): its one-time "at the
+  // start of the next strategy phase" effect must resolve BEFORE that
+  // phase actually starts — so if any player still owes their exhaustion
+  // choice, the phase transition below is deliberately deferred until
+  // FINISH_ANTI_INTELLECTUAL_REVOLUTION_EXHAUSTION clears it (see
+  // phases/agendaEffects.ts).
+  if ((nextState.pendingAntiIntellectualRevolutionExhaustion ?? []).length > 0) {
     return { state: nextState, events };
   }
 
