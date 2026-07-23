@@ -157,6 +157,14 @@ export type GameAction =
       targetPlanetId: PlanetId;
       units: { unitType: UnitType; count: number }[];
     } // RR 44.2: moves ground forces from the active system's space area onto a planet there.
+  | {
+      type: "USE_REMOVE_CUSTODIANS_TOKEN";
+      playerId: PlayerId;
+      /** RR 27.2: pays exactly 6 influence (falls back to trade goods for any shortfall). */
+      exhaustPlanetIdsForInfluence: PlanetId[];
+      /** RR 27.2: must total at least 1 ground force — landed on Mecatol Rex as part of this same action. */
+      units: { unitType: UnitType; count: number }[];
+    }
   | { type: "FINISH_INVASION_COMMITS"; playerId: PlayerId } // RR 44.2: attacker signals no more planets will be invaded this tactical action.
   | {
       type: "START_GROUND_COMBAT";
@@ -413,6 +421,9 @@ export type GameAction =
   | { type: "USE_GALACTIC_CRISIS_PACT"; playerId: PlayerId; payload: unknown } // RR "Galactic Crisis Pact": free use of the elected strategy card's secondary — same payload shape as RESOLVE_STRATEGY_SECONDARY's own per-card union
   | { type: "SKIP_GALACTIC_CRISIS_PACT"; playerId: PlayerId }
 
+  // --- RR 45.4/61.21: over the 3-total-secret-objectives limit ---
+  | { type: "RETURN_SECRET_OBJECTIVE"; playerId: PlayerId; objectiveId: ObjectiveId }
+
   // --- Meta ---
   | { type: "END_TURN_TIMEOUT"; playerId: PlayerId }; // async safety valve: auto-pass a player who's gone silent, driven by a scheduled job, not a human click
 
@@ -457,7 +468,8 @@ export type GameEvent =
   | { type: "EXPLORATION_CARD_DRAWN"; playerId: PlayerId; cardId: string; deck: "cultural" | "industrial" | "hazardous" | "frontier" }
   | { type: "RELIC_FRAGMENT_GAINED"; playerId: PlayerId; fragmentType: "cultural" | "industrial" | "hazardous" | "any" }
   | { type: "RELIC_GAINED"; playerId: PlayerId; relicId: string }
-  | { type: "GAME_ENDED"; winnerId: PlayerId };
+  | { type: "GAME_ENDED"; winnerId: PlayerId }
+  | { type: "PLAYER_ELIMINATED"; playerId: PlayerId };
 
 export type ActionResult =
   | { ok: true; state: import("./GameState").GameState; events: GameEvent[] }

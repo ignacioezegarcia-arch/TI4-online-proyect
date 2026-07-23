@@ -191,6 +191,8 @@ export interface GameState {
   gameId: string;
   mode: GameMode;
   victoryPointTarget: 10 | 14; // RR 87.2
+  /** RR 33.9: the number of players this game STARTED with (before any eliminations) — needed because a game that began with 5+ players keeps everyone at 1 strategy card per round even after eliminations bring it down to 4 or fewer, unlike a game that genuinely started with 3-4. See phases/strategyPhase.ts's getStrategyCardsPerPlayer. */
+  startingPlayerCount?: number;
 
   phase: Phase;
   round: number; // increments each time we return to the strategy phase (RR 36)
@@ -290,6 +292,10 @@ export interface GameState {
   pendingWormholeResearchOffer?: PlayerId[];
   /** RR "Galactic Crisis Pact": every non-eliminated player's own optional, free (no strategy-token cost) chance to use the elected strategy card's secondary — cleared per-player as each uses or declines it. */
   pendingGalacticCrisisPactOffer?: { cardId: StrategyCardId; playersRemaining: PlayerId[] };
+  /** RR 45.4/61.21: players currently over the 3-total-secret-objectives limit (unscored + scored combined) who owe their own choice of which UNSCORED one to return to the deck. See phases/agendaEffects.ts's maybeQueueSecretObjectiveLimit/returnSecretObjective. */
+  pendingSecretObjectiveReturn?: PlayerId[];
+  /** RR 83.4/82.1a: which players have already resolved a given strategy card's SECONDARY ability this round — a player can only do so once per card per round, regardless of how many times they'd otherwise be offered the chance. Reset (all cards) whenever a new round starts. */
+  strategyCardSecondariesUsedBy?: Partial<Record<StrategyCardId, PlayerId[]>>;
   /** RR 3.3-ish: which player most recently passed this action phase — reset to undefined when a new round starts. Needed for the "last to pass" secret objective (prove_endurance); not used for any turn-legality check. */
   lastPlayerToPass?: PlayerId;
   /** The most recently resolved agenda's winning outcome — needed for the "elected by an agenda" secret objective (drive_the_debate). Persists across rounds (not reset), since only the MOST RECENT resolution matters, not "this round's". */
