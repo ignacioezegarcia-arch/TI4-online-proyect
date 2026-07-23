@@ -268,6 +268,28 @@ export interface GameState {
   pendingAgendaVote: PendingAgendaVote | null;
   /** RR 8: exactly 2 agendas get resolved per agenda phase (fewer if the deck runs out). Reset to 0 when the agenda phase begins. */
   agendaPhaseAgendasResolved?: number;
+  /** RR "Public Execution": the elected player cannot vote on any agendas for the REST of the current agenda phase (not future ones) — reset alongside agendaPhaseAgendasResolved whenever a fresh agenda phase begins. Checked when building each new agenda's voting order (see phases/agendaPhase.ts's revealAgenda). */
+  agendaPhaseBannedFromVoting?: PlayerId[];
+  /**
+   * RR "Colonial Redistribution": the CONTROLLER's own choice of which
+   * fewest-VP player gets the infantry offer below — only set when 2+
+   * players are tied for fewest VP (a single lowest-VP player skips
+   * straight to pendingColonialRedistributionInfantryOffer instead, since
+   * there's no real choice to make there).
+   */
+  pendingColonialRedistributionChoice?: { planetId: PlanetId; controllerId: PlayerId; candidateIds: PlayerId[] };
+  /** RR "Colonial Redistribution": the chosen player's own optional choice of whether to place 1 infantry (from reinforcements) on the elected planet. */
+  pendingColonialRedistributionInfantryOffer?: { planetId: PlanetId; playerId: PlayerId };
+  /** RR "Research Grant Reallocation": the elected player's own choice of which technology to gain (no prerequisite check — this grant bypasses RR 90.7 entirely, per the card's own "any 1 technology of their choice" text). */
+  pendingResearchGrantReallocationChoice?: PlayerId;
+  /** RR "Ixthian Artifact" ("for"): true while waiting on the speaker's own die roll (trusted-RNG, same convention as combat dice elsewhere — see USE_IXTHIAN_ARTIFACT_DIE_ROLL). */
+  pendingIxthianArtifactDieRoll?: boolean;
+  /** RR "Ixthian Artifact" (die roll 6-10): each non-eliminated player may research up to this many technologies (starts at 2 each) — free research, no resource cost, same convention as this card's own "may research" text (no cost specified). */
+  pendingIxthianArtifactResearch?: Partial<Record<PlayerId, number>>;
+  /** RR "Wormhole Research" ("for"): players with 1+ ships in a wormhole system who still have their own optional (free) research decision pending. */
+  pendingWormholeResearchOffer?: PlayerId[];
+  /** RR "Galactic Crisis Pact": every non-eliminated player's own optional, free (no strategy-token cost) chance to use the elected strategy card's secondary — cleared per-player as each uses or declines it. */
+  pendingGalacticCrisisPactOffer?: { cardId: StrategyCardId; playersRemaining: PlayerId[] };
   /** RR 3.3-ish: which player most recently passed this action phase — reset to undefined when a new round starts. Needed for the "last to pass" secret objective (prove_endurance); not used for any turn-legality check. */
   lastPlayerToPass?: PlayerId;
   /** The most recently resolved agenda's winning outcome — needed for the "elected by an agenda" secret objective (drive_the_debate). Persists across rounds (not reset), since only the MOST RECENT resolution matters, not "this round's". */
@@ -361,6 +383,20 @@ export interface GameState {
    * phase actually starts — see phases/actionPhase.ts's startNewRound.
    */
   pendingRepresentativeGovernmentAgainstVoters?: PlayerId[];
+  /**
+   * RR "Arms Reduction" ("against"): a flat flag (not per-player — this
+   * applies to EVERY player unconditionally, unlike Representative
+   * Government's own voter-scoped list above) — at the start of the next
+   * strategy phase, every player exhausts each of their planets that has a
+   * technology specialty. See phases/actionPhase.ts's startNewRound.
+   */
+  pendingArmsReductionExhaustTechSpecialty?: boolean;
+  /**
+   * RR "New Constitution" ("for"): same shape as Arms Reduction's own flag
+   * above — every player exhausts each planet in their OWN home system, at
+   * the start of the next strategy phase.
+   */
+  pendingNewConstitutionExhaustHomeSystem?: boolean;
   /**
    * RR 20/70.5: confirmed — whenever a player gains a NEW command token
    * from any source (RR 70.5's status-phase gain is the only source this
