@@ -1869,7 +1869,6 @@
       "isBlank": true
     },
     {
-    {
       "id": 88,
       "name": "Hyperlane A",
       "set": "pok",
@@ -2051,6 +2050,7 @@
           "tech": []
         }
       ]
+      }
       },
       "anomalies": [],
       "wormholes": [],
@@ -2544,7 +2544,7 @@
           "influence": 3,
           "traits": [
             "industrial"
-          ]
+          ],
           "tech": []
         }
       ],
@@ -2718,7 +2718,7 @@
           "legendaryAbility": {
             "name": "A Song Like Marrow",
             "effect": "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point."
-          }
+          },
           "specialRules": [
             "When you gain control of this planet, gain 1 relic."
           ]
@@ -2732,8 +2732,6 @@
           "planets": [],
           "anomalies": [],
           "wormholes": []
-        }
-      ],
         }
       ],
       "isOffMap": true,
