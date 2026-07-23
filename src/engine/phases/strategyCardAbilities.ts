@@ -257,6 +257,8 @@ export function resolveStrategySecondary(
   state: GameState,
   action: { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: string; payload: unknown },
   rules: RuleData,
+  /** RR "Galactic Crisis Pact": the elected strategy card's secondary is free (no strategy-token cost) for every player this one time — see phases/directiveEffects.ts's useGalacticCrisisPact. */
+  skipCost?: boolean,
 ): ActionResult {
   const player = state.players[action.playerId];
   if (!player) return { ok: false, error: "Unknown player." };
@@ -264,7 +266,7 @@ export function resolveStrategySecondary(
 
   // Leadership's secondary is the one explicit exception to the "costs 1 strategy token" rule.
   let charged = player;
-  if (action.cardId !== "leadership") {
+  if (action.cardId !== "leadership" && !skipCost) {
     const charge = chargeSecondaryToken(player);
     if (!charge.ok) return charge;
     charged = charge.player;
