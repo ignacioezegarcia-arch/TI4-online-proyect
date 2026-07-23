@@ -139,7 +139,7 @@ export function autoAdvancePhase(state: GameState, rules: RuleData): { state: Ga
     }
 
     if (state.mecatolCustodiansRemoved) {
-      next = { ...next, phase: "agenda", agendaPhaseAgendasResolved: 0 };
+      next = { ...next, phase: "agenda", agendaPhaseAgendasResolved: 0, agendaPhaseBannedFromVoting: [] };
       events.push({ type: "PHASE_CHANGED", from: "status", to: "agenda", round: next.round });
       const revealed = revealAgenda(next, rules);
       if (revealed.ok) {
@@ -604,19 +604,23 @@ export function startNewRound(state: GameState, rules: RuleData): GameState {
   // strategy phase starts — see phases/agendaPhase.ts for where this list
   // gets built up.
   const againstVoters = state.pendingRepresentativeGovernmentAgainstVoters ?? [];
+  const armsReductionActive = state.pendingArmsReductionExhaustTechSpecialty ?? false;
+  const newConstitutionActive = state.pendingNewConstitutionExhaustHomeSystem ?? false;
   const systems: GameState["systems"] =
-    againstVoters.length === 0
+    againstVoters.length === 0 && !armsReductionActive && !newConstitutionActive
       ? state.systems
       : Object.fromEntries(
           Object.entries(state.systems).map(([systemId, system]) => [
             systemId,
             {
               ...system,
-              planets: system.planets.map((p) =>
-                p.controllerId && againstVoters.includes(p.controllerId) && (rules.planets[p.planetId]?.traits ?? []).includes("cultural")
-                  ? { ...p, exhausted: true }
-                  : p,
-              ),
+              planets: system.planets.map((p) => {
+                if (!p.controllerId) return p;
+                const repGov = againstVoters.includes(p.controllerId) && (rules.planets[p.planetId]?.traits ?? []).includes("cultural");
+                const armsReduction = armsReductionActive && (rules.planets[p.planetId]?.techSpecialties ?? []).length > 0;
+                const newConstitution = newConstitutionActive && rules.homeSystemByFaction[players[p.controllerId]?.factionId] === systemId;
+                return repGov || armsReduction || newConstitution ? { ...p, exhausted: true } : p;
+              }),
             },
           ]),
         );
@@ -633,6 +637,8 @@ export function startNewRound(state: GameState, rules: RuleData): GameState {
     lastPlayerToPass: undefined,
     activePlayerActionsTaken: undefined,
     pendingRepresentativeGovernmentAgainstVoters: undefined,
+    pendingArmsReductionExhaustTechSpecialty: undefined,
+    pendingNewConstitutionExhaustHomeSystem: undefined,
   };
 }
 
