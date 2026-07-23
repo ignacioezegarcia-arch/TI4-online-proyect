@@ -4,6 +4,7 @@ import { PlayerId, AgendaId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
 import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome } from "./agendaEffects";
+import { applyDirectiveResolutionSideEffects } from "./directiveEffects";
 
 /**
  * RR 8 AGENDA PHASE. Exactly 2 agendas resolve per phase (fewer if the deck
@@ -27,6 +28,14 @@ import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome } from "./agen
  */
 
 export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
+  // RR "Covert Legislation": purely a table-visibility mechanic (the
+  // speaker draws the next agenda without revealing it, reads only the
+  // eligible outcomes aloud) — the actual reveal/vote/resolve mechanics
+  // below are IDENTICAL either way; this engine has no concept of hiding
+  // an agenda's identity from some players but not others (same "not a
+  // UI-layer concern this engine models" scope cut as Search Warrant's own
+  // "plays with secret objectives revealed" clause). No code path needed
+  // here beyond this note.
   if (state.phase !== "agenda") {
     return { ok: false, error: `RR 8.2: expected phase "agenda", got "${state.phase}".` };
   }
@@ -49,6 +58,19 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
   // rare case that next one has the same problem, or itself needs the
   // same treatment for some other reason down the line).
   if (agendaId === "classified_document_leaks" && !hasAnyScoredSecretObjective(state, rules)) {
+    const stateAfterDiscard: GameState = {
+      ...state,
+      agendaDeck: { ...state.agendaDeck, deckIds: rest, discardIds: [...state.agendaDeck.discardIds, agendaId] },
+    };
+    return revealAgenda(stateAfterDiscard, rules);
+  }
+
+  // RR "Judicial Abolishment" / "Miscount Disclosed" / "New Constitution":
+  // all 3 share the exact same reveal-time check — if there are currently
+  // no laws in play at all, discard this card outright and reveal the next
+  // agenda instead (recursively, same pattern as Classified Document
+  // Leaks' own check just above).
+  if ((agendaId === "judicial_abolishment" || agendaId === "miscount_disclosed" || agendaId === "new_constitution") && state.agendaDeck.lawsInPlay.length === 0) {
     const stateAfterDiscard: GameState = {
       ...state,
       agendaDeck: { ...state.agendaDeck, deckIds: rest, discardIds: [...state.agendaDeck.discardIds, agendaId] },
@@ -79,7 +101,11 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
   const speakerId = state.seatOrder.find((id) => state.players[id]?.isSpeaker);
   if (!speakerId) return { ok: false, error: "No speaker set — can't determine voting order." };
   const speakerIndex = state.seatOrder.indexOf(speakerId);
-  const eligibleSeatOrder = state.seatOrder.filter((id) => !state.players[id]?.eliminated);
+  // RR "Public Execution": the elected player is barred from voting for
+  // the rest of THIS agenda phase — filtered out here alongside eliminated
+  // players, same shape either way.
+  const bannedFromVoting = state.agendaPhaseBannedFromVoting ?? [];
+  const eligibleSeatOrder = state.seatOrder.filter((id) => !state.players[id]?.eliminated && !bannedFromVoting.includes(id));
   // RR 8.2.ii: voting starts to the left of the speaker, ends with the speaker.
   const rotated = [...state.seatOrder.slice(speakerIndex + 1), ...state.seatOrder.slice(0, speakerIndex + 1)];
   const votingOrder = rotated.filter((id) => eligibleSeatOrder.includes(id));
@@ -266,8 +292,17 @@ export function finalizeAgendaResolution(
 
   let nextState: GameState = {
     ...state,
+    // RR "Miscount Disclosed" can re-vote a law that's ALREADY in play
+    // (see this file's own note on that card) — replace its existing
+    // lawsInPlay entry in that case instead of appending a duplicate one
+    // for the same agendaId.
     agendaDeck: becameLaw
-      ? { ...state.agendaDeck, lawsInPlay: [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: lawOwnerId, outcome: winner ?? undefined }] }
+      ? {
+          ...state.agendaDeck,
+          lawsInPlay: state.agendaDeck.lawsInPlay.some((l) => l.agendaId === agendaId)
+            ? state.agendaDeck.lawsInPlay.map((l) => (l.agendaId === agendaId ? { agendaId, ownerId: lawOwnerId, outcome: winner ?? undefined } : l))
+            : [...state.agendaDeck.lawsInPlay, { agendaId, ownerId: lawOwnerId, outcome: winner ?? undefined }],
+        }
       : { ...state.agendaDeck, discardIds: [...state.agendaDeck.discardIds, agendaId] },
     agendaPhaseAgendasResolved: (state.agendaPhaseAgendasResolved ?? 0) + 1,
     // For the "elected by an agenda" secret objective (drive_the_debate) — only the most recent resolution matters, so this just overwrites each time.
@@ -319,6 +354,27 @@ export function finalizeAgendaResolution(
     };
   }
 
+  // RR "Arms Reduction" ("against"): queues the "at the start of the next
+  // strategy phase" tech-specialty-planet exhaustion — see
+  // phases/actionPhase.ts's startNewRound for where this actually applies.
+  if (agendaId === "arms_reduction" && winner === "against") {
+    nextState = { ...nextState, pendingArmsReductionExhaustTechSpecialty: true };
+  }
+
+  // RR "New Constitution": if no laws are in play when revealed, this card
+  // is discarded and never actually voted on (checked in revealAgenda,
+  // before any vote opens) — so reaching here always means it DID resolve
+  // with a real vote. "for" discards every law currently in play, then
+  // queues each player's own home-system-planet exhaustion for the start
+  // of the next strategy phase.
+  if (agendaId === "new_constitution" && winner === "for") {
+    nextState = {
+      ...nextState,
+      agendaDeck: { ...nextState.agendaDeck, lawsInPlay: [], discardIds: [...nextState.agendaDeck.discardIds, ...nextState.agendaDeck.lawsInPlay.map((l) => l.agendaId)] },
+      pendingNewConstitutionExhaustHomeSystem: true,
+    };
+  }
+
   // RR "Classified Document Leaks": the elected outcome IS the id of the
   // scored secret objective players chose — it becomes a public objective
   // from here on, alongside the ones drawn from the normal stage I/II
@@ -338,6 +394,8 @@ export function finalizeAgendaResolution(
 
   // Every other agenda's own fully-automatic (no player choice needed) one-time resolution effect — see phases/agendaEffects.ts's own header note on why this dispatcher only covers THOSE, not ones needing a real choice.
   nextState = applyAgendaResolutionSideEffects(nextState, rules, agendaId, winner, votesByOutcome);
+  // Same idea, but for DIRECTIVES specifically — see phases/directiveEffects.ts's own header note on why these live in a separate file from laws.
+  nextState = applyDirectiveResolutionSideEffects(nextState, rules, agendaId, winner, votesByOutcome);
 
   // RR "Search Warrant": the elected player draws 2 secret objectives —
   // one-time, right when this agenda resolves. Its OTHER clause ("plays
@@ -374,6 +432,33 @@ export function finalizeAgendaResolution(
   }
 
   const events: GameEvent[] = [{ type: "AGENDA_RESOLVED", agendaId, outcome: winner ?? "", becameLaw }];
+
+  // RR "Miscount Disclosed": "vote on the elected law as if it were just
+  // revealed from the top of the deck" — opens a FRESH vote on that same
+  // agenda id directly (not popping the deck, since it's not actually
+  // coming from there), using the exact same voting-order construction
+  // revealAgenda itself uses. This re-vote's own eventual resolution
+  // shares Miscount Disclosed's OWN slot for this agenda phase (RR 8's 2-
+  // per-phase budget) rather than consuming a second one — pre-
+  // decremented here so the inner resolution's own increment nets out to
+  // "used exactly 1 slot" overall, matching how re-voting on an existing
+  // law isn't "revealing a new agenda from the deck".
+  if (agendaId === "miscount_disclosed" && winner) {
+    const electedLawId = winner as AgendaId;
+    const speakerId = nextState.seatOrder.find((id) => nextState.players[id]?.isSpeaker);
+    if (speakerId) {
+      const speakerIndex = nextState.seatOrder.indexOf(speakerId);
+      const eligibleSeatOrder = nextState.seatOrder.filter((id) => !nextState.players[id]?.eliminated && !(nextState.agendaPhaseBannedFromVoting ?? []).includes(id));
+      const rotated = [...nextState.seatOrder.slice(speakerIndex + 1), ...nextState.seatOrder.slice(0, speakerIndex + 1)];
+      const votingOrder = rotated.filter((id) => eligibleSeatOrder.includes(id));
+      nextState = {
+        ...nextState,
+        agendaPhaseAgendasResolved: Math.max(0, (nextState.agendaPhaseAgendasResolved ?? 0) - 1),
+        pendingAgendaVote: { agendaId: electedLawId, votingOrder, nextVoterIndex: 0, votesByOutcome: {} },
+      };
+      return { state: nextState, events: [...events, { type: "AGENDA_REVEALED", agendaId: electedLawId }] };
+    }
+  }
 
   if ((nextState.agendaPhaseAgendasResolved ?? 0) < 2 && nextState.agendaDeck.deckIds.length > 0) {
     const revealed = revealAgenda(nextState, rules);
