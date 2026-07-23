@@ -74,11 +74,11 @@ export function isAdjacent(state: GameState, a: SystemId, b: SystemId, rules?: R
 }
 
 /** RR 60 NEIGHBORS: two players are neighbors if either has a controlled planet in a system that's the same as, or adjacent to, a system where the other has a controlled planet. Shared by objectiveChecks.ts's own inline version of this same check and RR "Minister of Commerce". */
-export function arePlayersNeighbors(state: GameState, playerIdA: import("../types/ids").PlayerId, playerIdB: import("../types/ids").PlayerId): boolean {
+export function arePlayersNeighbors(state: GameState, playerIdA: import("../types/ids").PlayerId, playerIdB: import("../types/ids").PlayerId, rules?: RuleData): boolean {
   if (playerIdA === playerIdB) return false;
   const aSystems = Object.entries(state.systems).filter(([, s]) => s.planets.some((p) => p.controllerId === playerIdA));
   const bSystemIds = new Set(Object.entries(state.systems).filter(([, s]) => s.planets.some((p) => p.controllerId === playerIdB)).map(([id]) => id));
-  return aSystems.some(([sysId]) => [sysId, ...getAdjacentSystems(state, sysId as SystemId)].some((id) => bSystemIds.has(id)));
+  return aSystems.some(([sysId]) => [sysId, ...getAdjacentSystems(state, sysId as SystemId, rules)].some((id) => bSystemIds.has(id)));
 }
 
 /**

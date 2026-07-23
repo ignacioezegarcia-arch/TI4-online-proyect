@@ -176,7 +176,7 @@ export const OBJECTIVE_CHECKS: Record<string, ObjectiveCheckFn> = {
     const count = params.count as number;
     const mecatol = findMecatolSystemId(state, rules);
     if (!mecatol) return { met: false, reason: "Mecatol Rex isn't on the board." };
-    const adjacent = new Set(getAdjacentSystems(state, mecatol));
+    const adjacent = new Set(getAdjacentSystems(state, mecatol, rules));
     const n = systemsWithPlayerShips(state, playerId).filter((id) => adjacent.has(id)).length;
     return { met: n >= count, reason: n >= count ? undefined : `Ships in only ${n}/${count} systems adjacent to Mecatol Rex.` };
   },
@@ -235,7 +235,7 @@ export const OBJECTIVE_CHECKS: Record<string, ObjectiveCheckFn> = {
       if (otherId === playerId || otherPlayer.eliminated) continue;
       const theirSystems = Object.entries(state.systems).filter(([, s]) => s.planets.some((p) => p.controllerId === otherId));
       const isNeighbor = theirSystems.some(([sysId]) =>
-        [sysId, ...getAdjacentSystems(state, sysId as SystemId)].some((id) => mySystems.has(id)),
+        [sysId, ...getAdjacentSystems(state, sysId as SystemId, rules)].some((id) => mySystems.has(id)),
       );
       if (!isNeighbor) continue;
       const theirPlanetCount = controlledPlanets(state, otherId as PlayerId).length;

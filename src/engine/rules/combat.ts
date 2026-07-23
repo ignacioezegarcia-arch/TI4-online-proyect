@@ -421,7 +421,7 @@ function spaceCannonEntriesForPlayer(
   };
 
   scanSystem(targetSystemId, false);
-  for (const adjId of getAdjacentSystems(state, targetSystemId)) {
+  for (const adjId of getAdjacentSystems(state, targetSystemId, rules)) {
     scanSystem(adjId, true);
   }
 

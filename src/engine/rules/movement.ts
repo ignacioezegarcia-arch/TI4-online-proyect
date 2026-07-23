@@ -1,4 +1,5 @@
 import { GameState } from "../types/GameState";
+import { RuleData } from "../types/RuleData";
 import { PlayerId, SystemId, AgendaId } from "../types/ids";
 import { getAdjacentSystems } from "./adjacency";
 import { canShipEnterTile, canShipPassThroughTile, hasGravityRift, hasNebula } from "./anomalies";
@@ -49,6 +50,7 @@ export function canShipReachSystem(
   to: SystemId,
   baseMoveValue: number,
   techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean } = {},
+  rules?: RuleData,
 ): boolean {
   if (from === to) return true;
 
@@ -81,7 +83,7 @@ export function canShipReachSystem(
       const budget = maxBudget + (current.riftUsed ? 1 : 0);
       if (current.hops >= budget) continue;
 
-      for (const neighborId of getAdjacentSystems(state, current.systemId)) {
+      for (const neighborId of getAdjacentSystems(state, current.systemId, rules)) {
         const hops = current.hops + 1;
         if (hops > budget) continue;
 
