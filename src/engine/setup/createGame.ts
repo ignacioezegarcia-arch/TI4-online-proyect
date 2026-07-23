@@ -241,6 +241,7 @@ export function createGame(input: CreateGameInput): GameState {
     gameId: input.gameId,
     mode: input.mode,
     victoryPointTarget: input.victoryPointTarget,
+    startingPlayerCount: Object.keys(players).length,
     phase: "strategy",
     round: 1,
     players,
