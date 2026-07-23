@@ -42,6 +42,19 @@ import {
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
 import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll } from "./phases/agendaEffects";
+import {
+  useColonialRedistributionChoice,
+  placeColonialRedistributionInfantry,
+  skipColonialRedistributionInfantry,
+  useResearchGrantReallocation,
+  useIxthianArtifactDieRoll,
+  useIxthianArtifactResearch,
+  skipIxthianArtifactResearch,
+  useWormholeResearch,
+  skipWormholeResearch,
+  useGalacticCrisisPact,
+  skipGalacticCrisisPact,
+} from "./phases/directiveEffects";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
 
 /**
@@ -243,6 +256,39 @@ export const GameEngine = {
         break;
       case "SKIP_CROWN_OF_THALNOS_REROLL":
         result = skipCrownOfThalnosReroll(state, action);
+        break;
+      case "USE_COLONIAL_REDISTRIBUTION_CHOICE":
+        result = useColonialRedistributionChoice(state, action);
+        break;
+      case "PLACE_COLONIAL_REDISTRIBUTION_INFANTRY":
+        result = placeColonialRedistributionInfantry(state, action);
+        break;
+      case "SKIP_COLONIAL_REDISTRIBUTION_INFANTRY":
+        result = skipColonialRedistributionInfantry(state, action);
+        break;
+      case "USE_RESEARCH_GRANT_REALLOCATION":
+        result = useResearchGrantReallocation(state, action, rules);
+        break;
+      case "USE_IXTHIAN_ARTIFACT_DIE_ROLL":
+        result = useIxthianArtifactDieRoll(state, action, rules);
+        break;
+      case "USE_IXTHIAN_ARTIFACT_RESEARCH":
+        result = useIxthianArtifactResearch(state, action, rules);
+        break;
+      case "SKIP_IXTHIAN_ARTIFACT_RESEARCH":
+        result = skipIxthianArtifactResearch(state, action);
+        break;
+      case "USE_WORMHOLE_RESEARCH":
+        result = useWormholeResearch(state, action, rules);
+        break;
+      case "SKIP_WORMHOLE_RESEARCH":
+        result = skipWormholeResearch(state, action);
+        break;
+      case "USE_GALACTIC_CRISIS_PACT":
+        result = useGalacticCrisisPact(state, action, rules);
+        break;
+      case "SKIP_GALACTIC_CRISIS_PACT":
+        result = skipGalacticCrisisPact(state, action);
         break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
@@ -479,6 +525,27 @@ export const GameEngine = {
     // round, not who's active).
     if ((state.pendingTacticalAction?.crownOfThalnosPendingPlayers ?? []).includes(playerId)) {
       legal.push("USE_CROWN_OF_THALNOS_REROLL", "SKIP_CROWN_OF_THALNOS_REROLL");
+    }
+    if (state.pendingColonialRedistributionChoice?.controllerId === playerId) {
+      legal.push("USE_COLONIAL_REDISTRIBUTION_CHOICE");
+    }
+    if (state.pendingColonialRedistributionInfantryOffer?.playerId === playerId) {
+      legal.push("PLACE_COLONIAL_REDISTRIBUTION_INFANTRY", "SKIP_COLONIAL_REDISTRIBUTION_INFANTRY");
+    }
+    if (state.pendingResearchGrantReallocationChoice === playerId) {
+      legal.push("USE_RESEARCH_GRANT_REALLOCATION");
+    }
+    if (state.pendingIxthianArtifactDieRoll && state.seatOrder.find((id) => state.players[id]?.isSpeaker) === playerId) {
+      legal.push("USE_IXTHIAN_ARTIFACT_DIE_ROLL");
+    }
+    if ((state.pendingIxthianArtifactResearch?.[playerId] ?? 0) > 0) {
+      legal.push("USE_IXTHIAN_ARTIFACT_RESEARCH", "SKIP_IXTHIAN_ARTIFACT_RESEARCH");
+    }
+    if ((state.pendingWormholeResearchOffer ?? []).includes(playerId)) {
+      legal.push("USE_WORMHOLE_RESEARCH", "SKIP_WORMHOLE_RESEARCH");
+    }
+    if ((state.pendingGalacticCrisisPactOffer?.playersRemaining ?? []).includes(playerId)) {
+      legal.push("USE_GALACTIC_CRISIS_PACT", "SKIP_GALACTIC_CRISIS_PACT");
     }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
