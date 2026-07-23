@@ -395,6 +395,24 @@ export type GameAction =
     }
   | { type: "SKIP_CROWN_OF_THALNOS_REROLL"; playerId: PlayerId } // declines to reroll anything this round
 
+  // --- Directive EFFECTS (RR 7) — see phases/directiveEffects.ts's own header note ---
+  | {
+      type: "USE_COLONIAL_REDISTRIBUTION_CHOICE";
+      playerId: PlayerId;
+      /** RR "Colonial Redistribution": the controller's own choice of which tied fewest-VP player gets the infantry offer. */
+      chosenPlayerId: PlayerId;
+    }
+  | { type: "PLACE_COLONIAL_REDISTRIBUTION_INFANTRY"; playerId: PlayerId }
+  | { type: "SKIP_COLONIAL_REDISTRIBUTION_INFANTRY"; playerId: PlayerId }
+  | { type: "USE_RESEARCH_GRANT_REALLOCATION"; playerId: PlayerId; techId: TechId } // RR "Research Grant Reallocation": the elected player's own choice of which technology to gain
+  | { type: "USE_IXTHIAN_ARTIFACT_DIE_ROLL"; playerId: PlayerId; roll: number } // RR "Ixthian Artifact": the speaker's own pre-rolled die (1-10)
+  | { type: "USE_IXTHIAN_ARTIFACT_RESEARCH"; playerId: PlayerId; techId: TechId }
+  | { type: "SKIP_IXTHIAN_ARTIFACT_RESEARCH"; playerId: PlayerId }
+  | { type: "USE_WORMHOLE_RESEARCH"; playerId: PlayerId; techId: TechId }
+  | { type: "SKIP_WORMHOLE_RESEARCH"; playerId: PlayerId }
+  | { type: "USE_GALACTIC_CRISIS_PACT"; playerId: PlayerId; payload: unknown } // RR "Galactic Crisis Pact": free use of the elected strategy card's secondary — same payload shape as RESOLVE_STRATEGY_SECONDARY's own per-card union
+  | { type: "SKIP_GALACTIC_CRISIS_PACT"; playerId: PlayerId }
+
   // --- Meta ---
   | { type: "END_TURN_TIMEOUT"; playerId: PlayerId }; // async safety valve: auto-pass a player who's gone silent, driven by a scheduled job, not a human click
 
