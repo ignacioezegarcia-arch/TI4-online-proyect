@@ -2,13 +2,14 @@ import { GameState } from "./types/GameState";
 import { GameAction, ActionResult, GameEvent } from "./types/Actions";
 import { PlayerId, asTechId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
-import { chooseStrategyCard } from "./phases/strategyPhase";
+import { chooseStrategyCard, getStrategyCardsPerPlayer } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
 import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits, useDuraniumArmor, skipDuraniumArmor, useAssaultCannonDestruction } from "./phases/spaceCombat";
 import {
   bombard,
   assignBombardmentHits,
   commitGroundForces,
+  useRemoveCustodiansToken,
   finishInvasionCommits,
   startGroundCombat,
   resolveGroundCombatRound,
@@ -41,7 +42,7 @@ import {
   useTransitDiodes,
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
-import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll } from "./phases/agendaEffects";
+import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
   placeColonialRedistributionInfantry,
@@ -56,6 +57,7 @@ import {
   skipGalacticCrisisPact,
 } from "./phases/directiveEffects";
 import { playersWithShipsInSystem, playersWithGroundForces } from "./rules/combat";
+import { checkAndApplyEliminations, checkForVictory } from "./phases/elimination";
 
 /**
  * GameEngine is the "bot": the single referee both the web client and (later)
@@ -124,6 +126,9 @@ export const GameEngine = {
         break;
       case "COMMIT_GROUND_FORCES":
         result = commitGroundForces(state, action, rules);
+        break;
+      case "USE_REMOVE_CUSTODIANS_TOKEN":
+        result = useRemoveCustodiansToken(state, action, rules);
         break;
       case "FINISH_INVASION_COMMITS":
         result = finishInvasionCommits(state, action);
@@ -222,7 +227,7 @@ export const GameEngine = {
         result = useExterrixHeadquarters(state, action);
         break;
       case "USE_MIRAGE_FLIGHT_ACADEMY":
-        result = useMirageFlightAcademy(state, action);
+        result = useMirageFlightAcademy(state, action, rules);
         break;
       case "DESTROY_SHIP_FOR_ANTI_INTELLECTUAL_REVOLUTION":
         result = destroyShipForAntiIntellectualRevolution(state, action);
@@ -290,6 +295,9 @@ export const GameEngine = {
       case "SKIP_GALACTIC_CRISIS_PACT":
         result = skipGalacticCrisisPact(state, action);
         break;
+      case "RETURN_SECRET_OBJECTIVE":
+        result = returnSecretObjective(state, action);
+        break;
       case "USE_SPACE_CANNON_OFFENSE":
         result = useSpaceCannonOffense(state, action, rules);
         break;
@@ -354,8 +362,26 @@ export const GameEngine = {
 
     if (!result.ok || !result.state) return result;
 
-    const { state: advancedState, events: advanceEvents } = autoAdvancePhase(result.state, rules);
-    const allEvents = [...(result.events ?? []), ...advanceEvents];
+    // RR 33: check every non-eliminated player against the 3 elimination
+    // conditions after every single action — cheap (early-exits fast for
+    // anyone obviously still fine) and means no individual handler above
+    // has to remember to check this itself. Runs BEFORE autoAdvancePhase
+    // since phase-transition checks (e.g. "has every non-eliminated player
+    // finished scoring?") need to already see this action's own
+    // elimination fallout, if any.
+    const eliminationResult = checkAndApplyEliminations(result.state, rules);
+    const stateAfterEliminations = eliminationResult.state;
+    const eliminationEvents = eliminationResult.events;
+
+    // RR 87.7/98.7: any victory-point grant, from ANY source, is checked
+    // against the victory point target here — see phases/elimination.ts's
+    // own header note on why this needed to be centralized rather than
+    // retrofitted into every individual VP-granting call site.
+    const stateAfterVictoryCheck = checkForVictory(stateAfterEliminations);
+    const victoryEvents: GameEvent[] = stateAfterVictoryCheck.winnerId && !stateAfterEliminations.winnerId ? [{ type: "GAME_ENDED", winnerId: stateAfterVictoryCheck.winnerId }] : [];
+
+    const { state: advancedState, events: advanceEvents } = autoAdvancePhase(stateAfterVictoryCheck, rules);
+    const allEvents = [...(result.events ?? []), ...eliminationEvents, ...victoryEvents, ...advanceEvents];
 
     // See GameState.ts's own doc comment on recentEvents for why this
     // lives here (one central place, so no handler has to remember it)
@@ -386,7 +412,7 @@ export const GameEngine = {
 
     if (state.phase === "strategy") {
       const alreadyHasCard = player.strategyCards.length > 0;
-      const cardsNeeded = Object.keys(state.players).length <= 4 ? 2 : 1;
+      const cardsNeeded = getStrategyCardsPerPlayer(state);
       if (player.strategyCards.length < cardsNeeded && isPlayersStrategyTurn(state, playerId)) {
         legal.push("CHOOSE_STRATEGY_CARD");
       }
@@ -437,6 +463,12 @@ export const GameEngine = {
             legal.push("ASSIGN_BOMBARDMENT_HITS");
           } else if (!state.pendingTacticalAction.invasionCommitsFinished) {
             legal.push("BOMBARD", "COMMIT_GROUND_FORCES", "FINISH_INVASION_COMMITS");
+            // RR 27.2: USE_REMOVE_CUSTODIANS_TOKEN isn't offered here — this
+            // function doesn't have `rules` in scope to confirm the active
+            // system is actually Mecatol Rex's, and applyAction is still the
+            // authority that rejects it correctly if used elsewhere. Same
+            // "fine to under-report, never over-report" contract as this
+            // function's own doc comment.
             if (player.technologies.includes(asTechId("dacxive_animators"))) legal.push("USE_DACXIVE_ANIMATORS");
             if (player.technologies.includes(asTechId("integrated_economy"))) legal.push("USE_INTEGRATED_ECONOMY");
           } else if ((state.pendingTacticalAction.remainingInvasionPlanetIds ?? []).length > 0) {
@@ -547,6 +579,9 @@ export const GameEngine = {
     if ((state.pendingGalacticCrisisPactOffer?.playersRemaining ?? []).includes(playerId)) {
       legal.push("USE_GALACTIC_CRISIS_PACT", "SKIP_GALACTIC_CRISIS_PACT");
     }
+    if ((state.pendingSecretObjectiveReturn ?? []).includes(playerId)) {
+      legal.push("RETURN_SECRET_OBJECTIVE");
+    }
 
     if (state.pendingTacticalAction?.step === "spaceCannonOffense") {
       const owesHits = (state.pendingTacticalAction.pendingHits?.[playerId] ?? 0) > 0;
@@ -625,7 +660,7 @@ function guardTurnLegality(state: GameState, action: GameAction): string | null 
 function isPlayersStrategyTurn(state: GameState, playerId: PlayerId): boolean {
   // RR 73.1: starting with the speaker and proceeding clockwise through seatOrder,
   // skipping anyone who already holds a strategy card for this round.
-  const cardsNeeded = Object.keys(state.players).length <= 4 ? 2 : 1;
+  const cardsNeeded = getStrategyCardsPerPlayer(state);
   for (const candidateId of rotateFromSpeaker(state)) {
     const candidate = state.players[candidateId];
     if (candidate.strategyCards.length < cardsNeeded) {
