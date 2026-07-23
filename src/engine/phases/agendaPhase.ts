@@ -3,7 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, AgendaId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
-import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome } from "./agendaEffects";
+import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { applyDirectiveResolutionSideEffects } from "./directiveEffects";
 
 /**
@@ -414,6 +414,7 @@ export function finalizeAgendaResolution(
         secretObjectiveDeck: deck.slice(drawn.length),
         players: { ...nextState.players, [electedId]: { ...elected, secretObjectives: [...elected.secretObjectives, ...drawn] } },
       };
+      nextState = maybeQueueSecretObjectiveLimit(nextState, rules, electedId);
     }
   }
 
@@ -477,6 +478,20 @@ export function finalizeAgendaResolution(
   }
 
   // Agenda phase done — a new round always starts with a Strategy phase.
+  // RR 8.4 "Ready Planets": every player readies EACH of their exhausted
+  // planets right here, before the new round starts — confirmed, this is
+  // unconditional (not just planets exhausted for voting this phase).
+  // Previously missing entirely: planets exhausted to cast votes stayed
+  // exhausted straight into the next strategy phase.
+  nextState = {
+    ...nextState,
+    systems: Object.fromEntries(
+      Object.entries(nextState.systems).map(([systemId, system]) => [
+        systemId,
+        { ...system, planets: system.planets.map((p) => (p.exhausted ? { ...p, exhausted: false } : p)) },
+      ]),
+    ),
+  };
   nextState = startNewRound(nextState, rules);
   events.push({ type: "PHASE_CHANGED", from: "agenda", to: "strategy", round: nextState.round });
   events.push({ type: "ROUND_STARTED", round: nextState.round });

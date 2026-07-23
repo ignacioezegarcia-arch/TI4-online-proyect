@@ -1,10 +1,11 @@
-import { GameState, PlanetState, SystemState, UnitStack } from "../types/GameState";
+import { GameState, Player, PlanetState, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, SystemId, PlanetId, AgendaId, asTechId } from "../types/ids";
 import { UnitType, STRUCTURE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
-import { usesCodex4Version } from "../rules/gameMode";
+import { usesCodex4Version, hasPoKContent } from "../rules/gameMode";
 import { isLawActiveWithOutcome, getLawOwner, maybeApplyShardOfTheThroneOnCombatWin, maybeApplyCrownOfEmphidiaOnControlGain, maybeQueueCrownOfThalnosReroll, isDemilitarizedZone } from "./agendaEffects";
+import { applyExplorationCard } from "./exploration";
 import {
   playersWithGroundForces,
   buildBombardmentEntries,
@@ -233,6 +234,13 @@ export function commitGroundForces(
   if (pending.currentInvasionPlanetId || (pending.pendingHits && Object.keys(pending.pendingHits).length > 0)) {
     return { ok: false, error: "RR 44.2: resolve the current pending hits before committing more ground forces." };
   }
+  // RR 27.1: units cannot commit ground forces to land on Mecatol Rex
+  // while the custodians token is still there — see useRemoveCustodiansToken
+  // below for the one path that both removes it AND lands forces in the
+  // same action.
+  if (pending.systemId === (rules.mecatolSystemId as SystemId) && !state.mecatolCustodiansRemoved) {
+    return { ok: false, error: 'RR 27.1: cannot commit ground forces to land on Mecatol Rex until the custodians token is removed (see USE_REMOVE_CUSTODIANS_TOKEN).' };
+  }
 
   const systemId = pending.systemId;
   const system = state.systems[systemId];
@@ -288,11 +296,77 @@ export function commitGroundForces(
     }
   } else {
     // Uncontested landing — establish control immediately (RR 44.5), no combat needed.
-    nextState = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules);
-    events.push({ type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId: action.targetPlanetId, playerId: action.playerId });
+    const controlResult = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules);
+    nextState = controlResult.state;
+    events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId: action.targetPlanetId, playerId: action.playerId });
   }
 
   return { ok: true, state: nextState, events };
+}
+
+/**
+ * RR 27.2: before the "Commit Ground Forces" step, the active player may
+ * remove the custodians token from Mecatol Rex by spending six influence
+ * — then they MUST commit at least one ground force to land there in
+ * this same action (RR: "if a player cannot commit ground forces to land
+ * on Mecatol Rex, they cannot remove the custodians token"). Pays the
+ * cost + flips the flag + grants the VP first, then reuses
+ * commitGroundForces' own logic for the actual landing (now unblocked,
+ * since the token is already gone by the time that runs).
+ */
+export function useRemoveCustodiansToken(
+  state: GameState,
+  action: { type: "USE_REMOVE_CUSTODIANS_TOKEN"; playerId: PlayerId; exhaustPlanetIdsForInfluence: PlanetId[]; units: { unitType: UnitType; count: number }[] },
+  rules: RuleData,
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.playerId !== action.playerId || pending.step !== "invasion") {
+    return { ok: false, error: "RR 27.2: no eligible tactical action for this player right now." };
+  }
+  if (pending.systemId !== (rules.mecatolSystemId as SystemId)) {
+    return { ok: false, error: "RR 27.2: the active system isn't Mecatol Rex's." };
+  }
+  if (state.mecatolCustodiansRemoved) {
+    return { ok: false, error: "RR 27.2: the custodians token has already been removed." };
+  }
+  const totalGroundForces = action.units.reduce((sum, u) => sum + u.count, 0);
+  if (totalGroundForces <= 0) {
+    return { ok: false, error: "RR 27.2: must commit at least 1 ground force to land on Mecatol Rex to remove the custodians token." };
+  }
+
+  let influence = 0;
+  let nextState: GameState = state;
+  for (const planetId of action.exhaustPlanetIdsForInfluence) {
+    const entry = Object.entries(nextState.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
+    const planet = entry?.[1].planets.find((p) => p.planetId === planetId);
+    if (!planet || planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    if (planet.exhausted) return { ok: false, error: `${planetId} is already exhausted.` };
+    const data = rules.planets[planetId];
+    if (!data) return { ok: false, error: `No static data for ${planetId}.` };
+    influence += data.influence;
+    const [systemId, system] = entry!;
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? { ...p, exhausted: true } : p)) } } };
+  }
+  const player = nextState.players[action.playerId];
+  const fromTradeGoods = Math.max(0, 6 - influence);
+  if (fromTradeGoods > player.tradeGoods) {
+    return { ok: false, error: `RR 27.2: not enough to pay 6 influence: ${influence} from exhausted planets + only ${player.tradeGoods} trade goods.` };
+  }
+
+  const updatedPlayer: Player = { ...player, tradeGoods: player.tradeGoods - fromTradeGoods, victoryPoints: { ...player.victoryPoints, current: player.victoryPoints.current + 1 } };
+  nextState = {
+    ...nextState,
+    mecatolCustodiansRemoved: true,
+    players: { ...nextState.players, [action.playerId]: updatedPlayer },
+  };
+
+  const mecatolPlanet = nextState.systems[pending.systemId]?.planets.find((p) => rules.planets[p.planetId]?.isMecatolRex);
+  if (!mecatolPlanet) return { ok: false, error: "No Mecatol Rex planet found in this system." };
+
+  const committed = commitGroundForces(nextState, { type: "COMMIT_GROUND_FORCES", playerId: action.playerId, targetPlanetId: mecatolPlanet.planetId, units: action.units }, rules);
+  if (!committed.ok) return committed;
+
+  return { ok: true, state: committed.state, events: committed.events };
 }
 
 export function finishInvasionCommits(
@@ -800,9 +874,10 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
   if (survivors.length <= 1) {
     const winner = survivors[0] ?? null;
     if (winner) {
-      nextState = setPlanetController(nextState, systemId, planetId, winner, rules);
+      const controlResult = setPlanetController(nextState, systemId, planetId, winner, rules);
+      nextState = controlResult.state;
       nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winner, combatantsBeforeEnd);
-      events.push({ type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
+      events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
     }
     events.push({ type: "GROUND_COMBAT_ENDED", systemId, planetId, survivingPlayerId: winner });
 
@@ -832,11 +907,11 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
   return { state: nextState, events };
 }
 
-/** RR 25.1: gaining control of a planet ALWAYS exhausts its planet card — no exceptions, regardless of how control was gained (invasion win, uncontested landing, anything else). RR 53.2: a legendary planet's separate ability card only readies if this is the FIRST time it's ever been controlled (i.e. it's coming "from the deck"); if it's being taken FROM another player, it keeps whatever exhausted/readied state it already had — untouched here, on purpose. */
-function setPlanetController(state: GameState, systemId: SystemId, planetId: PlanetId, controllerId: PlayerId, rules: RuleData): GameState {
+/** RR 25.1: gaining control of a planet ALWAYS exhausts its planet card — no exceptions, regardless of how control was gained (invasion win, uncontested landing, anything else). RR 53.2: a legendary planet's separate ability card only readies if this is the FIRST time it's ever been controlled (i.e. it's coming "from the deck"); if it's being taken FROM another player, it keeps whatever exhausted/readied state it already had — untouched here, on purpose. RR 25.1c: if the planet wasn't already controlled by ANOTHER player (i.e. this is genuinely the first time anyone's controlled it), the new controller explores it automatically — this used to only happen via the separate, player-initiated EXPLORE_PLANET action, which incorrectly made exploring a planet an optional extra step rather than an automatic consequence of gaining control. */
+function setPlanetController(state: GameState, systemId: SystemId, planetId: PlanetId, controllerId: PlayerId, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const system = state.systems[systemId];
   const planet = system.planets.find((p) => p.planetId === planetId);
-  if (!planet || planet.controllerId === controllerId) return state;
+  if (!planet || planet.controllerId === controllerId) return { state, events: [] };
 
   const previousControllerId = planet.controllerId;
   const wasUncontrolled = previousControllerId === null;
@@ -846,6 +921,15 @@ function setPlanetController(state: GameState, systemId: SystemId, planetId: Pla
     ...planet,
     controllerId,
     exhausted: true,
+    // RR 49.5b: any structures (PDS, space dock) belonging to OTHER
+    // players are destroyed immediately when control changes hands —
+    // previously untouched, meaning a captured planet kept the old
+    // controller's PDS/space dock sitting there indefinitely.
+    unitsByPlayer: Object.fromEntries(
+      Object.entries(planet.unitsByPlayer).map(([pid, stacks]) =>
+        pid === controllerId ? [pid, stacks] : [pid, (stacks ?? []).filter((s) => !STRUCTURE_TYPES.includes(s.unitType))],
+      ),
+    ),
     ...(wasUncontrolled && isLegendary ? { legendaryAbilityExhausted: false } : {}),
   };
   const updatedSystem: SystemState = {
@@ -853,6 +937,31 @@ function setPlanetController(state: GameState, systemId: SystemId, planetId: Pla
     planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
   };
   let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  const events: GameEvent[] = [];
+
+  // RR 25.1c: automatic exploration — only for a planet no one has EVER
+  // controlled before (wasUncontrolled), only with PoK content, and only
+  // if the planet actually has a trait to explore with (Mecatol Rex and
+  // home-system planets have none, and can't be explored — same check
+  // EXPLORE_PLANET itself already makes).
+  if (wasUncontrolled && hasPoKContent(state.mode) && !updatedPlanet.explored) {
+    const trait = rules.planets[planetId]?.traits[0] as "cultural" | "industrial" | "hazardous" | undefined;
+    if (trait) {
+      const deck = nextState.explorationDecks?.[trait] ?? [];
+      if (deck.length > 0) {
+        const [cardId, ...rest] = deck;
+        const result = applyExplorationCard(nextState, controllerId, systemId, planetId, cardId, rules);
+        nextState = result.state;
+        events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: controllerId, cardId, deck: trait });
+        nextState = { ...nextState, explorationDecks: { ...nextState.explorationDecks!, [trait]: rest } };
+      }
+      const exploredSystem = nextState.systems[systemId];
+      nextState = {
+        ...nextState,
+        systems: { ...nextState.systems, [systemId]: { ...exploredSystem, planets: exploredSystem.planets.map((p) => (p.planetId === planetId ? { ...p, explored: true } : p)) } },
+      };
+    }
+  }
 
   // RR "Minister of Exploration": the owner gains 1 trade good whenever THEY gain control of a planet (any planet, doesn't have to be a new one).
   const ministerOfExplorationOwnerId = getLawOwner(nextState, "minister_of_exploration" as AgendaId);
@@ -884,5 +993,5 @@ function setPlanetController(state: GameState, systemId: SystemId, planetId: Pla
   }
 
   // RR PoK "Wormhole Nexus": gaining control of Mallice is the OTHER trigger for the active-flip (the first being a ship arriving there — see tacticalAction.ts's moveShips).
-  return maybeActivateWormholeNexus(nextState, rules, systemId);
+  return { state: maybeActivateWormholeNexus(nextState, rules, systemId), events };
 }

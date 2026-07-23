@@ -4,6 +4,7 @@ import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
+import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { getEffectiveProducesQuantity, isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 
@@ -30,9 +31,12 @@ import { maybeAdvanceActivePlayer } from "./actionPhase";
  *    correct once there is.
  *  - No reinforcement-supply limit (RR: can't produce more of a unit than
  *    you have physical tokens left) — not tracked anywhere yet.
- *  - Structures (second Space Dock, PDS) can be "produced" here with no
- *    check that a planet only ever has one Space Dock, or any prerequisite
- *    tech check for PDS.
+ *  - RR 26.3/26.3a: structures (PDS, space dock) have no cost in the data
+ *    and are rejected outright if attempted here — see the explicit check
+ *    right where `stats.cost` is read below. They're placed exclusively
+ *    via the "Construction" strategy card (phases/strategyCardAbilities.ts's
+ *    placeStructuresFree, which enforces the same 1-space-dock/2-PDS-per-
+ *    planet limit as this file's own check further down).
  */
 export function produceUnits(
   state: GameState,
@@ -83,6 +87,17 @@ export function executeProduction(
     return { ok: false, error: 'RR "Demilitarized Zone": units cannot be produced on this planet.' };
   }
 
+  // RR 14 "Blockaded": a Production-capable unit is blockaded if it's in a
+  // system with NO ships of its own player but WITH another player's
+  // ships — a blockaded unit can still produce ground forces, just not
+  // ships. Previously unchecked entirely.
+  const ownShipsHere = (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.count > 0);
+  const otherPlayersShipsHere = Object.entries(system.spaceUnitsByPlayer).some(([pid, stacks]) => pid !== playerId && (stacks ?? []).some((s) => s.count > 0));
+  const isBlockaded = !ownShipsHere && otherPlayersShipsHere;
+  if (isBlockaded && units.some(({ unitType, count }) => count > 0 && SHIP_TYPES.includes(unitType))) {
+    return { ok: false, error: 'RR "Blockaded": this player has no ships of their own in this system and cannot produce ships here — ground forces are still allowed.' };
+  }
+
   const player = state.players[playerId];
   const producerStacks = planet.unitsByPlayer[playerId] ?? [];
   let productionLimit: number | null = null;
@@ -123,6 +138,16 @@ export function executeProduction(
     if (count <= 0) continue;
     const stats = getUnitStats(rules, player.factionId, unitType, player.unitUpgrades);
     if (!stats) return { ok: false, error: `No stats for ${unitType}.` };
+    // RR 26.3/26.3a: a unit with NO cost (structures — PDS, space dock)
+    // cannot be produced this way at all; they're placed exclusively via
+    // the "Construction" strategy card (or an equivalent effect), never
+    // through a Space Dock/etc.'s own Production ability. Previously
+    // unchecked: a null cost silently coerced to 0 in the arithmetic
+    // below, letting structures be "produced" here for free instead of
+    // being rejected outright.
+    if (stats.cost == null) {
+      return { ok: false, error: `RR 26.3: ${unitType} has no cost and cannot be produced this way — it's placed via the "Construction" strategy card instead.` };
+    }
     const perToken = getEffectiveProducesQuantity(state, unitType, stats.producesQuantity ?? 1);
     if (count % perToken !== 0) {
       return { ok: false, error: `RR 58: ${unitType} is produced ${perToken} at a time — ${count} isn't a multiple of that.` };
@@ -189,6 +214,17 @@ export function executeProduction(
     }
   }
 
+  // RR 37.1/76.2: producing non-fighter ships can't push this player's
+  // total in this system above their own fleet pool — same upfront-
+  // validation approach as MOVE_SHIPS' own equivalent check (see that
+  // file's own note on why this project rejects rather than reactively
+  // prompts for which excess ship to remove).
+  const existingNonFighterShips = (system.spaceUnitsByPlayer[playerId] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter").reduce((sum, s) => sum + s.count, 0);
+  const newNonFighterShips = resolvedUnits.filter((u) => SHIP_TYPES.includes(u.unitType) && u.unitType !== "fighter").reduce((sum, u) => sum + u.count, 0);
+  if (existingNonFighterShips + newNonFighterShips > player.commandTokens.fleet) {
+    return { ok: false, error: `RR 37.1: producing these ships would leave ${existingNonFighterShips + newNonFighterShips} non-fighter ships in ${systemId}, exceeding this player's fleet pool (${player.commandTokens.fleet}).` };
+  }
+
   for (const { unitType, count, unitCost } of resolvedUnits) {
     const isShip = SHIP_TYPES.includes(unitType);
     const target = isShip ? updatedSpaceStacks : updatedPlanetStacks;
@@ -241,7 +277,10 @@ export function executeProduction(
     },
   };
 
-  return { ok: true, state: nextState, events };
+  // RR 100.2: placing a unit (via Production) directly into the wormhole
+  // nexus system also flips it active — previously only covered for
+  // ships arriving via MOVE_SHIPS and for gaining control of Mallice.
+  return { ok: true, state: maybeActivateWormholeNexus(nextState, rules, systemId), events };
 }
 
 /** RR 78: closes out the tactical action and advances the turn — see this action's own doc comment in Actions.ts for why it had to exist. */

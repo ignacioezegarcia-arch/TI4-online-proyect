@@ -6,6 +6,7 @@ import { RuleData } from "../types/RuleData";
 import { getAdjacentSystems } from "../rules/adjacency";
 import { researchTechnology } from "./technology";
 import { resolveStrategySecondary } from "./strategyCardAbilities";
+import { maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 
 /**
  * RR 7 DIRECTIVES — the actual per-directive mechanics, mirroring
@@ -43,6 +44,7 @@ export function applyDirectiveResolutionSideEffects(
         secretObjectiveDeck: deck.slice(drawn.length),
         players: { ...nextState.players, [electedId]: { ...elected, secretObjectives: [...elected.secretObjectives, ...drawn] } },
       };
+      nextState = maybeQueueSecretObjectiveLimit(nextState, rules, electedId);
     }
   }
 
@@ -492,6 +494,7 @@ export function useResearchGrantReallocation(
   return { ok: true, state: nextState, events: [] };
 }
 
+
 /**
  * RR "Ixthian Artifact" ("for"): the speaker's own die roll (pre-rolled by
  * the trusted context, same convention as combat dice elsewhere in this
@@ -538,7 +541,7 @@ export function useIxthianArtifactDieRoll(
     };
   }
 
-  const adjacentIds = mecatolSystem ? getAdjacentSystems(nextState, mecatolSystemId) : [];
+  const adjacentIds = mecatolSystem ? getAdjacentSystems(nextState, mecatolSystemId, rules) : [];
   for (const adjId of adjacentIds) {
     const system = nextState.systems[adjId];
     if (!system) continue;

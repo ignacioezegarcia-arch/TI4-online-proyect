@@ -129,6 +129,10 @@ export function autoAdvancePhase(state: GameState, rules: RuleData): { state: Ga
       const bookkeeping = runStatusPhaseBookkeeping(state);
       next = bookkeeping.state;
       events = [...bookkeeping.events];
+      // RR 61.15/81.2b: the game may have just ended right here (no public
+      // objectives left to reveal) — if so, stop immediately, before any
+      // of the rest of the status phase's own steps or phase transitions.
+      if (next.winnerId) return { state: next, events };
     }
 
     // RR 20/70.5: the status phase can't actually finish until every
@@ -200,6 +204,18 @@ export function scoreObjective(
     return { ok: false, error: "Objective isn't revealed (public) or held (secret) by this player." };
   }
 
+  // RR 61.16: a player cannot score PUBLIC objectives at all unless they
+  // control every planet in their own home system — previously unchecked
+  // entirely. Secrets are unaffected (RR only names public objectives).
+  if (kind !== "secret") {
+    const homeSystemId = rules.homeSystemByFaction[player.factionId] as SystemId | undefined;
+    const homeSystem = homeSystemId ? state.systems[homeSystemId] : undefined;
+    const controlsWholeHomeSystem = homeSystem ? homeSystem.planets.every((p) => p.controllerId === action.playerId) : false;
+    if (!controlsWholeHomeSystem) {
+      return { ok: false, error: "RR 61.16: this player cannot score public objectives — they don't control every planet in their own home system." };
+    }
+  }
+
   // RR 70.1's "max 1 public + 1 secret per status phase" limit only applies
   // to the status-phase scoring window — actionPhase/agendaPhase-timed
   // secrets are opportunistic, no such cap on them.
@@ -267,6 +283,24 @@ export function scoreObjectiveCore(
 
   const objectiveData = rules.objectives[objectiveId];
   if (!objectiveData) return { ok: false, error: `No rule data for objective ${objectiveId}.` };
+
+  // RR 61.16: same check as scoreObjective's own wrapper — repeated here
+  // since Imperial's strategy card ability calls this core function
+  // DIRECTLY, bypassing that wrapper entirely (see this function's own
+  // header note on why). Simplification, flagged: keyed off each
+  // objective's own STATIC kind (rules.objectives[...].kind), so a
+  // Classified Document Leaks-converted secret (which behaves like a
+  // public objective at runtime, but is still statically "secret" in the
+  // data it was printed with) is not caught by this specific check —
+  // same category as this project's other rare, acknowledged edge cases.
+  if (objectiveData.kind !== "secret") {
+    const homeSystemId = rules.homeSystemByFaction[player.factionId] as SystemId | undefined;
+    const homeSystem = homeSystemId ? state.systems[homeSystemId] : undefined;
+    const controlsWholeHomeSystem = homeSystem ? homeSystem.planets.every((p) => p.controllerId === playerId) : false;
+    if (!controlsWholeHomeSystem) {
+      return { ok: false, error: "RR 61.16: this player cannot score public objectives — they don't control every planet in their own home system." };
+    }
+  }
 
   let workingState = state;
   if (objectiveData.checkType === "manual") {
@@ -475,6 +509,24 @@ export function finishStatusPhaseScoring(
 function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events: GameEvent[] } {
   const events: GameEvent[] = [];
 
+  // RR 61.15/81.2b: if there are no unrevealed public objectives left at
+  // all (both stages exhausted), the game ends IMMEDIATELY right here —
+  // before any of the rest of the status phase's own steps (action card
+  // draw, command tokens, readying, repairs) even run. Previously
+  // unchecked entirely: with both decks seeded and drained, this
+  // function would just silently skip the reveal and continue on to a
+  // phantom extra round forever.
+  if (state.publicObjectiveDeck && state.publicObjectiveDeck.stageI.length === 0 && state.publicObjectiveDeck.stageII.length === 0) {
+    const candidates = Object.values(state.players).filter((p) => !p.eliminated);
+    const maxVp = Math.max(0, ...candidates.map((p) => p.victoryPoints.current));
+    const tied = candidates.filter((p) => p.victoryPoints.current === maxVp);
+    // RR 61.15a/98.8: ties go to whoever is earliest in initiative order.
+    const winnerId = (state.initiativeOrder.find((id) => tied.some((p) => p.id === id)) ?? tied[0]?.id) as PlayerId | undefined;
+    if (winnerId) {
+      return { state: { ...state, winnerId }, events: [{ type: "GAME_ENDED", winnerId }] };
+    }
+  }
+
   // RR 70.2: reveal 1 public objective — Stage I deck first, then Stage II
   // once Stage I is exhausted. No-ops (doesn't error) if both decks are
   // empty, e.g. before game setup has seeded them.
@@ -639,6 +691,7 @@ export function startNewRound(state: GameState, rules: RuleData): GameState {
     pendingRepresentativeGovernmentAgainstVoters: undefined,
     pendingArmsReductionExhaustTechSpecialty: undefined,
     pendingNewConstitutionExhaustHomeSystem: undefined,
+    strategyCardSecondariesUsedBy: undefined,
   };
 }
 

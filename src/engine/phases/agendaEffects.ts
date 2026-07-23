@@ -1,11 +1,12 @@
 import { GameState, Player, PlanetState, SystemState, PendingTacticalAction } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId, AgendaId } from "../types/ids";
+import { PlayerId, PlanetId, SystemId, AgendaId, ObjectiveId } from "../types/ids";
 import { UnitType, UnitAbility, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { startNewRound, maybeAdvanceActivePlayer } from "./actionPhase";
 import { arePlayersNeighbors } from "../rules/adjacency";
 import { buildGroundCombatEntries, buildSpaceCombatEntries } from "../rules/combat";
+import { fisherYatesShuffle } from "../setup/mapGeneration";
 import { finalizeAgendaResolution, revealAgenda } from "./agendaPhase";
 
 /**
@@ -398,11 +399,54 @@ export function getEffectiveUnitAbilities(
   return abilities;
 }
 
+/**
+ * RR 45.4/61.21: a player can have at most 3 TOTAL secret objectives —
+ * counting both unscored (in hand) and already-scored ones together.
+ * Call this right after ANY action grants a player a new secret objective
+ * (Imperial's primary/secondary, Search Warrant, Archived Secret) — if
+ * they're now over the limit, queues their own choice of which UNSCORED
+ * one to return to the deck (see returnSecretObjective below). Shared
+ * here (not duplicated per grant site) since all 4 current sources of
+ * secret objectives already import from this file.
+ */
+export function maybeQueueSecretObjectiveLimit(state: GameState, rules: RuleData, playerId: PlayerId): GameState {
+  const player = state.players[playerId];
+  if (!player) return state;
+  const scoredSecretCount = player.victoryPoints.scoredObjectiveIds.filter((id) => rules.objectives[id]?.kind === "secret").length;
+  const total = player.secretObjectives.length + scoredSecretCount;
+  if (total <= 3) return state;
+  const already = state.pendingSecretObjectiveReturn ?? [];
+  if (already.includes(playerId)) return state;
+  return { ...state, pendingSecretObjectiveReturn: [...already, playerId] };
+}
+
+/** RR 45.4: the player's own choice of which UNSCORED secret objective to return to the deck (shuffled back in), now that they're over the 3-total limit. */
+export function returnSecretObjective(
+  state: GameState,
+  action: { type: "RETURN_SECRET_OBJECTIVE"; playerId: PlayerId; objectiveId: ObjectiveId },
+): ActionResult {
+  if (!(state.pendingSecretObjectiveReturn ?? []).includes(action.playerId)) {
+    return { ok: false, error: "This player has no pending secret-objective-limit return owed right now." };
+  }
+  const player = state.players[action.playerId];
+  if (!player.secretObjectives.includes(action.objectiveId)) {
+    return { ok: false, error: "This player doesn't hold that secret objective unscored." };
+  }
+  const updatedPlayer: Player = { ...player, secretObjectives: player.secretObjectives.filter((id) => id !== action.objectiveId) };
+  const nextState: GameState = {
+    ...state,
+    players: { ...state.players, [action.playerId]: updatedPlayer },
+    secretObjectiveDeck: fisherYatesShuffle([...(state.secretObjectiveDeck ?? []), action.objectiveId], Math.random),
+    pendingSecretObjectiveReturn: (state.pendingSecretObjectiveReturn ?? []).filter((id) => id !== action.playerId),
+  };
+  return { ok: true, state: nextState, events: [] };
+}
+
 /** RR "Minister of Commerce": after `replenishedPlayerId` replenishes their commodities (Trade strategy card, primary or secondary), if they own this card, they gain 1 trade good per player who's currently their neighbor. A no-op if nobody owns the card, or the replenished player isn't its owner. */
 export function maybeApplyMinisterOfCommerce(state: GameState, rules: RuleData, replenishedPlayerId: PlayerId): GameState {
   const ownerId = getLawOwner(state, "minister_of_commerce" as AgendaId);
   if (ownerId !== replenishedPlayerId) return state;
-  const neighborCount = Object.keys(state.players).filter((id) => id !== ownerId && arePlayersNeighbors(state, ownerId, id as PlayerId)).length;
+  const neighborCount = Object.keys(state.players).filter((id) => id !== ownerId && arePlayersNeighbors(state, ownerId, id as PlayerId, rules)).length;
   if (neighborCount === 0) return state;
   const owner = state.players[ownerId];
   return { ...state, players: { ...state.players, [ownerId]: { ...owner, tradeGoods: owner.tradeGoods + neighborCount } } };

@@ -1,12 +1,12 @@
 import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId, PlanetId, TechId, UnitUpgradeId, ObjectiveId, AgendaId } from "../types/ids";
+import { PlayerId, SystemId, PlanetId, TechId, UnitUpgradeId, ObjectiveId, AgendaId, StrategyCardId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { isAdjacent } from "../rules/adjacency";
 import { executeProduction } from "./production";
 import { researchTechnology, researchUnitUpgrade } from "./technology";
 import { scoreObjectiveCore } from "./actionPhase";
-import { maybeApplyMinisterOfCommerce, getLawOwner } from "./agendaEffects";
+import { maybeApplyMinisterOfCommerce, getLawOwner, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 
 /**
  * RR 20-ish, one section per strategy card (data/strategyCards.json has the
@@ -98,8 +98,37 @@ export function resolveStrategyPrimary(
 ): ActionResult {
   const player = state.players[action.playerId];
   if (!player) return { ok: false, error: "Unknown player." };
+  // RR 83.3/83.7: a player may only resolve the PRIMARY ability of a
+  // strategy card THEY OWN, and only once (it's exhausted right after —
+  // see the end of this function). Previously unchecked entirely: any
+  // player could resolve any card's primary, any number of times.
+  const ownCardEntry = player.strategyCards.find((c) => c.cardId === action.cardId);
+  if (!ownCardEntry) return { ok: false, error: `RR 83.3: this player doesn't hold the "${action.cardId}" strategy card.` };
+  if (ownCardEntry.exhausted) return { ok: false, error: `RR 82.2/71.6: the "${action.cardId}" strategy card has already been used this round.` };
   const p = (action.payload ?? {}) as Record<string, unknown>;
+  const result = resolveStrategyPrimaryEffect(state, action, player, p, rules);
+  if (!result.ok) return result;
 
+  // RR 82.2/71.6: exhaust the card right after its primary resolves.
+  const resolvingPlayer = result.state.players[action.playerId];
+  const nextState: GameState = {
+    ...result.state,
+    players: {
+      ...result.state.players,
+      [action.playerId]: { ...resolvingPlayer, strategyCards: resolvingPlayer.strategyCards.map((c) => (c.cardId === action.cardId ? { ...c, exhausted: true } : c)) },
+    },
+  };
+  return { ok: true, state: nextState, events: result.events };
+}
+
+/** The actual per-card primary-ability effects — split out from resolveStrategyPrimary so that function's own ownership/exhaustion bookkeeping (RR 83.3/82.2) wraps every card's effect in exactly one place, instead of being duplicated in every `case` branch. */
+function resolveStrategyPrimaryEffect(
+  state: GameState,
+  action: { type: "RESOLVE_STRATEGY_PRIMARY"; playerId: PlayerId; cardId: string; payload: unknown },
+  player: Player,
+  p: Record<string, unknown>,
+  rules: RuleData,
+): ActionResult {
   switch (action.cardId) {
     case "leadership": {
       const dist = p.tokenDistribution as { tactic: number; fleet: number; strategy: number };
@@ -167,7 +196,7 @@ export function resolveStrategyPrimary(
       const placements = (p.placements as { planetId: PlanetId; unitType: "space_dock" | "pds" }[]).slice(0, 2);
       const spaceDockCount = placements.filter((pl) => pl.unitType === "space_dock").length;
       if (spaceDockCount > 1) return { ok: false, error: "RR: at most 1 Space Dock may be placed this way." };
-      return placeStructuresFree(state, action.playerId, placements);
+      return placeStructuresFree(state, action.playerId, placements, rules);
     }
 
     case "trade": {
@@ -243,6 +272,7 @@ export function resolveStrategyPrimary(
           const [objectiveId, ...rest] = deck;
           const pl = next.players[action.playerId];
           next = { ...next, secretObjectiveDeck: rest, players: { ...next.players, [action.playerId]: { ...pl, secretObjectives: [...pl.secretObjectives, objectiveId] } } };
+          next = maybeQueueSecretObjectiveLimit(next, rules, action.playerId);
         }
       }
       return { ok: true, state: next, events };
@@ -257,13 +287,53 @@ export function resolveStrategySecondary(
   state: GameState,
   action: { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: string; payload: unknown },
   rules: RuleData,
-  /** RR "Galactic Crisis Pact": the elected strategy card's secondary is free (no strategy-token cost) for every player this one time — see phases/directiveEffects.ts's useGalacticCrisisPact. */
+  /** RR "Galactic Crisis Pact": the elected strategy card's secondary is free (no strategy-token cost) for every player this one time — see phases/directiveEffects.ts's useGalacticCrisisPact. Also bypasses the normal "someone else chose this card this round" eligibility below entirely, since Galactic Crisis Pact's own card is agenda-elected, not necessarily chosen by anyone this round at all. */
   skipCost?: boolean,
 ): ActionResult {
   const player = state.players[action.playerId];
   if (!player) return { ok: false, error: "Unknown player." };
-  const p = (action.payload ?? {}) as Record<string, unknown>;
 
+  if (!skipCost) {
+    // RR 83.4: a player may only resolve the SECONDARY ability of a
+    // strategy card CHOSEN BY ANOTHER PLAYER — never their own — and
+    // only once per card per round (RR 82.1's own "may resolve" framing,
+    // tracked here since nothing previously did). Previously unchecked
+    // entirely: a player could resolve their OWN card's secondary, or
+    // the same other player's card's secondary repeatedly.
+    if (player.strategyCards.some((c) => c.cardId === action.cardId)) {
+      return { ok: false, error: `RR 83.4: this player owns the "${action.cardId}" strategy card themselves — only OTHER players may resolve its secondary ability.` };
+    }
+    const chosenByAnyone = Object.values(state.players).some((p) => p.strategyCards.some((c) => c.cardId === action.cardId));
+    if (!chosenByAnyone) {
+      return { ok: false, error: `RR 83.4: no player has chosen the "${action.cardId}" strategy card this round.` };
+    }
+    if ((state.strategyCardSecondariesUsedBy?.[action.cardId as StrategyCardId] ?? []).includes(action.playerId)) {
+      return { ok: false, error: `RR 82.1: this player has already resolved the "${action.cardId}" strategy card's secondary ability this round.` };
+    }
+  }
+
+  const p = (action.payload ?? {}) as Record<string, unknown>;
+  const result = resolveStrategySecondaryEffect(state, action, player, p, rules, skipCost);
+  if (!result.ok) return result;
+  if (skipCost) return result;
+
+  const cardId = action.cardId as StrategyCardId;
+  const nextState: GameState = {
+    ...result.state,
+    strategyCardSecondariesUsedBy: { ...result.state.strategyCardSecondariesUsedBy, [cardId]: [...(result.state.strategyCardSecondariesUsedBy?.[cardId] ?? []), action.playerId] },
+  };
+  return { ok: true, state: nextState, events: result.events };
+}
+
+/** The actual per-card secondary-ability effects — split out from resolveStrategySecondary so that function's own eligibility/once-per-round bookkeeping (RR 83.4/82.1) wraps every card's effect in exactly one place. */
+function resolveStrategySecondaryEffect(
+  state: GameState,
+  action: { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: string; payload: unknown },
+  player: Player,
+  p: Record<string, unknown>,
+  rules: RuleData,
+  skipCost?: boolean,
+): ActionResult {
   // Leadership's secondary is the one explicit exception to the "costs 1 strategy token" rule.
   let charged = player;
   if (action.cardId !== "leadership" && !skipCost) {
@@ -302,7 +372,7 @@ export function resolveStrategySecondary(
     }
     case "construction": {
       const placement = p.placement as { planetId: PlanetId; unitType: "space_dock" | "pds" };
-      return placeStructuresFree(working, action.playerId, [placement]);
+      return placeStructuresFree(working, action.playerId, [placement], rules);
     }
     case "trade": {
       const max = rules.factions[charged.factionId]?.commoditiesMax ?? 0;
@@ -332,9 +402,10 @@ export function resolveStrategySecondary(
       if (!deck || deck.length === 0) return { ok: true, state: working, events: [] };
       const [objectiveId, ...rest] = deck;
       const pl = working.players[action.playerId];
+      const withSecret: GameState = { ...working, secretObjectiveDeck: rest, players: { ...working.players, [action.playerId]: { ...pl, secretObjectives: [...pl.secretObjectives, objectiveId] } } };
       return {
         ok: true,
-        state: { ...working, secretObjectiveDeck: rest, players: { ...working.players, [action.playerId]: { ...pl, secretObjectives: [...pl.secretObjectives, objectiveId] } } },
+        state: maybeQueueSecretObjectiveLimit(withSecret, rules, action.playerId),
         events: [],
       };
     }
@@ -358,6 +429,7 @@ function placeStructuresFree(
   state: GameState,
   playerId: PlayerId,
   placements: { planetId: PlanetId; unitType: "space_dock" | "pds" }[],
+  rules: RuleData,
 ): ActionResult {
   let next = state;
   for (const { planetId, unitType } of placements) {
@@ -366,6 +438,23 @@ function placeStructuresFree(
     const [systemId, system] = entry;
     const planet = system.planets.find((p) => p.planetId === planetId)!;
     if (planet.controllerId !== playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+
+    // RR 85.4/85.5: at most 1 space dock and 2 PDS per planet, counting
+    // ALL players' units there together — same limit (and the same RR
+    // "Homeland Defense Act" PDS-lift exception) as PRODUCE_UNITS'
+    // own check; previously this — Construction's own way of placing
+    // structures — didn't check it at all.
+    const pdsLimitLifted = isLawActiveWithOutcome(next, "homeland_defense_act" as AgendaId, "for");
+    const limit = unitType === "pds" ? 2 : 1;
+    if (!(unitType === "pds" && pdsLimitLifted)) {
+      const existingOnPlanet = Object.values(planet.unitsByPlayer)
+        .flat()
+        .filter((s): s is NonNullable<typeof s> => Boolean(s) && s!.unitType === unitType)
+        .reduce((sum, s) => sum + s!.count, 0);
+      if (existingOnPlanet + 1 > limit) {
+        return { ok: false, error: `RR 85: ${planetId} can have at most ${limit} ${unitType}(s); it already has ${existingOnPlanet}.` };
+      }
+    }
 
     const stacks = (planet.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
     const existing = stacks.find((s) => s.unitType === unitType);

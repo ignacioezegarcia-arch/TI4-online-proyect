@@ -1,9 +1,9 @@
 import { GameState, PendingTacticalAction, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, SystemId, asTechId } from "../types/ids";
-import { UnitType, SHIP_TYPES } from "../types/enums";
+import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
-import { isAdjacent } from "../rules/adjacency";
+import { isAdjacent, maybeActivateWormholeNexus } from "../rules/adjacency";
 import { getEffectiveUnitAbilities, maybeApplyShardOfTheThroneOnCombatWin, maybeQueueCrownOfThalnosReroll } from "./agendaEffects";
 import {
   playersWithShipsInSystem,
@@ -196,7 +196,8 @@ export function useAntiFighterBarrage(
   };
 
   if (hits === 0 && remainingAfbPending.length === 0) {
-    nextState = beginCombatRoundsAfterAFB(nextState);
+    const wrap = beginCombatRoundsAfterAFB(nextState, rules);
+    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
 
   return { ok: true, state: nextState, events };
@@ -248,15 +249,37 @@ export function assignAntiFighterBarrageHits(
 
   const afbPending = pending.afbPendingPlayers ?? [];
   if (afbPending.length === 0 && Object.keys(remainingPendingHits).length === 0) {
-    nextState = beginCombatRoundsAfterAFB(nextState);
+    const wrap = beginCombatRoundsAfterAFB(nextState, rules);
+    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
 
   return { ok: true, state: nextState, events };
 }
 
-function beginCombatRoundsAfterAFB(state: GameState): GameState {
+/**
+ * RR 67.1/78.3a: if AFB wipes out one (or both) side's ships entirely,
+ * space combat ends IMMEDIATELY right here — it never even reaches a
+ * normal combat round. Previously this unconditionally jumped to
+ * `combatRound: 1` regardless, meaning a side reduced to zero ships by
+ * AFB alone would still (incorrectly) sit around waiting for a combat
+ * round that should never happen, instead of moving straight to the
+ * "invasion" step like any other space-combat conclusion.
+ */
+function beginCombatRoundsAfterAFB(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingTacticalAction!;
-  return { ...state, pendingTacticalAction: { ...pending, combatRound: 1, afbPendingPlayers: undefined } };
+  const systemId = pending.systemId;
+  const combatantsBeforeEnd = Object.keys(state.systems[systemId]?.spaceUnitsByPlayer ?? {}) as PlayerId[];
+  const survivors = playersWithShipsInSystem(state, systemId);
+
+  if (survivors.length <= 1) {
+    const winnerId = survivors[0] ?? null;
+    let nextState = state;
+    if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
+    nextState = { ...nextState, pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" } };
+    return { state: nextState, events: [{ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId }] };
+  }
+
+  return { state: { ...state, pendingTacticalAction: { ...pending, combatRound: 1, afbPendingPlayers: undefined } }, events: [] };
 }
 
 export function announceRetreat(
@@ -278,6 +301,13 @@ export function announceRetreat(
   }
   if (pending.retreating?.some((r) => r.playerId === action.playerId)) {
     return { ok: false, error: "This player has already announced a retreat this round." };
+  }
+  // RR 67.4/78.4b: if the DEFENDER has already announced a retreat this
+  // round, the ATTACKER cannot also announce one — previously unchecked,
+  // meaning both sides could retreat from the same combat round.
+  const isAttacker = action.playerId === pending.playerId;
+  if (isAttacker && (pending.retreating ?? []).some((r) => r.playerId !== pending.playerId)) {
+    return { ok: false, error: "RR 67.4: the defender has already announced a retreat this round — the attacker cannot also retreat." };
   }
   if (!isAdjacent(state, pending.systemId, action.toSystemId)) {
     return { ok: false, error: "RR 67.4: retreat destination must be adjacent to the combat system." };
@@ -527,7 +557,7 @@ export function skipDuraniumArmor(
 // --- helpers ---------------------------------------------------------------
 
 /** Called once every player owed hits this round has submitted ASSIGN_HITS. Executes any announced retreats, then either ends space combat (advances to "invasion") or starts the next round. */
-function wrapUpCombatRound(state: GameState, _rules: RuleData): { state: GameState; events: GameEvent[] } {
+function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingTacticalAction;
   if (!pending) return { state, events: [] };
   const systemId = pending.systemId;
@@ -537,7 +567,11 @@ function wrapUpCombatRound(state: GameState, _rules: RuleData): { state: GameSta
   for (const r of pending.retreating ?? []) {
     const stillHasShips = (nextState.systems[systemId].spaceUnitsByPlayer[r.playerId] ?? []).length > 0;
     if (!stillHasShips) continue; // wiped out this round before retreating
-    nextState = moveAllShips(nextState, systemId, r.toSystemId, r.playerId);
+    const retreatResult = moveAllShips(nextState, systemId, r.toSystemId, r.playerId, rules);
+    nextState = retreatResult.state;
+    events.push(...retreatResult.events);
+    // RR 100.2: ships retreating INTO the wormhole nexus system also flip it active.
+    nextState = maybeActivateWormholeNexus(nextState, rules, r.toSystemId);
   }
 
   // Object.keys here (not playersWithShipsInSystem) on purpose — a
@@ -571,11 +605,55 @@ function wrapUpCombatRound(state: GameState, _rules: RuleData): { state: GameSta
   return { state: nextState, events };
 }
 
-function moveAllShips(state: GameState, fromSystemId: SystemId, toSystemId: SystemId, playerId: PlayerId): GameState {
+/**
+ * RR 67.7/78.7b: a retreating player takes all of their ships WITH a move
+ * value — fighters and ground forces don't retreat under their own power
+ * here, they need to be carried by those ships' own combined capacity,
+ * same as any other transport. Whichever fighters/ground forces don't
+ * fit (or whichever ship, unusually, has no move value at all) are
+ * "unable to move or be transported" and are removed outright — this was
+ * previously unchecked entirely; every retreating unit just moved along
+ * regardless of capacity. Which specific units get left behind when
+ * capacity falls short isn't offered as a real player choice yet (stack
+ * order instead) — flagged simplification, same category as this
+ * project's other minor "which unit" defaults.
+ */
+function moveAllShips(state: GameState, fromSystemId: SystemId, toSystemId: SystemId, playerId: PlayerId, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const fromSystem = state.systems[fromSystemId];
   const toSystem = state.systems[toSystemId];
-  const movingStacks = fromSystem.spaceUnitsByPlayer[playerId] ?? [];
+  const player = state.players[playerId];
+  const allStacks = fromSystem.spaceUnitsByPlayer[playerId] ?? [];
 
+  const retreatingShips: UnitStack[] = [];
+  const cargoStacks: UnitStack[] = [];
+  let totalCapacity = 0;
+
+  for (const stack of allStacks) {
+    if (stack.count <= 0) continue;
+    if (stack.unitType === "fighter" || GROUND_FORCE_TYPES.includes(stack.unitType)) {
+      cargoStacks.push(stack);
+      continue;
+    }
+    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+    if (stats?.move == null) continue; // no move value — stays behind, removed below
+    retreatingShips.push(stack);
+    totalCapacity += (stats.capacity ?? 0) * stack.count;
+  }
+
+  let remainingCapacity = totalCapacity;
+  const movingCargo: UnitStack[] = [];
+  const events: GameEvent[] = [];
+  for (const stack of cargoStacks) {
+    const carried = Math.min(remainingCapacity, stack.count);
+    if (carried > 0) movingCargo.push({ ...stack, count: carried, damagedCount: Math.min(stack.damagedCount, carried) });
+    remainingCapacity -= carried;
+    const leftBehind = stack.count - carried;
+    if (leftBehind > 0) {
+      events.push({ type: "UNITS_DESTROYED", playerId, systemId: fromSystemId, unitType: stack.unitType, count: leftBehind });
+    }
+  }
+
+  const movingStacks = [...retreatingShips, ...movingCargo];
   const updatedFrom: SystemState = {
     ...fromSystem,
     spaceUnitsByPlayer: { ...fromSystem.spaceUnitsByPlayer, [playerId]: [] },
@@ -588,7 +666,22 @@ function moveAllShips(state: GameState, fromSystemId: SystemId, toSystemId: Syst
     },
   };
 
-  return { ...state, systems: { ...state.systems, [fromSystemId]: updatedFrom, [toSystemId]: updatedTo } };
+  let nextState: GameState = { ...state, systems: { ...state.systems, [fromSystemId]: updatedFrom, [toSystemId]: updatedTo } };
+
+  // RR 67.4/78.7d: a player whose units successfully retreat into an
+  // adjacent system must place a command token from their reinforcements
+  // there — unless they already have one in that system, in which case
+  // this is simply a no-op (not an additional token). Previously
+  // unchecked entirely. A no-op if nothing actually retreated (e.g. every
+  // ship had no move value and was left behind).
+  if (movingStacks.length > 0 && !player.commandTokens.onBoard.includes(toSystemId)) {
+    nextState = {
+      ...nextState,
+      players: { ...nextState.players, [playerId]: { ...player, commandTokens: { ...player.commandTokens, onBoard: [...player.commandTokens.onBoard, toSystemId] } } },
+    };
+  }
+
+  return { state: nextState, events };
 }
 
 function mergeStacks(a: UnitStack[], b: UnitStack[]): UnitStack[] {

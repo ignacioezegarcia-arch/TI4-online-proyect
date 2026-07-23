@@ -1,7 +1,7 @@
 import { GameState, Player, SystemState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
 import { PlayerId, SystemId, asTechId } from "../types/ids";
-import { STRUCTURE_TYPES } from "../types/enums";
+import { STRUCTURE_TYPES, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
@@ -177,7 +177,7 @@ export function moveShips(
       !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, {
         ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
         ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")),
-      })
+      }, rules)
     ) {
       return {
         ok: false,
@@ -199,11 +199,9 @@ export function moveShips(
   // ships. Simplification, flagged rather than silently wrong: each cargo
   // entry must originate from the SAME system as one of this action's own
   // `moves` entries — picking up cargo at an intermediate hop mid-path (RR
-  // 84.1 technically allows this) isn't supported yet. Capacity (total
-  // cargo can't exceed the sum of capacity across the ships actually
-  // making this move) also isn't enforced yet — flagged, not silently
-  // ignored, same as the retreat/AFB/action-card gaps elsewhere in this
-  // file's neighborhood.
+  // 84.1 technically allows this) isn't supported yet. Capacity itself
+  // (RR 16.3, total cargo can't exceed the combined capacity of the ships
+  // making this move) IS enforced — see the check right after this loop.
   const moveOrigins = new Set(action.moves.map((m) => m.fromSystemId));
 
   for (const cargo of action.transportedGroundForces ?? []) {
@@ -238,6 +236,38 @@ export function moveShips(
     }
     workingState = removeFromSystem(workingState, cargo.fromSystemId, player.id, "fighter", cargo.count);
     workingState = addToSystem(workingState, activeSystemId, player.id, "fighter", cargo.count);
+  }
+
+  // RR 37.1/76.2: a player's non-fighter ships in ONE system can never
+  // exceed the number of tokens in their own fleet pool — checked here
+  // as an upfront validation against the system this move would leave
+  // them in, rather than the reactive "choose and remove excess ships"
+  // RR 37.3 describes; this project has no such pending-choice
+  // infrastructure yet, and rejecting the move outright before any state
+  // changes is the cleaner fit for MOVE_SHIPS specifically (unlike, say,
+  // Warfare's own token redistribution shrinking the pool AFTER ships are
+  // already parked there, which this check doesn't — and can't — cover).
+  const nonFighterShipsAfterMove = (workingState.systems[activeSystemId]?.spaceUnitsByPlayer[player.id] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter").reduce((sum, s) => sum + s.count, 0);
+  if (nonFighterShipsAfterMove > player.commandTokens.fleet) {
+    return { ok: false, error: `RR 37.1: this move would leave ${nonFighterShipsAfterMove} non-fighter ships in ${activeSystemId}, exceeding this player's fleet pool (${player.commandTokens.fleet}).` };
+  }
+
+  // RR 16.3: this player's combined fighters + ground forces sitting in
+  // the active system's space area can never exceed the combined
+  // capacity of all their OWN ships there — previously flagged as an
+  // acknowledged gap right in this function's own header comment above;
+  // implemented here the same way as the fleet-pool check just above it
+  // (upfront rejection, not a reactive "choose which excess unit to
+  // remove" prompt).
+  const activeSystemStacksAfterMove = workingState.systems[activeSystemId]?.spaceUnitsByPlayer[player.id] ?? [];
+  const totalCapacity = activeSystemStacksAfterMove.reduce((sum, s) => {
+    if (s.count <= 0 || !SHIP_TYPES.includes(s.unitType)) return sum;
+    const shipStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+    return sum + (shipStats?.capacity ?? 0) * s.count;
+  }, 0);
+  const totalCargo = activeSystemStacksAfterMove.reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
+  if (totalCargo > totalCapacity) {
+    return { ok: false, error: `RR 16.3: this move would leave ${totalCargo} fighters/ground forces in ${activeSystemId}'s space area, exceeding this player's combined ship capacity there (${totalCapacity}).` };
   }
 
   // RR 78.2: after moving, ANY player with a qualifying PDS may use Space

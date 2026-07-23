@@ -1,6 +1,8 @@
 import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, asPlanetId } from "../types/ids";
+import { RuleData } from "../types/RuleData";
+import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { drawActionCard } from "./actionCards";
 
 /**
@@ -140,6 +142,7 @@ export function useExterrixHeadquarters(
 export function useMirageFlightAcademy(
   state: GameState,
   action: { type: "USE_MIRAGE_FLIGHT_ACADEMY"; playerId: PlayerId; targetSystemId: SystemId; count: number },
+  rules: RuleData,
 ): ActionResult {
   const found = findControlledLegendaryPlanet(state, action.playerId, asPlanetId("mirage"));
   if ("error" in found) return { ok: false, error: found.error };
@@ -159,6 +162,8 @@ export function useMirageFlightAcademy(
 
   let nextState: GameState = { ...state, systems: { ...state.systems, [action.targetSystemId]: updatedSystem } };
   nextState = exhaustLegendaryAbility(nextState, found.systemId, asPlanetId("mirage"));
+  // RR 100.2: placing these fighters directly into the wormhole nexus system also flips it active.
+  nextState = maybeActivateWormholeNexus(nextState, rules, action.targetSystemId);
 
   const events: GameEvent[] = [
     { type: "UNITS_PRODUCED", playerId: action.playerId, systemId: action.targetSystemId, planetId: asPlanetId("mirage"), unitType: "fighter", count: action.count, totalCost: 0 },

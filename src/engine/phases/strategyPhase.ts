@@ -5,6 +5,20 @@ import { computeInitiativeOrder } from "../rules/initiative";
 import { isLawActiveWithOutcome } from "./agendaEffects";
 
 /**
+ * RR 73.1c/33.9: how many strategy cards each player picks this round — 2
+ * in a 3-4 player game, 1 otherwise. RR 33.9's own wrinkle: a game that
+ * STARTED with 5 or more players keeps everyone at 1 card even after
+ * eliminations bring the CURRENT count down to 4 or fewer — so this reads
+ * `startingPlayerCount` (frozen at game creation) instead of the live
+ * player count whenever that field is available, falling back to the
+ * live count for older/incomplete states that predate this field.
+ */
+export function getStrategyCardsPerPlayer(state: GameState): number {
+  const count = state.startingPlayerCount ?? Object.keys(state.players).length;
+  return count <= 4 ? 2 : 1;
+}
+
+/**
  * RR 73 STRATEGY PHASE.
  * STEP 1: starting with the speaker and proceeding clockwise, each player
  *         chooses one strategy card from the common play area. In 3-4p
@@ -24,7 +38,7 @@ export function chooseStrategyCard(
   }
 
   const player = state.players[action.playerId];
-  const cardsNeeded = Object.keys(state.players).length <= 4 ? 2 : 1;
+  const cardsNeeded = getStrategyCardsPerPlayer(state);
 
   if (player.strategyCards.length >= cardsNeeded) {
     return { ok: false, error: `RR 73.1: ${action.playerId} already holds their strategy card(s) for this round.` };
@@ -90,12 +104,12 @@ export function chooseStrategyCard(
 }
 
 function everyoneHasEnoughCards(state: GameState): boolean {
-  const cardsNeeded = Object.keys(state.players).length <= 4 ? 2 : 1;
+  const cardsNeeded = getStrategyCardsPerPlayer(state);
   return Object.values(state.players).every((p) => p.strategyCards.length >= cardsNeeded);
 }
 
 function isPlayersStrategyTurnInternal(state: GameState, playerId: PlayerId): boolean {
-  const cardsNeeded = Object.keys(state.players).length <= 4 ? 2 : 1;
+  const cardsNeeded = getStrategyCardsPerPlayer(state);
   const speakerId = state.seatOrder.find((id) => state.players[id].isSpeaker) ?? state.seatOrder[0];
   const startIndex = state.seatOrder.indexOf(speakerId);
   const rotated = [...state.seatOrder.slice(startIndex), ...state.seatOrder.slice(0, startIndex)];
