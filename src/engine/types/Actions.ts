@@ -220,7 +220,7 @@ export type GameAction =
       type: "PLAY_ACTION_CARD";
       playerId: PlayerId;
       cardId: ActionCardId;
-      /** Reserved for future per-card choices (targets, etc.) once individual card effects are implemented — unused for now. See phases/actionCards.ts's own note on what this action does and doesn't do yet. */
+      /** Only reached for a card that does NOT yet have its own dedicated PLAY_<CARD_NAME> action below — does the shared mechanical bookkeeping (hand -> discard) without resolving any printed effect. Once a card gets its own action type (see "Action card individual effects" below), clients should submit THAT instead of this. */
       payload?: unknown;
     }
   | {
@@ -229,6 +229,29 @@ export type GameAction =
       cardId: ActionCardId;
       /** RR 2.4-adjacent: voluntary discard — hand-limit compliance, or discarding for its own sake (e.g. the "discard N action cards" secret objective). Distinct from PLAY_ACTION_CARD's own discard-after-use, which does NOT count toward that objective's tally (see Player.actionCardsDiscardedCount's own doc comment). */
     }
+
+  // --- Action card individual effects (RR 2) ---
+  // Each is fully self-contained (hand removal + discard + effect) rather
+  // than composing with PLAY_ACTION_CARD, since a card's own legality
+  // checks (e.g. Uprising needing a valid non-home target) must run BEFORE
+  // the card leaves the player's hand. See phases/actionCardEffects.ts's
+  // own header comment for why this mirrors technologyAbilities.ts's
+  // "one GameAction per ability" shape rather than a generic dispatcher.
+  | { type: "PLAY_MINING_INITIATIVE"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLAY_INDUSTRIAL_INITIATIVE"; playerId: PlayerId }
+  | { type: "PLAY_ECONOMIC_INITIATIVE"; playerId: PlayerId }
+  | { type: "PLAY_UPRISING"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLAY_FOCUSED_RESEARCH"; playerId: PlayerId; techId: TechId }
+  | { type: "PLAY_IMPERSONATION"; playerId: PlayerId; exhaustPlanetIds: PlanetId[] }
+  | { type: "PLAY_UNEXPECTED_ACTION"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_REPEAL_LAW"; playerId: PlayerId; agendaId: AgendaId }
+  | { type: "PLAY_FRONTLINE_DEPLOYMENT"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLAY_RISE_OF_A_MESSIAH"; playerId: PlayerId }
+  | { type: "PLAY_WAR_EFFORT"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_GHOST_SHIP"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_FIGHTER_CONSCRIPTION"; playerId: PlayerId }
+  | { type: "PLAY_REFIT_TROOPS"; playerId: PlayerId; planetIds: PlanetId[] }
+  | { type: "PLAY_SCUTTLE"; playerId: PlayerId; targets: { systemId: SystemId; unitType: UnitType }[] }
   | {
       type: "RESEARCH_TECHNOLOGY";
       playerId: PlayerId;
@@ -464,12 +487,16 @@ export type GameEvent =
   | { type: "BOMBARDMENT_RESOLVED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number }
   | { type: "GROUND_COMBAT_ENDED"; systemId: SystemId; planetId: PlanetId; survivingPlayerId: PlayerId | null }
   | { type: "PLANET_CONTROL_ESTABLISHED"; systemId: SystemId; planetId: PlanetId; playerId: PlayerId }
-  | { type: "UNITS_PRODUCED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; unitType: UnitType; count: number; totalCost: number }
+  | { type: "UNITS_PRODUCED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number; totalCost: number }
   | { type: "OBJECTIVE_SCORED"; playerId: PlayerId; objectiveId: ObjectiveId; points: number }
   | { type: "PUBLIC_OBJECTIVE_REVEALED"; objectiveId: ObjectiveId; kind: ObjectiveKind }
   | { type: "ACTION_CARD_DRAWN"; playerId: PlayerId; cardId: ActionCardId }
   | { type: "ACTION_CARD_PLAYED"; playerId: PlayerId; cardId: ActionCardId }
   | { type: "ACTION_CARD_DISCARDED"; playerId: PlayerId; cardId: ActionCardId }
+  | { type: "TRADE_GOODS_GAINED"; playerId: PlayerId; amount: number }
+  | { type: "PLANET_READIED"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLANET_EXHAUSTED"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "LAW_REPEALED"; agendaId: AgendaId }
   | { type: "AGENDA_REVEALED"; agendaId: AgendaId }
   | { type: "VOTES_CAST"; playerId: PlayerId; outcome: string; votes: number }
   | { type: "AGENDA_RESOLVED"; agendaId: AgendaId; outcome: string; becameLaw: boolean }
