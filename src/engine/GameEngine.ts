@@ -4,7 +4,7 @@ import { PlayerId, asTechId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard, getStrategyCardsPerPlayer } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
-import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits, useDuraniumArmor, skipDuraniumArmor, useAssaultCannonDestruction } from "./phases/spaceCombat";
+import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits, useDuraniumArmor, skipDuraniumArmor, useAssaultCannonDestruction, removeExcessCapacityUnits } from "./phases/spaceCombat";
 import {
   bombard,
   assignBombardmentHits,
@@ -106,6 +106,9 @@ export const GameEngine = {
       case "ANNOUNCE_RETREAT":
         result = announceRetreat(state, action);
         break;
+      case "REMOVE_EXCESS_CAPACITY_UNITS":
+        result = removeExcessCapacityUnits(state, action);
+        break;
       case "RESOLVE_COMBAT_ROUND":
         result =
           state.pendingTacticalAction?.step === "invasion"
@@ -164,7 +167,7 @@ export const GameEngine = {
         result = resolveStrategySecondary(state, action, rules);
         break;
       case "RESEARCH_TECHNOLOGY":
-        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId);
+        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId, action.exhaustPlanetIdsForTechSpecialty);
         break;
       case "RESEARCH_UNIT_UPGRADE":
         result = researchUnitUpgrade(
@@ -176,6 +179,7 @@ export const GameEngine = {
           rules,
           action.aiDevelopmentAlgorithmIgnoreColor,
           action.useResearchTeamAttachmentPlanetId,
+          action.exhaustPlanetIdsForTechSpecialty,
         );
         break;
       case "EXPLORE_PLANET":
@@ -591,6 +595,9 @@ export const GameEngine = {
     }
 
     if (state.pendingTacticalAction?.step === "spaceCombat") {
+      if (state.pendingTacticalAction.pendingCapacityOverflow?.playerId === playerId) {
+        legal.push("REMOVE_EXCESS_CAPACITY_UNITS");
+      }
       const inCombat = playersWithShipsInSystem(state, state.pendingTacticalAction.systemId).includes(playerId);
       const owesHits = (state.pendingTacticalAction.pendingHits?.[playerId] ?? 0) > 0;
       const noPendingHits = Object.keys(state.pendingTacticalAction.pendingHits ?? {}).length === 0;
