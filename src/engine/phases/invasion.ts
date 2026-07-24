@@ -92,7 +92,10 @@ export function bombard(
   const defenderId = defenders[0];
   const defenderPlayer = state.players[defenderId];
 
-  if (planetHasShield(planet, defenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules)) {
+  // RR 65.3: if the bombarding player has a war sun in this system, Planetary Shield is ignored entirely — see planetHasShield's own note.
+  const attackerHasWarSunInSystem = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.unitType === "war_sun" && s.count > 0);
+
+  if (planetHasShield(planet, defenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules, attackerHasWarSunInSystem)) {
     return { ok: false, error: `RR 15/44.1: ${action.targetPlanetId} has Planetary Shield — Bombardment can't target it.` };
   }
   // RR "Conventions of War" ("for"): Bombardment can't target units on a cultural planet while this law is active.
@@ -436,7 +439,7 @@ export function startGroundCombat(
   // already claim this window (simplification, flagged — the two aren't
   // offered together in the same call).
   const magenDefenseGridEligibility =
-    defenderQualifies || !defenderId ? null : checkMagenDefenseGridEligibility(state, rules, defenderId, planet);
+    defenderQualifies || !defenderId ? null : checkMagenDefenseGridEligibility(state, rules, defenderId, planet, action.playerId, pending.systemId);
 
   return {
     ok: true,
@@ -823,7 +826,7 @@ export function assignGroundCombatHits(
 // --- helpers ---------------------------------------------------------------
 
 /** RR "Magen Defense Grid": which version (if any) this defender qualifies for on this planet, given their own owned/readied state and what's physically there. Returns null if they don't own it, or don't meet either version's own physical requirement. */
-function checkMagenDefenseGridEligibility(state: GameState, rules: RuleData, defenderId: PlayerId, planet: PlanetState): "base" | "omega_omega" | null {
+function checkMagenDefenseGridEligibility(state: GameState, rules: RuleData, defenderId: PlayerId, planet: PlanetState, attackerId: PlayerId, systemId: SystemId): "base" | "omega_omega" | null {
   const player = state.players[defenderId];
   const techId = asTechId("magen_defense_grid");
   if (!player.technologies.includes(techId)) return null;
@@ -834,8 +837,13 @@ function checkMagenDefenseGridEligibility(state: GameState, rules: RuleData, def
     return hasStructure ? "omega_omega" : null;
   }
 
-  // Base: must be readied, needs 1+ Planetary-Shield-capable units on this planet.
+  // Base: must be readied, needs 1+ Planetary-Shield-capable units on this
+  // planet. RR 65.3/65.3b: if the ATTACKER has a war sun in this system,
+  // Planetary Shield (and therefore this base version of Magen Defense
+  // Grid, which depends on it) is negated entirely — previously unchecked.
   if (player.exhaustedTechnologies.includes(techId)) return null;
+  const attackerHasWarSunInSystem = (state.systems[systemId]?.spaceUnitsByPlayer[attackerId] ?? []).some((s) => s.unitType === "war_sun" && s.count > 0);
+  if (attackerHasWarSunInSystem) return null;
   const hasPlanetaryShieldUnit = (planet.unitsByPlayer[defenderId] ?? []).some((s) => {
     if (s.count <= 0) return false;
     const stats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);

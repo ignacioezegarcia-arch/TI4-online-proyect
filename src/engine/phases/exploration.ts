@@ -1,24 +1,27 @@
 import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId, asTechId } from "../types/ids";
+import { PlayerId, PlanetId, SystemId, ExplorationCardId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { hasPoKContent } from "../rules/gameMode";
+import { fisherYatesShuffle } from "../setup/mapGeneration";
 
 /**
  * RR 35 EXPLORATION + RR 75 RELICS.
  *
  * Card draws are deterministic pops off a pre-shuffled deck array (same
  * pattern as actionCardDeck/publicObjectiveDeck elsewhere) — no mid-game
- * RNG concern.
+ * RNG concern for the initial shuffle; drawExplorationCard below handles
+ * the RR 35.7a reshuffle-on-empty case with its own rng, same convention
+ * as phases/actionCards.ts's drawActionCard.
  *
  * Mechanically applied when a card is drawn: Relic Fragment (increments the
  * right counter), Attach (pushed to the planet's attachmentIds — numeric
  * bonuses read later via rules/planetStats.ts), Keep In Play Area (pushed
  * to the player's own list). A plain one-time `effect` (no fragment/attach/
  * keepInPlayArea flag) is NOT applied — same deferred-content scope cut as
- * action/agenda cards, since the effect text is free-form. The card is
- * still consumed (discarded) either way; only its mechanical side-effect
- * might be a no-op.
+ * action/agenda cards. RR 35.7: only THIS last "plain" kind actually enters
+ * a discard pile at all — relic fragments/attachments/keepInPlayArea cards
+ * stay with the player/planet instead, same as the physical cards would.
  *
  * NOT implemented, flagged rather than silently wrong:
  *  - RR 35's exact timing (must explore immediately on gaining control,
@@ -28,6 +31,19 @@ import { hasPoKContent } from "../rules/gameMode";
  *    with a frontier token and no other players' ships) isn't validated —
  *    EXPLORE_FRONTIER just checks the token is there.
  */
+
+/** RR 35.7a: pop the top card of this exploration deck, reshuffling its own discard pile into a fresh deck first if it's empty — same shared shape as phases/actionCards.ts's drawActionCard. Exported so phases/technologyAbilities.ts's Scanlink Drone Network can reuse the exact same reshuffle-aware draw. */
+export function drawExplorationCard(deck: ExplorationCardId[], discardPile: ExplorationCardId[], rng: () => number = Math.random): { deck: ExplorationCardId[]; discardPile: ExplorationCardId[]; drawn: ExplorationCardId | null } {
+  let workingDeck = deck;
+  let workingDiscard = discardPile;
+  if (workingDeck.length === 0 && workingDiscard.length > 0) {
+    workingDeck = fisherYatesShuffle(workingDiscard, rng);
+    workingDiscard = [];
+  }
+  if (workingDeck.length === 0) return { deck: workingDeck, discardPile: workingDiscard, drawn: null };
+  const [drawn, ...rest] = workingDeck;
+  return { deck: rest, discardPile: workingDiscard, drawn };
+}
 
 export function explorePlanet(
   state: GameState,
@@ -56,17 +72,22 @@ export function explorePlanet(
   }
 
   const deck = state.explorationDecks?.[trait] ?? [];
+  const discardPile = state.explorationDiscardPiles?.[trait] ?? [];
   let nextState: GameState = state;
   const events: GameEvent[] = [];
 
-  if (deck.length > 0) {
-    const [cardId, ...rest] = deck;
+  const drawResult = drawExplorationCard(deck, discardPile);
+  if (drawResult.drawn) {
+    const cardId = drawResult.drawn;
     const result = applyExplorationCard(state, action.playerId, systemId as SystemId, action.planetId, cardId, rules);
     nextState = result.state;
     events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: trait });
+    const card = rules.explorationCards[cardId];
+    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea;
     nextState = {
       ...nextState,
-      explorationDecks: { ...nextState.explorationDecks!, [trait]: rest },
+      explorationDecks: { ...nextState.explorationDecks!, [trait]: drawResult.deck },
+      explorationDiscardPiles: { ...nextState.explorationDiscardPiles, [trait]: goesToDiscard ? [...drawResult.discardPile, cardId] : drawResult.discardPile } as GameState["explorationDiscardPiles"],
     };
   }
 
@@ -90,17 +111,26 @@ export function exploreFrontier(
   }
 
   const deck = state.explorationDecks?.frontier ?? [];
+  const discardPile = state.explorationDiscardPiles?.frontier ?? [];
   let nextState: GameState = {
     ...state,
     systems: { ...state.systems, [action.systemId]: { ...system, frontierToken: false } },
   };
   const events: GameEvent[] = [];
 
-  if (deck.length > 0) {
-    const [cardId, ...rest] = deck;
+  const drawResult = drawExplorationCard(deck, discardPile);
+  if (drawResult.drawn) {
+    const cardId = drawResult.drawn;
     const result = applyExplorationCard(nextState, action.playerId, action.systemId, null, cardId, rules);
-    nextState = { ...result.state, explorationDecks: { ...result.state.explorationDecks!, frontier: rest } };
+    nextState = result.state;
     events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: "frontier" });
+    const card = rules.explorationCards[cardId];
+    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea;
+    nextState = {
+      ...nextState,
+      explorationDecks: { ...nextState.explorationDecks!, frontier: drawResult.deck },
+      explorationDiscardPiles: { ...nextState.explorationDiscardPiles, frontier: goesToDiscard ? [...drawResult.discardPile, cardId] : drawResult.discardPile } as GameState["explorationDiscardPiles"],
+    };
   }
 
   return { ok: true, state: nextState, events };

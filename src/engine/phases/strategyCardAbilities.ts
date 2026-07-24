@@ -7,6 +7,7 @@ import { executeProduction } from "./production";
 import { researchTechnology, researchUnitUpgrade } from "./technology";
 import { scoreObjectiveCore } from "./actionPhase";
 import { maybeApplyMinisterOfCommerce, getLawOwner, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
+import { drawActionCard } from "./actionCards";
 
 /**
  * RR 20-ish, one section per strategy card (data/strategyCards.json has the
@@ -175,12 +176,17 @@ function resolveStrategyPrimaryEffect(
           Object.entries(state.players).map(([id, pl]) => [id, { ...pl, isSpeaker: id === newSpeakerId }]),
         ) as GameState["players"],
       };
-      const drawn: TechIdOrActionCard[] = [];
+      // RR 2.9/23.5: reshuffles the discard pile into a fresh deck if it's
+      // ever drawn from while empty — same shared helper every other draw
+      // site in this project uses. Previously this manually sliced
+      // `actionCardDeck` directly, silently drawing nothing once it ran out
+      // instead of reshuffling.
       for (let i = 0; i < 2; i++) {
-        const deck = next.actionCardDeck;
-        if (!deck || deck.length === 0) break;
-        const [cardId, ...rest] = deck;
-        next = { ...next, actionCardDeck: rest, players: { ...next.players, [action.playerId]: { ...next.players[action.playerId], actionCards: [...next.players[action.playerId].actionCards, cardId] } } };
+        const drawResult = drawActionCard(next);
+        next = { ...next, actionCardDeck: drawResult.deck, actionCardDiscardPile: drawResult.discardPile };
+        if (drawResult.drawn) {
+          next = { ...next, players: { ...next.players, [action.playerId]: { ...next.players[action.playerId], actionCards: [...next.players[action.playerId].actionCards, drawResult.drawn] } } };
+        }
       }
       const reorder = p.order as { agendaId: import("../types/ids").AgendaId; placement: "top" | "bottom" }[] | undefined;
       if (reorder && reorder.length > 0) {
@@ -217,6 +223,15 @@ function resolveStrategyPrimaryEffect(
         const otherMax = rules.factions[other.factionId]?.commoditiesMax ?? 0;
         next = { ...next, players: { ...next.players, [otherId]: { ...other, commodities: otherMax } } };
         next = maybeApplyMinisterOfCommerce(next, rules, otherId);
+        // RR 92.4b: a player chosen this way can only use the secondary
+        // once, and specifically cannot ALSO use the normal (paid-in-
+        // strategy-token) secondary afterward this same round — mark them
+        // as already having used it here, same tracking
+        // resolveStrategySecondary itself checks. Previously unmarked,
+        // meaning a chosen player could still pay to use the secondary
+        // again for a second replenish.
+        const tradeCardId = "trade" as StrategyCardId;
+        next = { ...next, strategyCardSecondariesUsedBy: { ...next.strategyCardSecondariesUsedBy, [tradeCardId]: [...(next.strategyCardSecondariesUsedBy?.[tradeCardId] ?? []), otherId] } };
       }
       return { ok: true, state: next, events: [] };
     }
@@ -230,6 +245,10 @@ function resolveStrategyPrimaryEffect(
       const currentTotal = player.commandTokens.tactic + player.commandTokens.fleet + player.commandTokens.strategy;
       if (!tokensConserved(dist, currentTotal + 1)) {
         return { ok: false, error: `RR: redistribution must total exactly ${currentTotal + 1} tokens (current ${currentTotal} + 1 gained).` };
+      }
+      // RR "Fleet Regulations" ("for"): see applyTokenGain's own note on why this needed checking here too.
+      if (dist.fleet > 4 && isLawActiveWithOutcome(state, "fleet_regulations" as AgendaId, "for")) {
+        return { ok: false, error: 'RR "Fleet Regulations": a player\'s fleet pool cannot exceed 4 command tokens while this law is active.' };
       }
       const updatedPlayer: Player = {
         ...player,
@@ -358,21 +377,37 @@ function resolveStrategySecondaryEffect(
       return { ok: true, state: readyPlanets(working, action.playerId, readyIds), events: [] };
     }
     case "politics": {
-      const deck = working.actionCardDeck;
-      if (!deck || deck.length === 0) return { ok: true, state: working, events: [] };
-      const [cardId, ...rest] = deck.length >= 2 ? deck : [deck[0]];
-      const drawn = deck.slice(0, Math.min(2, deck.length));
-      const nextDeck = deck.slice(drawn.length);
-      const pl = working.players[action.playerId];
-      return {
-        ok: true,
-        state: { ...working, actionCardDeck: nextDeck, players: { ...working.players, [action.playerId]: { ...pl, actionCards: [...pl.actionCards, ...drawn] } } },
-        events: [],
-      };
+      // RR 2.9/23.5: same reshuffle-on-empty fix as the primary above —
+      // previously this manually sliced `actionCardDeck` directly.
+      let next = working;
+      const events: GameEvent[] = [];
+      for (let i = 0; i < 2; i++) {
+        const drawResult = drawActionCard(next);
+        next = { ...next, actionCardDeck: drawResult.deck, actionCardDiscardPile: drawResult.discardPile };
+        if (drawResult.drawn) {
+          const pl = next.players[action.playerId];
+          next = { ...next, players: { ...next.players, [action.playerId]: { ...pl, actionCards: [...pl.actionCards, drawResult.drawn] } } };
+        }
+      }
+      return { ok: true, state: next, events };
     }
     case "construction": {
       const placement = p.placement as { planetId: PlanetId; unitType: "space_dock" | "pds" };
-      return placeStructuresFree(working, action.playerId, [placement], rules);
+      // RR 24.3: unlike every other secondary's generic "just spend 1
+      // strategy token" cost, this token specifically gets PLACED on the
+      // board in the target system (unless the player already has one
+      // there, in which case it's simply returned to reinforcements —
+      // i.e. exactly what the generic charge above already did).
+      // Previously the token was always just spent with no placement at
+      // all, regardless of this card's own distinct text.
+      const entry = Object.entries(working.systems).find(([, s]) => s.planets.some((pl) => pl.planetId === placement.planetId));
+      if (!entry) return { ok: false, error: `No planet ${placement.planetId} on the board.` };
+      const targetSystemId = entry[0] as SystemId;
+      let withToken = working;
+      if (!charged.commandTokens.onBoard.includes(targetSystemId)) {
+        withToken = { ...working, players: { ...working.players, [action.playerId]: { ...charged, commandTokens: { ...charged.commandTokens, onBoard: [...charged.commandTokens.onBoard, targetSystemId] } } } };
+      }
+      return placeStructuresFree(withToken, action.playerId, [placement], rules);
     }
     case "trade": {
       const max = rules.factions[charged.factionId]?.commoditiesMax ?? 0;
@@ -383,11 +418,17 @@ function resolveStrategySecondaryEffect(
       const systemId = p.systemId as SystemId;
       const planetId = p.planetId as PlanetId;
       const units = p.units as { unitType: import("../types/enums").UnitType; count: number }[];
+      // RR 99.3: this secondary is specifically restricted to a space dock
+      // in the player's OWN home system — not any system they happen to
+      // control a producer in. Previously unchecked entirely.
+      if (systemId !== rules.homeSystemByFaction[charged.factionId]) {
+        return { ok: false, error: "RR 99.3: this secondary can only resolve the Production ability of a space dock in this player's own home system." };
+      }
       const enemyShipsPresent = Object.entries(working.systems[systemId]?.spaceUnitsByPlayer ?? {}).some(
         ([pid, stacks]) => pid !== action.playerId && (stacks ?? []).some((s) => s.count > 0),
       );
       if (enemyShipsPresent) return { ok: false, error: "RR: that system contains another player's ships." };
-      return executeProduction(working, action.playerId, systemId, planetId, units, rules);
+      return executeProduction(working, action.playerId, systemId, planetId, units, rules, undefined, true);
     }
     case "technology": {
       const techId = p.techId as TechId;
@@ -417,6 +458,14 @@ function resolveStrategySecondaryEffect(
 // --- shared helpers ----------------------------------------------------------
 
 function applyTokenGain(state: GameState, playerId: PlayerId, dist: { tactic: number; fleet: number; strategy: number }): ActionResult {
+  // RR "Fleet Regulations" ("for"): confirmed, this cap applies to EVERY
+  // way a player's own fleet pool could change, not just Predictive
+  // Intelligence's own equivalent redistribution — Leadership's primary/
+  // secondary (this function) and Warfare's own primary (see its own
+  // case below) previously didn't check it at all.
+  if (dist.fleet > 4 && isLawActiveWithOutcome(state, "fleet_regulations" as AgendaId, "for")) {
+    return { ok: false, error: 'RR "Fleet Regulations": a player\'s fleet pool cannot exceed 4 command tokens while this law is active.' };
+  }
   const player = state.players[playerId];
   return {
     ok: true,

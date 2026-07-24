@@ -202,6 +202,29 @@ function eliminatePlayer(state: GameState, playerId: PlayerId, rules: RuleData):
     }
   }
 
+  // RR "Political Censure": "if the owner of this card loses this card,
+  // they lose 1 victory point" — elimination is confirmed one such loss
+  // (RR 33.3 discards every agenda card the eliminated player owns,
+  // political_censure included). Previously unhandled — this project's
+  // own agendaPhase.ts note on this card explicitly flagged that no
+  // transfer/loss mechanism existed yet for it; this is that mechanism,
+  // at least for the elimination case.
+  // RR "Political Censure" / "Shard of the Throne" / "The Crown of
+  // Emphidia": all 3 are "elect Player" laws whose own text ties a VP
+  // directly to CURRENTLY owning the card ("if the owner of this card
+  // loses this card, they lose 1 victory point" for Political Censure;
+  // an identical "new owner gains the card + 1 VP, previous owner loses
+  // 1 VP" shape for the other two, already handled by
+  // maybeTransferVpCard for every OTHER way the card changes hands —
+  // elimination is simply one more way to lose it, previously
+  // unhandled). "Holy Planet of Ixth" is NOT included here: it's an
+  // "elect Planet" law always owned by "common", never by a specific
+  // player, so elimination's own "discard laws THIS player owns" never
+  // touches it in the first place.
+  const vpCarryingOwnedLawIds = new Set(["political_censure", "shard_of_the_throne", "the_crown_of_emphidia"]);
+  const lostAVpCarryingLaw = ownedLawIds.some((id) => vpCarryingOwnedLawIds.has(id));
+  const scoredVictoryPoints = lostAVpCarryingLaw ? Math.max(0, players[playerId].victoryPoints.current - 1) : players[playerId].victoryPoints.current;
+
   // RR 33.5 (action cards discarded), RR 33.11 (captured units returned to their original owners — this player simply stops holding them; there's no separate "reinforcements pool" object to credit them back into in this engine), and the elimination flag itself.
   const updatedEliminatedPlayer: Player = {
     ...players[playerId],
@@ -216,6 +239,7 @@ function eliminatePlayer(state: GameState, playerId: PlayerId, rules: RuleData):
     commandTokens: { tactic: 0, fleet: 0, strategy: 0, onBoard: [] },
     capturedUnits: [],
     capturedGenericUnits: { infantry: 0, fighter: 0 },
+    victoryPoints: { ...players[playerId].victoryPoints, current: scoredVictoryPoints },
   };
   players = { ...players, [playerId]: updatedEliminatedPlayer };
 

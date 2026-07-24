@@ -1,7 +1,7 @@
 import { GameState, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
-import { UnitType, SHIP_TYPES } from "../types/enums";
+import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
@@ -75,6 +75,8 @@ export function executeProduction(
   units: { unitType: UnitType; count: number }[],
   rules: RuleData,
   useAiDevelopmentAlgorithmForCost?: boolean,
+  /** RR "Warfare" strategy card's own secondary: confirmed, this specifically invokes ONE space dock's own Production ability — "Minister of Industry"'s combined-limit-across-every-producer-in-the-system bonus does NOT apply here, regardless of who owns that law. Every other caller (a normal tactical action's own Production step, Sling Relay) leaves this false/undefined, where Minister of Industry's bonus applies as normal. */
+  singleProducerOnly?: boolean,
 ): ActionResult {
   const system = state.systems[systemId];
   if (!system) return { ok: false, error: `No system ${systemId}.` };
@@ -121,8 +123,11 @@ export function executeProduction(
   // single COMBINED limit for this production action. A no-op (limit
   // stays exactly as computed above) for every other player, and for the
   // owner too whenever they only have the one producer this system
-  // already found.
-  if (getLawOwner(state, "minister_of_industry" as AgendaId) === playerId) {
+  // already found. Also a no-op when `singleProducerOnly` is set — see
+  // this function's own param doc: the "Warfare" strategy card's
+  // secondary specifically invokes ONE space dock's own ability, and
+  // this law's own text doesn't extend to that.
+  if (!singleProducerOnly && getLawOwner(state, "minister_of_industry" as AgendaId) === playerId) {
     let combinedLimit = 0;
     for (const otherPlanet of system.planets) {
       const stacksHere = otherPlanet.unitsByPlayer[playerId] ?? [];
@@ -223,6 +228,32 @@ export function executeProduction(
   const newNonFighterShips = resolvedUnits.filter((u) => SHIP_TYPES.includes(u.unitType) && u.unitType !== "fighter").reduce((sum, u) => sum + u.count, 0);
   if (existingNonFighterShips + newNonFighterShips > player.commandTokens.fleet) {
     return { ok: false, error: `RR 37.1: producing these ships would leave ${existingNonFighterShips + newNonFighterShips} non-fighter ships in ${systemId}, exceeding this player's fleet pool (${player.commandTokens.fleet}).` };
+  }
+
+  // RR 16.3: newly-produced fighters land in the space area (ground
+  // forces produced this same way go straight onto the planet instead,
+  // per this function's own existing isShip split below — so they're not
+  // a capacity concern here) — their combined total with whatever
+  // fighters/ground forces are ALREADY sitting there can't exceed the
+  // combined capacity of every one of this player's OWN ships in the
+  // system, including any being produced in this same batch. Previously
+  // unchecked entirely.
+  const newFighters = resolvedUnits.filter((u) => u.unitType === "fighter").reduce((sum, u) => sum + u.count, 0);
+  if (newFighters > 0) {
+    const existingCargo = (system.spaceUnitsByPlayer[playerId] ?? []).reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
+    const existingCapacity = (system.spaceUnitsByPlayer[playerId] ?? []).reduce((sum, s) => {
+      if (!SHIP_TYPES.includes(s.unitType)) return sum;
+      const shipStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+      return sum + (shipStats?.capacity ?? 0) * s.count;
+    }, 0);
+    const newCapacity = resolvedUnits.reduce((sum, u) => {
+      if (!SHIP_TYPES.includes(u.unitType)) return sum;
+      const shipStats = getUnitStats(rules, player.factionId, u.unitType, player.unitUpgrades);
+      return sum + (shipStats?.capacity ?? 0) * u.count;
+    }, 0);
+    if (existingCargo + newFighters > existingCapacity + newCapacity) {
+      return { ok: false, error: `RR 16.3: producing these fighters would leave ${existingCargo + newFighters} fighters/ground forces in ${systemId}'s space area, exceeding this player's combined ship capacity there (${existingCapacity + newCapacity}).` };
+    }
   }
 
   for (const { unitType, count, unitCost } of resolvedUnits) {

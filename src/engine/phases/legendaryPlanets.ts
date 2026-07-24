@@ -1,8 +1,10 @@
 import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, asPlanetId } from "../types/ids";
-import { RuleData } from "../types/RuleData";
+import { SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
+import { RuleData, getUnitStats } from "../types/RuleData";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
+import { isDemilitarizedZone } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
 
 /**
@@ -58,6 +60,11 @@ function placeGroundForces(
     const planet = system.planets.find((p) => p.planetId === targetPlanetId);
     if (!planet) continue;
     if (planet.controllerId !== playerId) return { ok: false, error: `This player doesn't control ${targetPlanetId}.` };
+    // RR "Demilitarized Zone": this project's other "place a ground force
+    // on a planet" call sites (commitGroundForces, executeProduction,
+    // useTransitDiodes) all check this — this shared helper (used by
+    // Atrament and Imperial Arms Vault) previously didn't.
+    if (isDemilitarizedZone(planet)) return { ok: false, error: 'RR "Demilitarized Zone": units cannot be placed on this planet.' };
     const stacks = planet.unitsByPlayer[playerId] ?? [];
     const existing = stacks.find((s) => s.unitType === unitType && !s.upgradeId);
     const updatedStacks = existing
@@ -152,6 +159,20 @@ export function useMirageFlightAcademy(
   if (!targetSystem) return { ok: false, error: `No system ${action.targetSystemId}.` };
   const hasOwnShipsThere = (targetSystem.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0);
   if (!hasOwnShipsThere) return { ok: false, error: "This player has no ships in that system." };
+
+  // RR 16.3: these fighters land in the space area same as any other —
+  // still capped by the combined capacity of this player's own ships
+  // there. Previously unchecked.
+  const player = state.players[action.playerId];
+  const existingCargo = (targetSystem.spaceUnitsByPlayer[action.playerId] ?? []).reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
+  const existingCapacity = (targetSystem.spaceUnitsByPlayer[action.playerId] ?? []).reduce((sum, s) => {
+    if (!SHIP_TYPES.includes(s.unitType)) return sum;
+    const shipStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+    return sum + (shipStats?.capacity ?? 0) * s.count;
+  }, 0);
+  if (existingCargo + action.count > existingCapacity) {
+    return { ok: false, error: `RR 16.3: this would leave ${existingCargo + action.count} fighters/ground forces in ${action.targetSystemId}'s space area, exceeding this player's combined ship capacity there (${existingCapacity}).` };
+  }
 
   const stacks = targetSystem.spaceUnitsByPlayer[action.playerId] ?? [];
   const existing = stacks.find((s) => s.unitType === "fighter" && !s.upgradeId);

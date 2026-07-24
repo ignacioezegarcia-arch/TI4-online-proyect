@@ -4,6 +4,7 @@ import { PlayerId, SystemId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { isAdjacent, maybeActivateWormholeNexus } from "../rules/adjacency";
+import { canShipEnterTile } from "../rules/anomalies";
 import { getEffectiveUnitAbilities, maybeApplyShardOfTheThroneOnCombatWin, maybeQueueCrownOfThalnosReroll } from "./agendaEffects";
 import {
   playersWithShipsInSystem,
@@ -317,6 +318,17 @@ export function announceRetreat(
     return { ok: false, error: "RR 67.4: cannot retreat into a system that contains another player's ships." };
   }
 
+  // RR 11.1/86.1: retreating is still a form of movement — a destination
+  // system that's an asteroid field or supernova is off-limits regardless
+  // of Dark Energy Tap (which only waives the "already has presence there"
+  // requirement below, not anomaly movement rules generally). Previously
+  // unchecked entirely.
+  const destAnomalies = state.systems[action.toSystemId]?.anomalies ?? [];
+  const ignoreAsteroidFields = state.players[action.playerId]?.technologies.includes(asTechId("antimass_deflectors")) ?? false;
+  if (!canShipEnterTile(destAnomalies, { isActiveSystem: false, ignoreAsteroidFields })) {
+    return { ok: false, error: "RR 11.1/86.1: cannot retreat into that system — it's an asteroid field or supernova." };
+  }
+
   // RR 67.4's base rule: the destination must be a system the retreating
   // player already has units in, or controls a planet in — UNLESS they own
   // Dark Energy Tap, which specifically waives this (RR: "your ships can
@@ -585,9 +597,19 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
   if (survivors.length <= 1) {
     const winnerId = survivors[0] ?? null;
     if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
+
+    // RR 16.3/78.10a: the winner's own surviving ships might have less
+    // combined capacity now than before this combat (some destroyed),
+    // potentially leaving their fighters/ground forces here over that
+    // now-reduced capacity — queues their own choice of what to remove
+    // instead of transitioning straight to "invasion".
+    const overflow = winnerId ? computeCapacityOverflow(nextState, rules, systemId, winnerId) : 0;
     nextState = {
       ...nextState,
-      pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" },
+      pendingTacticalAction:
+        winnerId && overflow > 0
+          ? { playerId: pending.playerId, systemId, step: "spaceCombat", pendingCapacityOverflow: { playerId: winnerId, excessCount: overflow } }
+          : { playerId: pending.playerId, systemId, step: "invasion" },
     };
     events.push({ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId });
     return { state: nextState, events };
@@ -696,4 +718,58 @@ function mergeStacks(a: UnitStack[], b: UnitStack[]): UnitStack[] {
     }
   }
   return merged;
+}
+
+/** RR 16.3: how many of the winner's own fighters + ground forces in this system's space area exceed the combined capacity of their OWN surviving ships there — 0 if within limits. */
+function computeCapacityOverflow(state: GameState, rules: RuleData, systemId: SystemId, playerId: PlayerId): number {
+  const player = state.players[playerId];
+  const stacks = (state.systems[systemId]?.spaceUnitsByPlayer[playerId] ?? []) as UnitStack[];
+  let capacity = 0;
+  let cargo = 0;
+  for (const stack of stacks) {
+    if (stack.count <= 0) continue;
+    if (stack.unitType === "fighter" || GROUND_FORCE_TYPES.includes(stack.unitType)) {
+      cargo += stack.count;
+      continue;
+    }
+    if (!SHIP_TYPES.includes(stack.unitType)) continue;
+    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+    capacity += (stats?.capacity ?? 0) * stack.count;
+  }
+  return Math.max(0, cargo - capacity);
+}
+
+/** RR 16.3/78.10a: the winner's own choice of which excess fighters/ground forces to remove, now that their surviving ships' combined capacity can't hold them all. */
+export function removeExcessCapacityUnits(
+  state: GameState,
+  action: { type: "REMOVE_EXCESS_CAPACITY_UNITS"; playerId: PlayerId; removals: { unitType: UnitType; count: number }[] },
+): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending?.pendingCapacityOverflow || pending.pendingCapacityOverflow.playerId !== action.playerId) {
+    return { ok: false, error: "This player has no pending excess-capacity removal owed right now." };
+  }
+  const totalRemoved = action.removals.reduce((sum, r) => sum + r.count, 0);
+  if (totalRemoved !== pending.pendingCapacityOverflow.excessCount) {
+    return { ok: false, error: `RR 16.3: must remove exactly ${pending.pendingCapacityOverflow.excessCount} excess unit(s), not ${totalRemoved}.` };
+  }
+
+  const systemId = pending.systemId;
+  const system = state.systems[systemId];
+  let stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []).map((s) => ({ ...s }));
+  for (const { unitType, count } of action.removals) {
+    if (count <= 0) continue;
+    const stack = stacks.find((s) => s.unitType === unitType);
+    if (!stack || stack.count < count) return { ok: false, error: `Not enough ${unitType} to remove ${count}.` };
+    stack.count -= count;
+    stack.damagedCount = Math.min(stack.damagedCount, stack.count);
+  }
+  stacks = stacks.filter((s) => s.count > 0);
+
+  const updatedSystem: SystemState = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: stacks } };
+  const nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" },
+  };
+  return { ok: true, state: nextState, events: [] };
 }

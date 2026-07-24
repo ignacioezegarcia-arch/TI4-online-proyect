@@ -1,12 +1,12 @@
 import { GameState, Player, PlanetState, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
-import { UnitType } from "../types/enums";
+import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
 import { isLawActiveWithOutcome, isDemilitarizedZone } from "./agendaEffects";
 import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
-import { applyExplorationCard } from "./exploration";
+import { applyExplorationCard, drawExplorationCard } from "./exploration";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 import { executeProduction } from "./production";
 
@@ -173,6 +173,33 @@ export function useIntegratedEconomy(
   const resourceLimit = getEffectivePlanetStats(planet, action.planetId, rules).resources;
   if (totalCost > resourceLimit) {
     return { ok: false, error: `RR "Integrated Economy": total cost ${totalCost} exceeds ${action.planetId}'s resource value (${resourceLimit}).` };
+  }
+
+  // RR 37.1/76.2 + RR 16.3: same fleet-pool and space-area-capacity checks
+  // as executeProduction's own — Integrated Economy places units directly
+  // rather than going through that function, so it previously skipped
+  // both entirely.
+  const existingNonFighterShips = (system.spaceUnitsByPlayer[action.playerId] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter").reduce((sum, s) => sum + s.count, 0);
+  const newNonFighterShips = resolved.filter((u) => SHIP_TYPES.includes(u.unitType) && u.unitType !== "fighter").reduce((sum, u) => sum + u.count, 0);
+  if (existingNonFighterShips + newNonFighterShips > player.commandTokens.fleet) {
+    return { ok: false, error: `RR 37.1: this would leave ${existingNonFighterShips + newNonFighterShips} non-fighter ships in ${systemId}, exceeding this player's fleet pool (${player.commandTokens.fleet}).` };
+  }
+  const newFighters = resolved.filter((u) => u.unitType === "fighter").reduce((sum, u) => sum + u.count, 0);
+  if (newFighters > 0) {
+    const existingCargo = (system.spaceUnitsByPlayer[action.playerId] ?? []).reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
+    const existingCapacity = (system.spaceUnitsByPlayer[action.playerId] ?? []).reduce((sum, s) => {
+      if (!SHIP_TYPES.includes(s.unitType)) return sum;
+      const shipStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+      return sum + (shipStats?.capacity ?? 0) * s.count;
+    }, 0);
+    const newCapacity = resolved.reduce((sum, u) => {
+      if (!SHIP_TYPES.includes(u.unitType)) return sum;
+      const shipStats = getUnitStats(rules, player.factionId, u.unitType, player.unitUpgrades);
+      return sum + (shipStats?.capacity ?? 0) * u.count;
+    }, 0);
+    if (existingCargo + newFighters > existingCapacity + newCapacity) {
+      return { ok: false, error: `RR 16.3: this would leave ${existingCargo + newFighters} fighters/ground forces in ${systemId}'s space area, exceeding this player's combined ship capacity there (${existingCapacity + newCapacity}).` };
+    }
   }
 
   const events: GameEvent[] = [];
@@ -477,15 +504,23 @@ export function useScanlinkDroneNetwork(
   if (!trait) return { ok: false, error: `RR 35: ${action.planetId} has no trait and can't be explored.` };
 
   const deck = state.explorationDecks?.[trait] ?? [];
+  const discardPile = state.explorationDiscardPiles?.[trait] ?? [];
   let nextState: GameState = state;
   const events: GameEvent[] = [];
 
-  if (deck.length > 0) {
-    const [cardId, ...rest] = deck;
+  const drawResult = drawExplorationCard(deck, discardPile);
+  if (drawResult.drawn) {
+    const cardId = drawResult.drawn;
     const result = applyExplorationCard(nextState, action.playerId, systemId, action.planetId, cardId, rules);
     nextState = result.state;
     events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: trait });
-    nextState = { ...nextState, explorationDecks: { ...nextState.explorationDecks!, [trait]: rest } };
+    const card = rules.explorationCards[cardId];
+    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea;
+    nextState = {
+      ...nextState,
+      explorationDecks: { ...nextState.explorationDecks!, [trait]: drawResult.deck },
+      explorationDiscardPiles: { ...nextState.explorationDiscardPiles, [trait]: goesToDiscard ? [...drawResult.discardPile, cardId] : drawResult.discardPile } as GameState["explorationDiscardPiles"],
+    };
   }
 
   nextState = setExplored(nextState, systemId, action.planetId);

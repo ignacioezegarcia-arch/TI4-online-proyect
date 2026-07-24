@@ -46,7 +46,16 @@ export function useSpaceCannonOffense(
     return { ok: false, error: "RR 77: resolve the previous responder's hits before the next one fires." };
   }
 
-  const entries = buildSpaceCannonOffenseEntries(state, rules, action.playerId, pending.systemId, pending.playerId, action.plasmaScoringUnitType);
+  // RR 77.5b: if the ACTIVE player is the one firing, their hits land on
+  // whichever OTHER player has ships in this system (their own choice,
+  // approximated here the same "exactly 2 combatants" way as the rest of
+  // this project — see getSpaceCannonOffenseEligiblePlayers' own note);
+  // any other (responder) firing always targets the active player, same
+  // as before.
+  const targetId = action.playerId === pending.playerId ? playersWithShipsInSystem(state, pending.systemId).find((pid) => pid !== pending.playerId) : pending.playerId;
+  if (!targetId) return { ok: false, error: "No opposing player with ships in this system to target." };
+
+  const entries = buildSpaceCannonOffenseEntries(state, rules, action.playerId, pending.systemId, targetId, action.plasmaScoringUnitType);
   if (entries.length === 0) {
     return { ok: false, error: "This player has no qualifying Space Cannon units." };
   }
@@ -76,7 +85,7 @@ export function useSpaceCannonOffense(
     pendingTacticalAction: {
       ...pending,
       spaceCannonOffenseRespondersRemaining: remainingResponders,
-      pendingHits: hits > 0 ? { [pending.playerId]: hits } : {},
+      pendingHits: hits > 0 ? { [targetId]: hits } : {},
       gravitonLaserSystemRestrictsPendingHits: hits > 0 ? Boolean(action.useGravitonLaserSystem) : false,
     },
   };
