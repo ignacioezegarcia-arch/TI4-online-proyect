@@ -24,6 +24,23 @@ import {
 import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring, placeGainedCommandTokensAction } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
 import { playActionCard, discardActionCard } from "./phases/actionCards";
+import {
+  playMiningInitiative,
+  playIndustrialInitiative,
+  playEconomicInitiative,
+  playUprising,
+  playFocusedResearch,
+  playImpersonation,
+  playUnexpectedAction,
+  playRepealLaw,
+  playFrontlineDeployment,
+  playRiseOfAMessiah,
+  playWarEffort,
+  playGhostShip,
+  playFighterConscription,
+  playRefitTroops,
+  playScuttle,
+} from "./phases/actionCardEffects";
 import { revealAgenda, castVotes } from "./phases/agendaPhase";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
@@ -350,6 +367,52 @@ export const GameEngine = {
         break;
       case "DISCARD_ACTION_CARD":
         result = discardActionCard(state, action);
+        break;
+
+      case "PLAY_MINING_INITIATIVE":
+        result = playMiningInitiative(state, action, rules);
+        break;
+      case "PLAY_INDUSTRIAL_INITIATIVE":
+        result = playIndustrialInitiative(state, action, rules);
+        break;
+      case "PLAY_ECONOMIC_INITIATIVE":
+        result = playEconomicInitiative(state, action, rules);
+        break;
+      case "PLAY_UPRISING":
+        result = playUprising(state, action, rules);
+        break;
+      case "PLAY_FOCUSED_RESEARCH":
+        result = playFocusedResearch(state, action, rules);
+        break;
+      case "PLAY_IMPERSONATION":
+        result = playImpersonation(state, action, rules);
+        break;
+      case "PLAY_UNEXPECTED_ACTION":
+        result = playUnexpectedAction(state, action);
+        break;
+      case "PLAY_REPEAL_LAW":
+        result = playRepealLaw(state, action);
+        break;
+      case "PLAY_FRONTLINE_DEPLOYMENT":
+        result = playFrontlineDeployment(state, action);
+        break;
+      case "PLAY_RISE_OF_A_MESSIAH":
+        result = playRiseOfAMessiah(state, action);
+        break;
+      case "PLAY_WAR_EFFORT":
+        result = playWarEffort(state, action);
+        break;
+      case "PLAY_GHOST_SHIP":
+        result = playGhostShip(state, action, rules);
+        break;
+      case "PLAY_FIGHTER_CONSCRIPTION":
+        result = playFighterConscription(state, action, rules);
+        break;
+      case "PLAY_REFIT_TROOPS":
+        result = playRefitTroops(state, action);
+        break;
+      case "PLAY_SCUTTLE":
+        result = playScuttle(state, action, rules);
         break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
