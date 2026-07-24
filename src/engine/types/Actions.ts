@@ -77,6 +77,12 @@ export type GameAction =
     }
   | { type: "ANNOUNCE_RETREAT"; playerId: PlayerId; toSystemId: SystemId } // RR 67.4
   | {
+      type: "REMOVE_EXCESS_CAPACITY_UNITS";
+      playerId: PlayerId;
+      /** RR 16.3/78.10a: right when space combat ends, the winner's own choice of which fighters/ground forces to remove — total must exactly match PendingTacticalAction.pendingCapacityOverflow's own excessCount. */
+      removals: { unitType: UnitType; count: number }[];
+    }
+  | {
       type: "USE_ASSAULT_CANNON_DESTRUCTION";
       playerId: PlayerId;
       /** RR "Assault Cannon": mandatory (no skip) — the player's own choice of WHICH non-fighter ship type to destroy, only offered while PendingTacticalAction.assaultCannonPendingPlayer names them. */
@@ -232,6 +238,8 @@ export type GameAction =
       exhaustPlanetIdsForResources: PlanetId[];
       /** RR "Research Team" (any color variant): exhaust that SPECIFIC controlled planet's own attachment card to ignore 1 prerequisite of its matching color for this one research. */
       useResearchTeamAttachmentPlanetId?: PlanetId;
+      /** RR 90.13-90.15: exhaust any number of controlled tech-specialty planets (a base-game mechanic, not PoK-specific) — each ignores 1 prerequisite of its own matching color, stackable with Research Team above. A planet already exhausted (including via exhaustPlanetIdsForResources above) can't be reused here. */
+      exhaustPlanetIdsForTechSpecialty?: PlanetId[];
     } // RR 90
   | {
       type: "RESEARCH_UNIT_UPGRADE";
@@ -241,8 +249,10 @@ export type GameAction =
       exhaustPlanetIdsForResources: PlanetId[];
       /** RR "AI Development Algorithm": exhaust that tech (if owned and readied) to ignore exactly ONE instance of this one color's prerequisite for this research (e.g. a "2 red" requirement becomes "1 red") — not the whole prerequisite list. */
       aiDevelopmentAlgorithmIgnoreColor?: string;
-      /** RR "Research Team" (any color variant): same effect, different source — see RESEARCH_TECHNOLOGY's own note. Mutually exclusive with aiDevelopmentAlgorithmIgnoreColor above (only one source's ignore-1-color applies per research). */
+      /** RR "Research Team" (any color variant): same effect, different source — see RESEARCH_TECHNOLOGY's own note. Stackable alongside AI Development Algorithm and/or tech-specialty planets below. */
       useResearchTeamAttachmentPlanetId?: PlanetId;
+      /** RR 90.13-90.15: see RESEARCH_TECHNOLOGY's own note on this same field. */
+      exhaustPlanetIdsForTechSpecialty?: PlanetId[];
     } // RR 90/86
   | { type: "EXPLORE_PLANET"; playerId: PlayerId; planetId: PlanetId } // RR 35 — PoK only (rejected in Base-only games)
   | { type: "EXPLORE_FRONTIER"; playerId: PlayerId; systemId: SystemId } // RR 35 — PoK only

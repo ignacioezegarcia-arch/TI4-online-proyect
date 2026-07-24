@@ -237,6 +237,13 @@ export interface GameState {
     hazardous: ExplorationCardId[];
     frontier: ExplorationCardId[];
   };
+  /** RR 35.7/35.7a: cards WITHOUT an attach/relic-fragment/keepInPlayArea effect (i.e. a plain one-time effect, per this project's own scope note on those) go here once consumed — reshuffled into a fresh deck of the matching type if that deck is ever drawn from while empty. Attach/relic-fragment/keepInPlayArea cards never enter here at all — they stay with the planet/player instead, same as the real cards would. */
+  explorationDiscardPiles?: {
+    cultural: ExplorationCardId[];
+    industrial: ExplorationCardId[];
+    hazardous: ExplorationCardId[];
+    frontier: ExplorationCardId[];
+  };
   /** RR 35.9: remaining shuffled relic ids. */
   relicDeck?: RelicId[];
   /**
@@ -561,6 +568,17 @@ export interface PendingTacticalAction {
    */
   crownOfThalnosPendingPlayers?: PlayerId[];
   crownOfThalnosMissedDiceByPlayer?: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>>;
+  /**
+   * RR 16.3/78.10a: right when space combat ends, if the WINNER's
+   * fighters + ground forces sitting in the system's space area now
+   * exceed the combined capacity of their OWN surviving ships there
+   * (some of which may have just been destroyed this combat, reducing
+   * available capacity below what was already parked there), they must
+   * choose which excess units to remove — blocks the transition to the
+   * "invasion" step until resolved, same "gate before advancing" pattern
+   * as this project's other pending player-choice fields.
+   */
+  pendingCapacityOverflow?: { playerId: PlayerId; excessCount: number };
 }
 
 export interface PendingAgendaVote {
