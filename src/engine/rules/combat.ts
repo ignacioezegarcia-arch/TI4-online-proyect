@@ -266,13 +266,16 @@ export function buildBombardmentEntries(
 }
 
 /** RR 15/44.1: true if `defenderId` has an undamaged, un-destroyed Planetary Shield unit (a PDS, normally) on this planet — Bombardment can't target it at all while true. */
+/** RR 15/44.1: true if `defenderId` has an undamaged, un-destroyed Planetary Shield unit (a PDS, normally) on this planet — Bombardment can't target it at all while true. RR 65.3's own exception: if the BOMBARDING player has a war sun in this system, Planetary Shield is ignored entirely (this function returns false unconditionally), regardless of what the defender has here. */
 export function planetHasShield(
   planet: PlanetState,
   defenderId: PlayerId,
   defenderFactionId: FactionId,
   defenderUnitUpgrades: UnitUpgradeId[],
   rules: RuleData,
+  attackerHasWarSunInSystem?: boolean,
 ): boolean {
+  if (attackerHasWarSunInSystem) return false;
   const stacks = (planet.unitsByPlayer[defenderId] ?? []) as UnitStack[];
   return stacks.some((s) => {
     if (s.count <= 0) return false;
@@ -449,7 +452,14 @@ function spaceCannonEntriesForPlayer(
   return entries;
 }
 
-/** RR 77: every player (excluding the active player themselves) with at least one qualifying Space-Cannon-capable unit — in the system, or range-upgraded (e.g. PDS II) in an adjacent one. */
+/**
+ * RR 77.2: EVERY player, beginning with the active player and proceeding
+ * clockwise — the active player themselves included, not just responders
+ * — may use the "Space Cannon" ability of their own units in the active
+ * system. Previously the active player was excluded outright, meaning
+ * their own PDS (e.g. one left over on a planet there from before this
+ * tactical action) could never fire here at all.
+ */
 export function getSpaceCannonOffenseEligiblePlayers(
   state: GameState,
   rules: RuleData,
@@ -457,8 +467,17 @@ export function getSpaceCannonOffenseEligiblePlayers(
   activePlayerId: PlayerId,
 ): PlayerId[] {
   return Object.keys(state.players)
-    .filter((id): id is PlayerId => id !== activePlayerId && !state.players[id as PlayerId].eliminated)
-    .filter((id) => spaceCannonEntriesForPlayer(state, rules, id, targetSystemId, activePlayerId).length > 0);
+    .filter((id): id is PlayerId => !state.players[id as PlayerId].eliminated)
+    .filter((id) => {
+      // RR 77.5b: when the ACTIVE player is the one firing, they choose
+      // WHICH other player in the system to target — approximated here
+      // (same "exactly 2 combatants" simplification as buildSpaceCombatEntries
+      // elsewhere in this file) as "whichever other player has ships here",
+      // since this project doesn't support 3+-way combats yet anyway.
+      const targetId = id === activePlayerId ? playersWithShipsInSystem(state, targetSystemId).find((pid) => pid !== activePlayerId) : activePlayerId;
+      if (!targetId) return false;
+      return spaceCannonEntriesForPlayer(state, rules, id, targetSystemId, targetId).length > 0;
+    });
 }
 
 /** This one player's full Space Cannon Offense dice pool (rules.combat.ts) — see spaceCannonEntriesForPlayer for why this can be more than one entry. */
