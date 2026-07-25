@@ -15,10 +15,16 @@ import { hasPoKContent } from "../rules/gameMode";
  * phase's own bookkeeping, which is what this reuses/matches instead).
  *
  * NOT done here, on purpose:
- *  - Step 9 (CREATE SUPPLY — trade good/infantry/fighter token piles): this
- *    engine doesn't track physical component scarcity anywhere (same
- *    "no reinforcement-supply limit" gap already flagged in
- *    phases/production.ts) — reinforcements are implicitly infinite.
+ *  - Step 9 (CREATE SUPPLY — trade good/infantry/fighter token piles):
+ *    infantry/fighter genuinely have no cap (RR/the wiki: "effectively
+ *    unlimited" via token substitution — see rules/reinforcements.ts's own
+ *    doc comments). Every OTHER unit type now IS capped (production.ts and
+ *    the various free-unit-granting abilities across this project check
+ *    rules/reinforcements.ts), but there's nothing to initialize here for
+ *    that — the cap is derived from what's already on the board/captured,
+ *    not a separately-stored starting pool, so starting placements below
+ *    just need to (and always do, by construction — no faction's starting
+ *    loadout gets remotely close) fit under those same fixed limits.
  *  - The 5-player extra-trade-goods balancing rule (closest-to-two-
  *    neighbors gets +4, their two neighbors get +2 each): a real rule,
  *    just not wired in yet — flagged rather than silently skipped.
@@ -262,6 +268,7 @@ export function createGame(input: CreateGameInput): GameState {
     promissoryNoteInstances: promissoryNoteSetup.instances,
     pendingTacticalAction: null,
     pendingAgendaVote: null,
+    pendingPriorityWindow: null,
     winnerId: null,
   };
 }
