@@ -1352,6 +1352,9 @@ function requireJustActivatedOwnSystem(state: GameState, playerId: PlayerId): { 
   const pending = state.pendingTacticalAction;
   if (!pending || pending.playerId !== playerId) return { ok: false, error: "RR 78: no tactical action in progress for this player." };
   if (pending.step !== "movement") return { ok: false, error: `RR 78: expected step "movement", got "${pending.step}".` };
+  if (!isPlayersTurnInWindow(state, "after_system_activated", playerId)) {
+    return { ok: false, error: "RR 1.19: it isn't this player's turn in the current after-system-activation priority window." };
+  }
   return { ok: true, pending };
 }
 
@@ -1362,7 +1365,10 @@ export function playFlankSpeed(state: GameState, action: { type: "PLAY_FLANK_SPE
   const played = playCard(state, action.playerId, "flank_speed");
   if (!played.ok) return played;
 
-  const nextState: GameState = { ...played.state, pendingTacticalAction: { ...timing.pending, flankSpeedPlayerId: action.playerId } };
+  const nextState = advancePriorityWindowAfterAction(
+    { ...played.state, pendingTacticalAction: { ...timing.pending, flankSpeedPlayerId: action.playerId } },
+    action.playerId,
+  );
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("flank_speed") }] };
 }
 
@@ -1373,7 +1379,10 @@ export function playInTheSilenceOfSpace(state: GameState, action: { type: "PLAY_
   const played = playCard(state, action.playerId, "in_the_silence_of_space");
   if (!played.ok) return played;
 
-  const nextState: GameState = { ...played.state, pendingTacticalAction: { ...timing.pending, passThroughEnemiesFromSystemId: action.systemId } };
+  const nextState = advancePriorityWindowAfterAction(
+    { ...played.state, pendingTacticalAction: { ...timing.pending, passThroughEnemiesFromSystemId: action.systemId } },
+    action.playerId,
+  );
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("in_the_silence_of_space") }] };
 }
 
@@ -1384,7 +1393,7 @@ export function playLostStarChart(state: GameState, action: { type: "PLAY_LOST_S
   const played = playCard(state, action.playerId, "lost_star_chart");
   if (!played.ok) return played;
 
-  const nextState: GameState = { ...played.state, pendingTacticalAction: { ...timing.pending, lostStarChartActive: true } };
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, pendingTacticalAction: { ...timing.pending, lostStarChartActive: true } }, action.playerId);
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("lost_star_chart") }] };
 }
 
@@ -1395,7 +1404,7 @@ export function playSolarFlare(state: GameState, action: { type: "PLAY_SOLAR_FLA
   const played = playCard(state, action.playerId, "solar_flare");
   if (!played.ok) return played;
 
-  const nextState: GameState = { ...played.state, pendingTacticalAction: { ...timing.pending, solarFlarePlayerId: action.playerId } };
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, pendingTacticalAction: { ...timing.pending, solarFlarePlayerId: action.playerId } }, action.playerId);
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("solar_flare") }] };
 }
 
@@ -1406,7 +1415,7 @@ export function playNavSuite(state: GameState, action: { type: "PLAY_NAV_SUITE";
   const played = playCard(state, action.playerId, "nav_suite");
   if (!played.ok) return played;
 
-  const nextState: GameState = { ...played.state, pendingTacticalAction: { ...timing.pending, navSuiteActive: true } };
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, pendingTacticalAction: { ...timing.pending, navSuiteActive: true } }, action.playerId);
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("nav_suite") }] };
 }
 

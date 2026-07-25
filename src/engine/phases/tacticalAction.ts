@@ -95,6 +95,15 @@ export function activateSystem(
     // RR 52-adjacent: see GameState.ts's own doc comment on recentEvents —
     // a new tactical action starting is the reset point for that buffer.
     recentEvents: [],
+    // RR 1.19/1.20: "when you activate a system" / "after you activate a
+    // system" are 2 sequential windows (RR 1.16 — "when" resolves before
+    // "after") for the SAME lone participant (the activating player — see
+    // rules/priorityWindow.ts's own CHAINED_NEXT_KIND for how the 2nd
+    // opens automatically once the 1st fully closes). Opened even though
+    // only 1 player could ever act in either — the engine never decides
+    // "nobody could plausibly want this" on a player's behalf; it always
+    // asks, and a no-op window closes the instant that 1 player passes.
+    pendingPriorityWindow: { kind: "system_activated", order: [action.playerId], currentIndex: 0, consecutivePasses: 0 },
   };
 
   return {
@@ -135,6 +144,9 @@ export function moveShips(
   }
   if (pending.step !== "movement") {
     return { ok: false, error: `RR 78: expected step "movement", tactical action is at "${pending.step}".` };
+  }
+  if (state.pendingPriorityWindow?.kind === "system_activated" || state.pendingPriorityWindow?.kind === "after_system_activated") {
+    return { ok: false, error: "RR 1.16/1.19: this player must be given (and decline) their chance to play a system-activation card before moving ships." };
   }
 
   const player = state.players[action.playerId];
