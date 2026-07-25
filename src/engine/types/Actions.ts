@@ -554,7 +554,7 @@ export type GameEvent =
   | { type: "SPEAKER_CHANGED"; playerId: PlayerId }
   | { type: "COMMAND_TOKENS_GAINED"; playerId: PlayerId; tactic: number; fleet: number; strategy: number }
   | { type: "PROMISSORY_NOTE_TRANSFERRED"; fromPlayerId: PlayerId; toPlayerId: PlayerId; promissoryNoteId: PromissoryNoteId }
-  | { type: "PRIORITY_WINDOW_CLOSED"; kind: "agenda_revealed" | "combat_round_start" | "invasion_start" }
+  | { type: "PRIORITY_WINDOW_CLOSED"; kind: "agenda_revealed" | "combat_round_start" | "invasion_start" | "system_activated" | "after_system_activated" }
   | { type: "AGENDA_REVEALED"; agendaId: AgendaId }
   | { type: "VOTES_CAST"; playerId: PlayerId; outcome: string; votes: number }
   | { type: "AGENDA_RESOLVED"; agendaId: AgendaId; outcome: string; becameLaw: boolean }

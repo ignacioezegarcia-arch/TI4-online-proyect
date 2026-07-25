@@ -672,7 +672,12 @@ export interface PendingAgendaVote {
  */
 export interface PendingPriorityWindow {
   /** Which trigger this window is for — NOT which specific cards are legal (each PLAY_<CARD> function still validates its own full legality against the rest of GameState); only used to gate normal flow and to compute what `order` meant when the window opened. */
-  kind: "agenda_revealed" | "combat_round_start" | "invasion_start";
+  kind:
+    | "agenda_revealed"
+    | "combat_round_start"
+    | "invasion_start"
+    | "system_activated"
+    | "after_system_activated";
   order: PlayerId[];
   currentIndex: number;
   consecutivePasses: number;
