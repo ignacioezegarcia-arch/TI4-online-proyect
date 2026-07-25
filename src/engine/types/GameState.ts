@@ -275,6 +275,25 @@ export interface GameState {
   pendingTacticalAction: PendingTacticalAction | null;
   /** Active agenda vote in progress, if any. */
   pendingAgendaVote: PendingAgendaVote | null;
+  /**
+   * RR 1.19/1.20: the generic "who gets asked, in what order, right now"
+   * mechanism for any timing window where 2+ players could each want to
+   * resolve a when/after/at-the-start/at-the-end ability — action card,
+   * faction ability, relic, or leader alike; `kind` identifies the game
+   * MOMENT (an agenda revealed, a combat round starting, ...), never
+   * what's resolving. The engine NEVER decides on a player's behalf —
+   * while this is non-null, normal game flow (voting, rolling combat
+   * dice, bombarding, ...) is BLOCKED until every player in `order` has
+   * consecutively passed. See rules/priorityWindow.ts for how this gets
+   * opened/advanced/closed, and that file's own header comment for
+   * exactly which of this project's reactive abilities go through this
+   * vs. don't need to (an ability whose own timing window is inherently
+   * single-actor — e.g. "after YOU activate a system", which only ever
+   * means the ability owner's own activation — has no one else to ask,
+   * so it doesn't open one of these), plus how a not-yet-built faction/
+   * relic/leader ability plugs into an EXISTING `kind` or adds a new one.
+   */
+  pendingPriorityWindow: PendingPriorityWindow | null;
   /** RR 8: exactly 2 agendas get resolved per agenda phase (fewer if the deck runs out). Reset to 0 when the agenda phase begins. */
   agendaPhaseAgendasResolved?: number;
   /** RR "Public Execution": the elected player cannot vote on any agendas for the REST of the current agenda phase (not future ones) — reset alongside agendaPhaseAgendasResolved whenever a fresh agenda phase begins. Checked when building each new agenda's voting order (see phases/agendaPhase.ts's revealAgenda). */
@@ -485,6 +504,33 @@ export interface PendingTacticalAction {
    */
   spaceCannonOffenseRespondersRemaining?: PlayerId[];
   /**
+   * RR "action card" temporary modifiers scoped to THIS tactical action
+   * (cleared for free the moment `pendingTacticalAction` itself resets to
+   * null at the end of the action — none of these need their own
+   * explicit cleanup). Each is a single named field, same "no generic
+   * pluggable system" convention this interface already uses everywhere
+   * else (predictiveIntelligenceBonusUsedBy, crownOfThalnosPendingPlayers,
+   * ...) rather than a generic modifiers list.
+   */
+  /** "Flank Speed": +1 move value for every one of this player's ships during this tactical action's movement step (phases/tacticalAction.ts's own moveShips). */
+  flankSpeedPlayerId?: PlayerId;
+  /** "In the Silence of Space": this player's ships whose move originates from this specific system can pass through systems containing other players' ships for the rest of this tactical action (rules/movement.ts's own canShipReachSystem, same `ignoreEnemyFleets` flag Light Wave Deflector already uses — just scoped to 1 origin system instead of unconditional). */
+  passThroughEnemiesFromSystemId?: SystemId;
+  /** "Lost Star Chart": alpha and beta wormhole systems count as adjacent to each other for the rest of this tactical action (rules/adjacency.ts's own getAdjacentSystems). */
+  lostStarChartActive?: boolean;
+  /** "Solar Flare": no other player may use Space Cannon against this player's ships for the rest of this tactical action's movement (rules/combat.ts's own getSpaceCannonOffenseEligiblePlayers) — does NOT stop this player's own Space Cannon Offense against someone else. */
+  solarFlarePlayerId?: PlayerId;
+  /** "Nav Suite": ignore anomaly effects entirely (asteroid field/supernova blocking, nebula's move-value clamp) for the rest of this tactical action's movement step (rules/movement.ts's own canShipReachSystem). */
+  navSuiteActive?: boolean;
+  /** "Morale Boost": +1 to the result of every one of this player's combat rolls — expressed as -1 to hitOn, same convention as every other die modifier in rules/combat.ts. Self-expiring by design: only checked when `round` matches the CURRENT `combatRound` above, so it never needs an explicit clear step once that round ends. */
+  moraleBoost?: { playerId: PlayerId; round: number };
+  /** "Bunker": -4 to the result of enemy Bombardment rolls against planets this player controls, for the rest of this invasion (phases/invasion.ts's own bombard/buildBombardmentEntries) — expressed as +4 to hitOn. */
+  bunkerPlayerId?: PlayerId;
+  /** "Blitz": every one of this player's non-fighter ships in the active system that doesn't already have Bombardment gains Bombardment 6 (1 die) for the rest of this invasion (rules/combat.ts's own buildBombardmentEntries). */
+  blitzPlayerId?: PlayerId;
+  /** Set true the first time EITHER phases/invasion.ts's own bombard or commitGroundForces actually runs this invasion step (regardless of whether bombardment scored any hits — a miss leaves no other trace in this interface at all, so this can't be inferred from pendingHits/currentInvasionPlanetId being unset). Exists ONLY so PLAY_BUNKER/PLAY_BLITZ can enforce their own "at the start of an invasion" timing precisely instead of the fragile "nothing else happens to be pending right now" proxy this file used before — with multiple contested planets in 1 invasion step, that proxy could let either card be played after a DIFFERENT planet's bombardment already happened. */
+  invasionStepStarted?: boolean;
+  /**
    * RR 67.1: Anti-Fighter Barrage — mandatory (not optional like Space
    * Cannon Offense) for whichever combatants have AFB-capable ships, fires
    * once at the start of round 1 only, targeting only fighters. Lists who
@@ -609,6 +655,27 @@ export interface PendingAgendaVote {
    * just with a reward attached.
    */
   predictions?: { playerId: PlayerId; cardId: ActionCardId; predictedOutcome: string; reward: AgendaPredictionReward }[];
+}
+
+/**
+ * RR 1.19 (action phase) / RR 1.20 (strategy/agenda phase): the generic
+ * round-robin priority mechanism — each player in `order`, starting from
+ * `currentIndex`, gets asked in turn whether they want to resolve a
+ * when/after/at-the-start/at-the-end ability. Whoever's turn it currently
+ * is, is `order[currentIndex]`. Playing something resets
+ * `consecutivePasses` to 0 and moves `currentIndex` to the player AFTER
+ * the one who just acted (the rotation continues from there, it doesn't
+ * restart) — see rules/priorityWindow.ts's own advanceAfterAction. PASS_
+ * PRIORITY increments `consecutivePasses` and moves to the next player;
+ * once `consecutivePasses` reaches `order.length` (everyone in a row
+ * declined), the window is fully closed and normal game flow resumes.
+ */
+export interface PendingPriorityWindow {
+  /** Which trigger this window is for — NOT which specific cards are legal (each PLAY_<CARD> function still validates its own full legality against the rest of GameState); only used to gate normal flow and to compute what `order` meant when the window opened. */
+  kind: "agenda_revealed" | "combat_round_start" | "invasion_start";
+  order: PlayerId[];
+  currentIndex: number;
+  consecutivePasses: number;
 }
 
 /** Reward payloads for the 8 rider cards (see PendingAgendaVote.predictions above) — the specific choice each reward needs (which planet, which system, which tech, ...) is captured at PLAY time since applying it later, at agenda resolution, happens with no further interactive input in this engine's model. */
