@@ -17,6 +17,7 @@ import {
   planetHasShield,
 } from "../rules/combat";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
+import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 
 /**
  * RR 78 STEP 4 — INVASION (RR 44).
@@ -76,6 +77,9 @@ export function bombard(
   if (pending.currentInvasionPlanetId || (pending.pendingHits && Object.keys(pending.pendingHits).length > 0)) {
     return { ok: false, error: "RR 44.1: resolve the current pending hits before bombarding again." };
   }
+  if (state.pendingPriorityWindow?.kind === "invasion_start") {
+    return { ok: false, error: "RR 1.19/1.20: every eligible player must be given (and decline) their chance to play an invasion-start card before bombarding." };
+  }
 
   const systemId = pending.systemId;
   const system = state.systems[systemId];
@@ -103,10 +107,12 @@ export function bombard(
     return { ok: false, error: 'RR "Conventions of War": Bombardment cannot target units on a cultural planet while this law is active.' };
   }
 
-  const entries = buildBombardmentEntries(state, rules, systemId, action.playerId, action.plasmaScoringUnitType);
+  const entries = buildBombardmentEntries(state, rules, systemId, action.playerId, action.plasmaScoringUnitType, planet.controllerId ?? undefined);
   if (entries.length === 0) {
     return { ok: false, error: "RR 44.1: this player has no Bombardment-capable units in this system." };
   }
+  // "Bunker"/"Blitz" timing: this invasion step has now definitively started, whether or not this roll scores a hit.
+  const state1: GameState = { ...state, pendingTacticalAction: { ...pending, invasionStepStarted: true } };
 
   let result;
   try {
@@ -126,7 +132,7 @@ export function bombard(
   // exhausted (not an error).
   const shouldExhaustTargetPlanet =
     usesCodex4Version(state.mode) && state.players[action.playerId]?.technologies.includes(asTechId("x89_bacterial_weapon"));
-  const stateWithPlanetExhaust = shouldExhaustTargetPlanet && !planet.exhausted ? setPlanetExhausted(state, systemId, action.targetPlanetId) : state;
+  const stateWithPlanetExhaust = shouldExhaustTargetPlanet && !planet.exhausted ? setPlanetExhausted(state1, systemId, action.targetPlanetId) : state1;
 
   if (hits === 0) {
     return { ok: true, state: stateWithPlanetExhaust, events };
@@ -136,6 +142,7 @@ export function bombard(
     ...stateWithPlanetExhaust,
     pendingTacticalAction: {
       ...pending,
+      invasionStepStarted: true,
       currentInvasionPlanetId: action.targetPlanetId,
       pendingHits: { [defenderId]: hits },
     },
@@ -219,6 +226,39 @@ export function assignBombardmentHits(
   return { ok: true, state: nextState, events };
 }
 
+/** Called at every point across this project where pendingTacticalAction might have JUST transitioned to step "invasion" — opens the RR 1.19 "invasion_start" priority window (rules/priorityWindow.ts) for the attacker plus every OTHER player with a controlled planet or ground forces in that system (a defender need not have EITHER for the attacker themselves to still want Blitz, so the attacker is always included even with 0 defenders present). A safe no-op if invasionStepStarted is already true (bombard/commitGroundForces already ran — see that flag's own doc comment) or a window is somehow already open. */
+export function openInvasionStartWindowIfNeeded(state: GameState): GameState {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || pending.invasionStepStarted) return state;
+  if (state.pendingPriorityWindow) return state;
+  const system = state.systems[pending.systemId];
+  if (!system) return state;
+  const defenders = new Set<PlayerId>();
+  for (const planet of system.planets) {
+    if (planet.controllerId && planet.controllerId !== pending.playerId) defenders.add(planet.controllerId);
+    for (const pid of Object.keys(planet.unitsByPlayer) as PlayerId[]) {
+      if (pid !== pending.playerId && (planet.unitsByPlayer[pid] ?? []).some((s) => s.count > 0)) defenders.add(pid);
+    }
+  }
+  const order = actionPhaseWindowOrder(state, pending.playerId, [pending.playerId, ...defenders]);
+  if (order.length === 0) return state;
+  return { ...state, pendingPriorityWindow: { kind: "invasion_start", order, currentIndex: 0, consecutivePasses: 0 } };
+}
+
+/** Ground-combat mirror of phases/spaceCombat.ts's own openCombatRoundStartWindowIfNeeded — called at every point in this file where pendingTacticalAction might have JUST landed on a genuine "a ground combat round begins now" state (round 1, once Space Cannon Defense/Magen Defense Grid have both already resolved or never triggered, OR round N+1 right after the previous round wrapped up). Opens the SAME "combat_round_start" `kind` space combat uses — Morale Boost's own timing ("at the start of A combat round") doesn't distinguish space from ground, so they share 1 window kind. */
+function openGroundCombatRoundStartWindowIfNeeded(state: GameState): GameState {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "invasion" || !pending.currentInvasionPlanetId || pending.combatRound === undefined) return state;
+  if (pending.spaceCannonDefensePending || pending.magenDefenseGridPending || pending.magenDefenseGridAutoHitPending) return state;
+  if (state.pendingPriorityWindow) return state;
+  const planet = state.systems[pending.systemId]?.planets.find((p) => p.planetId === pending.currentInvasionPlanetId);
+  if (!planet) return state;
+  const participants = playersWithGroundForces(planet);
+  const order = actionPhaseWindowOrder(state, pending.playerId, participants);
+  if (order.length === 0) return state;
+  return { ...state, pendingPriorityWindow: { kind: "combat_round_start", order, currentIndex: 0, consecutivePasses: 0 } };
+}
+
 export function commitGroundForces(
   state: GameState,
   action: { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; units: { unitType: UnitType; count: number }[] },
@@ -236,6 +276,9 @@ export function commitGroundForces(
   }
   if (pending.currentInvasionPlanetId || (pending.pendingHits && Object.keys(pending.pendingHits).length > 0)) {
     return { ok: false, error: "RR 44.2: resolve the current pending hits before committing more ground forces." };
+  }
+  if (state.pendingPriorityWindow?.kind === "invasion_start") {
+    return { ok: false, error: "RR 1.19/1.20: every eligible player must be given (and decline) their chance to play an invasion-start card before committing ground forces." };
   }
   // RR 27.1: units cannot commit ground forces to land on Mecatol Rex
   // while the custodians token is still there — see useRemoveCustodiansToken
@@ -277,7 +320,7 @@ export function commitGroundForces(
     planets: system.planets.map((p) => (p.planetId === action.targetPlanetId ? updatedPlanet : p)),
   };
 
-  let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem }, pendingTacticalAction: { ...pending, invasionStepStarted: true } };
   const events: GameEvent[] = [
     { type: "GROUND_FORCES_COMMITTED", playerId: action.playerId, systemId, planetId: action.targetPlanetId },
   ];
@@ -292,7 +335,7 @@ export function commitGroundForces(
       nextState = {
         ...nextState,
         pendingTacticalAction: {
-          ...pending,
+          ...nextState.pendingTacticalAction!,
           remainingInvasionPlanetIds: [...(pending.remainingInvasionPlanetIds ?? []), action.targetPlanetId],
         },
       };
@@ -441,44 +484,41 @@ export function startGroundCombat(
   const magenDefenseGridEligibility =
     defenderQualifies || !defenderId ? null : checkMagenDefenseGridEligibility(state, rules, defenderId, planet, action.playerId, pending.systemId);
 
-  return {
-    ok: true,
-    state: {
-      ...state,
-      pendingTacticalAction: defenderQualifies
+  const resultState: GameState = {
+    ...state,
+    pendingTacticalAction: defenderQualifies
+      ? {
+          ...pending,
+          currentInvasionPlanetId: action.targetPlanetId,
+          remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+          spaceCannonDefensePending: true,
+          pendingHits: {},
+        }
+      : magenDefenseGridEligibility === "base"
         ? {
             ...pending,
             currentInvasionPlanetId: action.targetPlanetId,
             remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
-            spaceCannonDefensePending: true,
+            magenDefenseGridPending: true,
             pendingHits: {},
           }
-        : magenDefenseGridEligibility === "base"
+        : magenDefenseGridEligibility === "omega_omega"
           ? {
               ...pending,
               currentInvasionPlanetId: action.targetPlanetId,
               remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
-              magenDefenseGridPending: true,
+              magenDefenseGridAutoHitPending: true,
               pendingHits: {},
             }
-          : magenDefenseGridEligibility === "omega_omega"
-            ? {
-                ...pending,
-                currentInvasionPlanetId: action.targetPlanetId,
-                remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
-                magenDefenseGridAutoHitPending: true,
-                pendingHits: {},
-              }
-            : {
-                ...pending,
-                currentInvasionPlanetId: action.targetPlanetId,
-                remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
-                combatRound: 1,
-                pendingHits: {},
-              },
-    },
-    events: [],
+          : {
+              ...pending,
+              currentInvasionPlanetId: action.targetPlanetId,
+              remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+              combatRound: 1,
+              pendingHits: {},
+            },
   };
+  return { ok: true, state: openGroundCombatRoundStartWindowIfNeeded(resultState), events: [] };
 }
 
 export function useMagenDefenseGrid(
@@ -510,7 +550,7 @@ export function useMagenDefenseGrid(
       combatRound: 1,
     },
   };
-  return { ok: true, state: nextState, events: [] };
+  return { ok: true, state: openGroundCombatRoundStartWindowIfNeeded(nextState), events: [] };
 }
 
 export function skipMagenDefenseGrid(
@@ -532,7 +572,7 @@ export function skipMagenDefenseGrid(
 
   return {
     ok: true,
-    state: { ...state, pendingTacticalAction: { ...pending, magenDefenseGridPending: false, combatRound: 1 } },
+    state: openGroundCombatRoundStartWindowIfNeeded({ ...state, pendingTacticalAction: { ...pending, magenDefenseGridPending: false, combatRound: 1 } }),
     events: [],
   };
 }
@@ -582,7 +622,7 @@ export function assignMagenDefenseGridHit(
     systems: { ...state.systems, [systemId]: updatedSystem },
     pendingTacticalAction: { ...pending, magenDefenseGridAutoHitPending: false, combatRound: 1 },
   };
-  return { ok: true, state: nextState, events };
+  return { ok: true, state: openGroundCombatRoundStartWindowIfNeeded(nextState), events };
 }
 
 export function useSpaceCannonDefense(
@@ -628,7 +668,7 @@ export function useSpaceCannonDefense(
   };
 
   if (hits === 0) {
-    nextState = { ...nextState, pendingTacticalAction: { ...nextState.pendingTacticalAction!, combatRound: 1 } };
+    nextState = openGroundCombatRoundStartWindowIfNeeded({ ...nextState, pendingTacticalAction: { ...nextState.pendingTacticalAction!, combatRound: 1 } });
   }
 
   return { ok: true, state: nextState, events };
@@ -654,7 +694,7 @@ export function skipSpaceCannonDefense(
 
   return {
     ok: true,
-    state: { ...state, pendingTacticalAction: { ...pending, spaceCannonDefensePending: false, combatRound: 1 } },
+    state: openGroundCombatRoundStartWindowIfNeeded({ ...state, pendingTacticalAction: { ...pending, spaceCannonDefensePending: false, combatRound: 1 } }),
     events: [{ type: "SPACE_CANNON_DEFENSE_SKIPPED", playerId: action.playerId }],
   };
 }
@@ -705,7 +745,7 @@ export function assignSpaceCannonDefenseHits(
     pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, combatRound: 1 },
   };
 
-  return { ok: true, state: nextState, events };
+  return { ok: true, state: openGroundCombatRoundStartWindowIfNeeded(nextState), events };
 }
 
 export function resolveGroundCombatRound(
@@ -722,6 +762,9 @@ export function resolveGroundCombatRound(
   }
   if (pending.pendingHits && Object.keys(pending.pendingHits).length > 0) {
     return { ok: false, error: "RR 38.2: the previous round's hits haven't all been assigned yet." };
+  }
+  if (state.pendingPriorityWindow?.kind === "combat_round_start") {
+    return { ok: false, error: "RR 1.19: every combatant must be given (and decline) their chance to play a round-start card before dice can be rolled." };
   }
 
   const systemId = pending.systemId;
@@ -912,7 +955,7 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
       groundCombatAttackerBlockedThisRound: false,
     },
   };
-  return { state: nextState, events };
+  return { state: openGroundCombatRoundStartWindowIfNeeded(nextState), events };
 }
 
 /** RR 25.1: gaining control of a planet ALWAYS exhausts its planet card — no exceptions, regardless of how control was gained (invasion win, uncontested landing, anything else). RR 53.2: a legendary planet's separate ability card only readies if this is the FIRST time it's ever been controlled (i.e. it's coming "from the deck"); if it's being taken FROM another player, it keeps whatever exhausted/readied state it already had — untouched here, on purpose. RR 25.1c: if the planet wasn't already controlled by ANOTHER player (i.e. this is genuinely the first time anyone's controlled it), the new controller explores it automatically — this used to only happen via the separate, player-initiated EXPLORE_PLANET action, which incorrectly made exploring a planet an optional extra step rather than an automatic consequence of gaining control. */

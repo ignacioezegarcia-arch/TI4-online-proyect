@@ -6,6 +6,7 @@ import { startNewRound } from "./actionPhase";
 import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { applyDirectiveResolutionSideEffects } from "./directiveEffects";
 import { applyAgendaPredictionRewards } from "./actionCardEffects";
+import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
 
 /**
  * RR 8 AGENDA PHASE. Exactly 2 agendas resolve per phase (fewer if the deck
@@ -87,12 +88,14 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
   if (rules.agendas[agendaId]?.elect === "Player") {
     const committeeFormationOwner = state.agendaDeck.lawsInPlay.find((l) => l.agendaId === "committee_formation" && l.ownerId !== "common");
     if (committeeFormationOwner) {
+      const order = agendaPhaseWindowOrder(state);
       return {
         ok: true,
         state: {
           ...state,
           agendaDeck: { ...state.agendaDeck, deckIds: rest },
           pendingCommitteeFormationDecision: { agendaId, ownerId: committeeFormationOwner.ownerId as PlayerId },
+          pendingPriorityWindow: order.length > 0 ? { kind: "agenda_revealed", order, currentIndex: 0, consecutivePasses: 0 } : null,
         },
         events: [{ type: "AGENDA_REVEALED", agendaId }],
       };
@@ -112,10 +115,21 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
   const votingOrder = rotated.filter((id) => eligibleSeatOrder.includes(id));
 
   const pendingAgendaVote: PendingAgendaVote = { agendaId, votingOrder, nextVoterIndex: 0, votesByOutcome: {} };
+  // RR 1.20 / FAQ: even a player who CAN'T vote (Political Censure, Public
+  // Execution, ...) can still play a rider or other reveal-reaction card
+  // — confirmed by the official FAQ ("Can a player who cannot vote... play
+  // rider action cards? A: Yes"). So this window's own `order` is every
+  // non-eliminated player, NOT filtered down to eligibleSeatOrder above.
+  const priorityOrder = agendaPhaseWindowOrder(state);
 
   return {
     ok: true,
-    state: { ...state, agendaDeck: { ...state.agendaDeck, deckIds: rest }, pendingAgendaVote },
+    state: {
+      ...state,
+      agendaDeck: { ...state.agendaDeck, deckIds: rest },
+      pendingAgendaVote,
+      pendingPriorityWindow: priorityOrder.length > 0 ? { kind: "agenda_revealed", order: priorityOrder, currentIndex: 0, consecutivePasses: 0 } : null,
+    },
     events: [{ type: "AGENDA_REVEALED", agendaId }],
   };
 }
@@ -140,6 +154,9 @@ export function castVotes(
   const pending = state.pendingAgendaVote;
   if (state.phase !== "agenda" || !pending) {
     return { ok: false, error: "RR 8.3: no agenda currently being voted on." };
+  }
+  if (state.pendingPriorityWindow?.kind === "agenda_revealed") {
+    return { ok: false, error: "RR 1.20: every player must be given (and decline) their chance to play a reveal-reaction card before voting can begin." };
   }
   if (pending.votingOrder[pending.nextVoterIndex] !== action.playerId) {
     return { ok: false, error: "RR 8.2.ii: it's not this player's turn to vote." };

@@ -15,6 +15,20 @@ import {
   getAntiFighterBarrageParticipants,
   buildAntiFighterBarrageEntries,
 } from "../rules/combat";
+import { actionPhaseWindowOrder } from "../rules/priorityWindow";
+import { openInvasionStartWindowIfNeeded } from "./invasion";
+
+/** Called at every point in this file where pendingTacticalAction might have JUST landed on a genuine "a combat round begins now" state (round 1 after Assault Cannon/AFB have both already resolved or never triggered at all, OR round N+1 right after the previous round wrapped up) — opens the RR 1.19 "combat_round_start" priority window (see rules/priorityWindow.ts) for the (exactly 2, per this project's own combat-participant limitation) combatants, active-player-first. A safe no-op if we're not actually at a fresh round start yet (still mid-AFB/Assault-Cannon, or combat already ended and moved to "invasion"), or if a window is somehow already open. */
+export function openCombatRoundStartWindowIfNeeded(state: GameState): GameState {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.step !== "spaceCombat" || pending.combatRound === undefined) return state;
+  if ((pending.afbPendingPlayers?.length ?? 0) > 0 || pending.assaultCannonPendingPlayer) return state;
+  if (state.pendingPriorityWindow) return state;
+  const participants = playersWithShipsInSystem(state, pending.systemId);
+  const order = actionPhaseWindowOrder(state, pending.playerId, participants);
+  if (order.length === 0) return state;
+  return { ...state, pendingPriorityWindow: { kind: "combat_round_start", order, currentIndex: 0, consecutivePasses: 0 } };
+}
 
 /**
  * RR 78 STEP 3 — SPACE COMBAT (RR 67).
@@ -143,7 +157,7 @@ export function useAssaultCannonDestruction(
         ? { ...pending, assaultCannonPendingPlayer: attackerId, assaultCannonStage: "defender" }
         : { ...pending, assaultCannonPendingPlayer: undefined, assaultCannonStage: undefined, ...computeAfbEntry(nextState, rules, systemId) },
     };
-    return { ok: true, state: nextState, events };
+    return { ok: true, state: openCombatRoundStartWindowIfNeeded(nextState), events };
   }
 
   // Either this was the "defender" stage (last one — nothing more to check), or there's no defender left at all (combat's about to end anyway).
@@ -151,7 +165,7 @@ export function useAssaultCannonDestruction(
     ...nextState,
     pendingTacticalAction: { ...pending, assaultCannonPendingPlayer: undefined, assaultCannonStage: undefined, ...computeAfbEntry(nextState, rules, systemId) },
   };
-  return { ok: true, state: nextState, events };
+  return { ok: true, state: openCombatRoundStartWindowIfNeeded(nextState), events };
 }
 
 export function useAntiFighterBarrage(
@@ -277,10 +291,11 @@ function beginCombatRoundsAfterAFB(state: GameState, rules: RuleData): { state: 
     let nextState = state;
     if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
     nextState = { ...nextState, pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" } };
+    nextState = openInvasionStartWindowIfNeeded(nextState);
     return { state: nextState, events: [{ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId }] };
   }
 
-  return { state: { ...state, pendingTacticalAction: { ...pending, combatRound: 1, afbPendingPlayers: undefined } }, events: [] };
+  return { state: openCombatRoundStartWindowIfNeeded({ ...state, pendingTacticalAction: { ...pending, combatRound: 1, afbPendingPlayers: undefined } }), events: [] };
 }
 
 export function announceRetreat(
@@ -376,6 +391,9 @@ export function resolveSpaceCombatRound(
   }
   if (pending.pendingHits && Object.keys(pending.pendingHits).length > 0) {
     return { ok: false, error: "RR 67.6: the previous round's hits haven't all been assigned yet." };
+  }
+  if (state.pendingPriorityWindow?.kind === "combat_round_start") {
+    return { ok: false, error: "RR 1.19: every combatant must be given (and decline) their chance to play a round-start card before dice can be rolled." };
   }
 
   const systemId = pending.systemId;
@@ -611,6 +629,7 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
           ? { playerId: pending.playerId, systemId, step: "spaceCombat", pendingCapacityOverflow: { playerId: winnerId, excessCount: overflow } }
           : { playerId: pending.playerId, systemId, step: "invasion" },
     };
+    nextState = openInvasionStartWindowIfNeeded(nextState);
     events.push({ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId });
     return { state: nextState, events };
   }
@@ -624,7 +643,7 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
       retreating: [],
     },
   };
-  return { state: nextState, events };
+  return { state: openCombatRoundStartWindowIfNeeded(nextState), events };
 }
 
 /**
@@ -640,7 +659,7 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
  * order instead) — flagged simplification, same category as this
  * project's other minor "which unit" defaults.
  */
-function moveAllShips(state: GameState, fromSystemId: SystemId, toSystemId: SystemId, playerId: PlayerId, rules: RuleData): { state: GameState; events: GameEvent[] } {
+export function moveAllShips(state: GameState, fromSystemId: SystemId, toSystemId: SystemId, playerId: PlayerId, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const fromSystem = state.systems[fromSystemId];
   const toSystem = state.systems[toSystemId];
   const player = state.players[playerId];
@@ -771,5 +790,5 @@ export function removeExcessCapacityUnits(
     systems: { ...state.systems, [systemId]: updatedSystem },
     pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" },
   };
-  return { ok: true, state: nextState, events: [] };
+  return { ok: true, state: openInvasionStartWindowIfNeeded(nextState), events: [] };
 }

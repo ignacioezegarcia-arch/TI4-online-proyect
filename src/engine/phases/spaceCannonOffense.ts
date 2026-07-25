@@ -4,7 +4,8 @@ import { PlayerId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { buildSpaceCannonOffenseEntries, resolveCombatRound, applyHitAssignments, applySelfAssemblyRoutinesMechBonus, playersWithShipsInSystem } from "../rules/combat";
-import { computeSpaceCombatEntry } from "./spaceCombat";
+import { computeSpaceCombatEntry, openCombatRoundStartWindowIfNeeded } from "./spaceCombat";
+import { openInvasionStartWindowIfNeeded } from "./invasion";
 
 /**
  * RR 77 SPACE CANNON OFFENSE. Happens once, right after movement, before
@@ -209,5 +210,5 @@ function advanceFromSpaceCannonOffense(state: GameState, rules: RuleData): { sta
       ? { playerId: pending.playerId, systemId: pending.systemId, step: "spaceCombat", ...computeSpaceCombatEntry(state, rules, pending.systemId, pending.playerId) }
       : { playerId: pending.playerId, systemId: pending.systemId, step: "invasion" },
   };
-  return { state: nextState, events: [] };
+  return { state: openInvasionStartWindowIfNeeded(openCombatRoundStartWindowIfNeeded(nextState)), events: [] };
 }

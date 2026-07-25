@@ -8,7 +8,8 @@ import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { usesCodex4Version } from "../rules/gameMode";
 import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
 import { maybeReturnCapturedUnitsOnBlockade } from "../rules/capture";
-import { computeSpaceCombatEntry } from "./spaceCombat";
+import { computeSpaceCombatEntry, openCombatRoundStartWindowIfNeeded } from "./spaceCombat";
+import { openInvasionStartWindowIfNeeded } from "./invasion";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -172,11 +173,18 @@ export function moveShips(
       effectiveMove += 1;
       usedGravityDrive = true;
     }
+    // "Flank Speed": +1 move value for EVERY one of this player's ships this tactical action (unlike Gravity Drive, not limited to one moves-entry).
+    if (pending.flankSpeedPlayerId === action.playerId) {
+      effectiveMove += 1;
+    }
 
     if (
       !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, {
         ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
-        ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")),
+        // "In the Silence of Space": scoped to ships whose move ORIGINATES from the chosen system — Light Wave Deflector's own version below has no such scoping.
+        ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId,
+        // "Nav Suite": ignores every anomaly effect (asteroid/supernova blocking, nebula's move clamp, even the gravity rift bonus — see canShipReachSystem's own doc comment on that last part) for this player's whole movement step.
+        ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
       }, rules)
     ) {
       return {
@@ -298,6 +306,7 @@ export function moveShips(
           ? { ...pending, step: "spaceCombat", ...computeSpaceCombatEntry(workingState, rules, activeSystemId, player.id) }
           : { ...pending, step: "invasion" },
   };
+  workingState = openInvasionStartWindowIfNeeded(openCombatRoundStartWindowIfNeeded(workingState));
 
   return {
     ok: true,

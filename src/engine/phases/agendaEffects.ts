@@ -8,6 +8,7 @@ import { arePlayersNeighbors } from "../rules/adjacency";
 import { buildGroundCombatEntries, buildSpaceCombatEntries } from "../rules/combat";
 import { fisherYatesShuffle } from "../setup/mapGeneration";
 import { finalizeAgendaResolution, revealAgenda } from "./agendaPhase";
+import { commandTokensAvailableInReinforcements, placeCommandTokenFromReinforcements } from "../rules/reinforcements";
 
 /**
  * RR 7 AGENDA EFFECTS — the actual per-agenda mechanics, kept separate
@@ -58,19 +59,21 @@ export function applyAgendaResolutionSideEffects(state: GameState, rules: RuleDa
     }
   }
 
-  // RR "Fleet Regulations" ("against"): each player places 1 command token from their reinforcements into their fleet pool.
+  // RR "Fleet Regulations" ("against"): each player gains 1 command token from their reinforcements into their fleet pool — skipped (not an error) for anyone who's already at their 16-token total supply cap (rules/reinforcements.ts).
   if (agendaId === "fleet_regulations" && winner === "against") {
     for (const p of Object.values(nextState.players)) {
+      if (commandTokensAvailableInReinforcements(p) < 1) continue;
       nextState = { ...nextState, players: { ...nextState.players, [p.id]: { ...p, commandTokens: { ...p.commandTokens, fleet: p.commandTokens.fleet + 1 } } } };
     }
   }
 
-  // RR "Shared Research" ("against"): each player places a command token from their reinforcements in their home system, if able (i.e. they still have at least 1 tactic-pool token left to spend).
+  // RR "Shared Research" ("against"): each player places a command token from their reinforcements in their home system. Sourced from reinforcements, falling back to an existing pool if those are exhausted (rules/reinforcements.ts's own placeCommandTokenFromReinforcements — the official ruling on what happens then) — NOT gated on the tactic pool specifically, which was this file's own earlier (incorrect) assumption before reinforcements were tracked for real. Skipped only if this player truly has 0 tokens anywhere, or already has one in their home system (RR 3.3-style).
   if (agendaId === "shared_research" && winner === "against") {
     for (const p of Object.values(nextState.players)) {
-      const homeSystemId = rules.homeSystemByFaction[p.factionId];
-      if (!homeSystemId || p.commandTokens.tactic <= 0) continue;
-      nextState = { ...nextState, players: { ...nextState.players, [p.id]: { ...p, commandTokens: { ...p.commandTokens, tactic: p.commandTokens.tactic - 1, onBoard: [...p.commandTokens.onBoard, homeSystemId as SystemId] } } } };
+      const homeSystemId = rules.homeSystemByFaction[p.factionId] as SystemId | undefined;
+      if (!homeSystemId || p.commandTokens.onBoard.includes(homeSystemId)) continue;
+      const placed = placeCommandTokenFromReinforcements(p, homeSystemId);
+      if (placed.ok) nextState = { ...nextState, players: { ...nextState.players, [p.id]: placed.player } };
     }
   }
 
@@ -195,6 +198,9 @@ export function useCommitteeFormation(
   if (!pending || pending.ownerId !== action.playerId) {
     return { ok: false, error: "This player has no pending Committee Formation decision right now." };
   }
+  if (state.pendingPriorityWindow?.kind === "agenda_revealed") {
+    return { ok: false, error: "RR 1.20: every player must be given (and decline) their chance to play a reveal-reaction card before this decision can be made." };
+  }
   if (!state.players[action.chosenPlayerId]) return { ok: false, error: `Unknown player ${action.chosenPlayerId}.` };
 
   const stateWithoutCard: GameState = {
@@ -215,6 +221,9 @@ export function skipCommitteeFormation(
   const pending = state.pendingCommitteeFormationDecision;
   if (!pending || pending.ownerId !== action.playerId) {
     return { ok: false, error: "This player has no pending Committee Formation decision right now." };
+  }
+  if (state.pendingPriorityWindow?.kind === "agenda_revealed") {
+    return { ok: false, error: "RR 1.20: every player must be given (and decline) their chance to play a reveal-reaction card before this decision can be made." };
   }
   const stateWithoutPending: GameState = {
     ...state,
