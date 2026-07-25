@@ -81,6 +81,11 @@ export function advancePriorityWindowAfterAction(state: GameState, playerId: Pla
   return { ...state, pendingPriorityWindow: { ...window, currentIndex: nextIndex, consecutivePasses: 0 } };
 }
 
+/** RR 1.16: "when" effects resolve before "after" effects for the SAME event — some window pairs are therefore sequential rather than simultaneous: the first fully closes (every participant consecutively passes) before the second opens, for the exact same participants. Purely mechanical chaining, encoded here since it's a fixed consequence of RR 1.16 itself, not specific to any card/ability. */
+const CHAINED_NEXT_KIND: Partial<Record<PendingPriorityWindow["kind"], PendingPriorityWindow["kind"]>> = {
+  system_activated: "after_system_activated",
+};
+
 /** RR 1.19: "Once every player has consecutively declined to resolve an ability during a timing window, no more abilities may be resolved during that window." The generic PASS_PRIORITY action — legal any time it's this player's turn in ANY open window, regardless of `kind` (the caller doesn't need to know which one is open to pass on it). */
 export function passPriority(state: GameState, action: { type: "PASS_PRIORITY"; playerId: PlayerId }): ActionResult {
   const window = state.pendingPriorityWindow;
@@ -90,7 +95,9 @@ export function passPriority(state: GameState, action: { type: "PASS_PRIORITY"; 
   }
   const consecutivePasses = window.consecutivePasses + 1;
   if (consecutivePasses >= window.order.length) {
-    return { ok: true, state: { ...state, pendingPriorityWindow: null }, events: [{ type: "PRIORITY_WINDOW_CLOSED", kind: window.kind }] };
+    const nextKind = CHAINED_NEXT_KIND[window.kind];
+    const pendingPriorityWindow = nextKind ? { kind: nextKind, order: window.order, currentIndex: 0, consecutivePasses: 0 } : null;
+    return { ok: true, state: { ...state, pendingPriorityWindow }, events: [{ type: "PRIORITY_WINDOW_CLOSED", kind: window.kind }] };
   }
   const nextIndex = (window.currentIndex + 1) % window.order.length;
   return { ok: true, state: { ...state, pendingPriorityWindow: { ...window, currentIndex: nextIndex, consecutivePasses } }, events: [] };
