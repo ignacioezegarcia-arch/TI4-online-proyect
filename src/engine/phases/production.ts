@@ -7,6 +7,7 @@ import { getEffectivePlanetStats } from "../rules/planetStats";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { getEffectiveProducesQuantity, isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
+import { checkReinforcementsAvailable } from "../rules/reinforcements";
 
 /**
  * RR 78 STEP 5 — PRODUCTION (RR 58/59), tactical-action version (units
@@ -29,8 +30,6 @@ import { maybeAdvanceActivePlayer } from "./actionPhase";
  *    only the one Production-granting unit in the data, so there's nothing
  *    to special-case against yet; flagged so it isn't silently assumed
  *    correct once there is.
- *  - No reinforcement-supply limit (RR: can't produce more of a unit than
- *    you have physical tokens left) — not tracked anywhere yet.
  *  - RR 26.3/26.3a: structures (PDS, space dock) have no cost in the data
  *    and are rejected outright if attempted here — see the explicit check
  *    right where `stats.cost` is read below. They're placed exclusively
@@ -255,6 +254,12 @@ export function executeProduction(
       return { ok: false, error: `RR 16.3: producing these fighters would leave ${existingCargo + newFighters} fighters/ground forces in ${systemId}'s space area, exceeding this player's combined ship capacity there (${existingCapacity + newCapacity}).` };
     }
   }
+
+  // RR / reinforcements: can't produce more of a capped unit type than
+  // this player has left in their box (see rules/reinforcements.ts's own
+  // doc comments — infantry/fighter are exempt, everything else isn't).
+  const reinforcementsCheck = checkReinforcementsAvailable(state, playerId, resolvedUnits);
+  if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
   for (const { unitType, count, unitCost } of resolvedUnits) {
     const isShip = SHIP_TYPES.includes(unitType);

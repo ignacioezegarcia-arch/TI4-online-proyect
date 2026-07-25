@@ -9,6 +9,7 @@ import { getAdjacentSystems, arePlayersNeighbors } from "../rules/adjacency";
 import { drawExplorationCard, applyExplorationCard } from "./exploration";
 import { revealAgenda } from "./agendaPhase";
 import { drawActionCard } from "./actionCards";
+import { checkReinforcementsAvailable, commandTokensAvailableInReinforcements, placeCommandTokenFromReinforcements } from "../rules/reinforcements";
 
 /**
  * RR 2 ACTION CARDS — individual card effects.
@@ -258,7 +259,7 @@ export function playImpersonation(state: GameState, action: { type: "PLAY_IMPERS
   };
 }
 
-/** RR "Unexpected Action": remove 1 of this player's activated (on-board) command tokens and return it to their tactic reinforcements. RR 5.1: only tactic tokens ever sit on the board, so "reinforcements" here is unambiguous. */
+/** RR "Unexpected Action": remove 1 of this player's activated (on-board) command tokens and return it to their reinforcements. Now that rules/reinforcements.ts tracks the real 16-token total (tactic+fleet+strategy+onBoard, all counted against the same fixed supply), simply removing it from `onBoard` IS returning it to reinforcements — it does NOT go into the tactic pool specifically, since "reinforcements" is the general unallocated supply, not any 1 named pool. */
 export function playUnexpectedAction(state: GameState, action: { type: "PLAY_UNEXPECTED_ACTION"; playerId: PlayerId; systemId: SystemId }): ActionResult {
   const played = playCard(state, action.playerId, "unexpected_action");
   if (!played.ok) return played;
@@ -268,11 +269,7 @@ export function playUnexpectedAction(state: GameState, action: { type: "PLAY_UNE
   }
   const updatedPlayer: Player = {
     ...played.player,
-    commandTokens: {
-      ...played.player.commandTokens,
-      tactic: played.player.commandTokens.tactic + 1,
-      onBoard: played.player.commandTokens.onBoard.filter((s) => s !== action.systemId),
-    },
+    commandTokens: { ...played.player.commandTokens, onBoard: played.player.commandTokens.onBoard.filter((s) => s !== action.systemId) },
   };
   const nextState: GameState = { ...played.state, players: { ...played.state.players, [action.playerId]: updatedPlayer } };
   return {
@@ -374,6 +371,8 @@ export function playWarEffort(state: GameState, action: { type: "PLAY_WAR_EFFORT
   if (!system) return { ok: false, error: `No system ${action.systemId}.` };
   const hasOwnShip = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0);
   if (!hasOwnShip) return { ok: false, error: "This player has no ships in that system." };
+  const reinforcementsCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "cruiser", count: 1 }]);
+  if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
   const updatedSystem = addSpaceUnits(system, action.playerId, "cruiser", 1);
   const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [action.systemId]: updatedSystem } };
@@ -399,6 +398,8 @@ export function playGhostShip(state: GameState, action: { type: "PLAY_GHOST_SHIP
   if (system.wormholes.length === 0) return { ok: false, error: "That system doesn't contain a wormhole." };
   const hasOtherShips = Object.entries(system.spaceUnitsByPlayer).some(([pid, stacks]) => pid !== action.playerId && (stacks ?? []).some((s) => s.count > 0));
   if (hasOtherShips) return { ok: false, error: "That system contains another player's ships." };
+  const reinforcementsCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "destroyer", count: 1 }]);
+  if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
   const updatedSystem = addSpaceUnits(system, action.playerId, "destroyer", 1);
   const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [action.systemId]: updatedSystem } };
@@ -452,6 +453,8 @@ export function playRefitTroops(state: GameState, action: { type: "PLAY_REFIT_TR
   if (action.planetIds.length < 1 || action.planetIds.length > 2) {
     return { ok: false, error: "Refit Troops replaces 1 or 2 infantry." };
   }
+  const reinforcementsCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "mech", count: action.planetIds.length }]);
+  if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
   const counts = new Map<PlanetId, number>();
   for (const id of action.planetIds) counts.set(id, (counts.get(id) ?? 0) + 1);
@@ -529,7 +532,7 @@ export function playScuttle(
  * exploration-linked "As an Action" cards.
  */
 
-/** RR "Insubordination": remove 1 token from another player's tactic pool. Same "reinforcements aren't a separately-tracked pool" simplification as PLAY_UNEXPECTED_ACTION above — the token just leaves their tactic count, there's nowhere else in GameState it needs to reappear. */
+/** RR "Insubordination": remove 1 token from another player's tactic pool and return it to their reinforcements. Under rules/reinforcements.ts's own derived-supply model (16 total minus tactic+fleet+strategy+onBoard), simply decrementing `tactic` here already IS "returning it to reinforcements" — that fixed total automatically has 1 more slot free, no second field to update. */
 export function playInsubordination(state: GameState, action: { type: "PLAY_INSUBORDINATION"; playerId: PlayerId; targetPlayerId: PlayerId }): ActionResult {
   const played = playCard(state, action.playerId, "insubordination");
   if (!played.ok) return played;
@@ -543,7 +546,7 @@ export function playInsubordination(state: GameState, action: { type: "PLAY_INSU
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("insubordination") }] };
 }
 
-/** RR "Lucky Shot": destroy 1 dreadnought/cruiser/destroyer in a system where this player controls a planet. Simplification (flagged, not silently applied): if the target has BOTH an upgraded and a base stack of the same unitType in that system, this targets whichever stack comes first rather than asking the client to disambiguate — a rare double-stack edge case. */
+/** RR "Lucky Shot": destroy 1 dreadnought/cruiser/destroyer in a system where this player controls a planet. A unit upgrade tech converts every unit of that type a player owns, so there's never a mixed base+upgraded stack of the same unitType to disambiguate — matching on unitType alone always finds the right (only) stack. */
 export function playLuckyShot(
   state: GameState,
   action: { type: "PLAY_LUCKY_SHOT"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId; unitType: "dreadnought" | "cruiser" | "destroyer" },
@@ -573,7 +576,7 @@ export function playLuckyShot(
   };
 }
 
-/** RR "Reactor Meltdown": destroy 1 space dock in a non-home system. No "another player's" restriction on the printed card — this player's own dock is a legal (if unusual) target too. */
+/** RR "Reactor Meltdown": destroy 1 space dock in a non-home system belonging to ANOTHER player — official ruling: a player cannot destroy their own space dock with this card. (The "no home system" restriction already excludes both an eliminated player's home system and a dock a player owns inside another player's home system — any home system, regardless of whose, is out of bounds.) */
 export function playReactorMeltdown(
   state: GameState,
   action: { type: "PLAY_REACTOR_MELTDOWN"; playerId: PlayerId; planetId: PlanetId; targetPlayerId: PlayerId },
@@ -581,6 +584,9 @@ export function playReactorMeltdown(
 ): ActionResult {
   const played = playCard(state, action.playerId, "reactor_meltdown");
   if (!played.ok) return played;
+  if (action.targetPlayerId === action.playerId) {
+    return { ok: false, error: "A player cannot destroy their own space dock with Reactor Meltdown." };
+  }
 
   const found = findPlanet(played.state, action.planetId);
   if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
@@ -605,7 +611,7 @@ export function playReactorMeltdown(
   };
 }
 
-/** RR "Signal Jamming": force-place a command token from another player's tactic pool into a non-home system in/adjacent to this player's own ships — same "activate a system that already has your own token" restriction (RR 3.3) applies to the target, since it's their token being placed. */
+/** RR "Signal Jamming": force-place a command token from another player's reinforcements into a non-home system in/adjacent to this player's own ships — RR 3.3's "can't activate a system that already has your own token" restriction applies to the TARGET here too, since it's their token being placed. Sourced from their reinforcements, falling back to an existing pool if those are exhausted (rules/reinforcements.ts's own placeCommandTokenFromReinforcements — the official ruling on what happens then). */
 export function playSignalJamming(
   state: GameState,
   action: { type: "PLAY_SIGNAL_JAMMING"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId },
@@ -630,15 +636,12 @@ export function playSignalJamming(
 
   const target = played.state.players[action.targetPlayerId];
   if (!target) return { ok: false, error: "Unknown target player." };
-  if (target.commandTokens.tactic < 1) return { ok: false, error: "That player has no tokens in their tactic pool." };
   if (target.commandTokens.onBoard.includes(action.systemId)) {
     return { ok: false, error: "That player already has a command token in that system." };
   }
-
-  const updatedTarget: Player = {
-    ...target,
-    commandTokens: { ...target.commandTokens, tactic: target.commandTokens.tactic - 1, onBoard: [...target.commandTokens.onBoard, action.systemId] },
-  };
+  const placed = placeCommandTokenFromReinforcements(target, action.systemId);
+  if (!placed.ok) return placed;
+  const updatedTarget = placed.player;
   const nextState: GameState = { ...played.state, players: { ...played.state.players, [action.targetPlayerId]: updatedTarget } };
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("signal_jamming") }] };
 }
@@ -693,7 +696,7 @@ export function playTacticalBombardment(state: GameState, action: { type: "PLAY_
   return { ok: true, state: nextState, events };
 }
 
-/** RR "Unstable Planet": exhaust 1 hazardous planet and destroy up to 3 infantry on it. `targetPlayerId`/`destroyCount` are optional (exhaust-only is a legal, if weak, play). Simplification (flagged): only 1 owner's infantry can be targeted per play — the RR 44.identifies-both-sides mid-invasion edge case (see PlanetState's own unitsByPlayer doc comment) isn't handled here, same scope cut as PLAY_REFIT_TROOPS/PLAY_SCUTTLE's single-owner-at-a-time shape above. */
+/** RR "Unstable Planet": exhaust 1 hazardous planet and destroy up to 3 infantry on it. `targetPlayerId`/`destroyCount` are optional (exhaust-only is a legal, if weak, play). This is an "Action:" timing card — played as this player's whole action-phase turn, never mid-combat/invasion — so RR 44's "both attacker's just-landed and defender's original forces present at once" case never applies here; at most 1 player has ground forces on the planet at the time this is played. */
 export function playUnstablePlanet(
   state: GameState,
   action: { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId; destroyCount?: number },
@@ -1117,7 +1120,7 @@ export function playConstructionRider(
   return playRiderCard(state, action.playerId, "construction_rider", action.predictedOutcome, { kind: "space_dock", planetId: action.planetId });
 }
 
-/** RR "Diplomacy Rider": if correct, every OTHER player places a command token from their tactic pool in a system (chosen now) containing a planet this player controls. Simplification (flagged): "reinforcements" isn't a separately-tracked pool (same convention as PLAY_UNEXPECTED_ACTION/PLAY_SIGNAL_JAMMING above), so this always draws from each other player's tactic pool specifically rather than their choice of pool. */
+/** RR "Diplomacy Rider": if correct, every OTHER player places a command token from THEIR OWN reinforcements in a system (chosen now) containing a planet this player controls — sourced from reinforcements first, falling back to an existing pool only if those are exhausted (rules/reinforcements.ts's own placeCommandTokenFromReinforcements). */
 export function playDiplomacyRider(state: GameState, action: { type: "PLAY_DIPLOMACY_RIDER"; playerId: PlayerId; predictedOutcome: string; systemId: SystemId }): ActionResult {
   const system = state.systems[action.systemId];
   if (!system) return { ok: false, error: `No system ${action.systemId}.` };
@@ -1198,6 +1201,13 @@ export function applyAgendaPredictionRewards(
         break;
       }
       case "command_tokens": {
+        // RR/the wiki: 16 total per player — grant as many of the requested tactic/fleet/strategy split as the remaining supply allows (in that order), rather than failing the whole reward over a cap that's realistically almost never actually hit.
+        let remaining = commandTokensAvailableInReinforcements(player);
+        const grantTactic = Math.min(reward.tactic, remaining);
+        remaining -= grantTactic;
+        const grantFleet = Math.min(reward.fleet, remaining);
+        remaining -= grantFleet;
+        const grantStrategy = Math.min(reward.strategy, remaining);
         nextState = {
           ...nextState,
           players: {
@@ -1206,20 +1216,20 @@ export function applyAgendaPredictionRewards(
               ...player,
               commandTokens: {
                 ...player.commandTokens,
-                tactic: player.commandTokens.tactic + reward.tactic,
-                fleet: player.commandTokens.fleet + reward.fleet,
-                strategy: player.commandTokens.strategy + reward.strategy,
+                tactic: player.commandTokens.tactic + grantTactic,
+                fleet: player.commandTokens.fleet + grantFleet,
+                strategy: player.commandTokens.strategy + grantStrategy,
               },
             },
           },
         };
-        events.push({ type: "COMMAND_TOKENS_GAINED", playerId: prediction.playerId, tactic: reward.tactic, fleet: reward.fleet, strategy: reward.strategy });
+        events.push({ type: "COMMAND_TOKENS_GAINED", playerId: prediction.playerId, tactic: grantTactic, fleet: grantFleet, strategy: grantStrategy });
         break;
       }
       case "space_dock": {
-        // Re-checked here (not just at play time) since resolution can happen slightly later — silently skipped if this player no longer controls that planet, rather than failing the whole resolution over 1 rider's now-stale target.
+        // Re-checked here (not just at play time) since resolution can happen slightly later — silently skipped if this player no longer controls that planet OR has hit their 3-space-dock reinforcement cap, rather than failing the whole resolution over 1 rider's now-stale target.
         const found = findPlanet(nextState, reward.planetId);
-        if (found && found.planet.controllerId === prediction.playerId) {
+        if (found && found.planet.controllerId === prediction.playerId && checkReinforcementsAvailable(nextState, prediction.playerId, [{ unitType: "space_dock", count: 1 }]).ok) {
           const updatedPlanet = addPlanetUnits(found.planet, prediction.playerId, "space_dock", 1);
           const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === reward.planetId ? updatedPlanet : p)) };
           nextState = { ...nextState, systems: { ...nextState.systems, [found.systemId]: updatedSystem } };
@@ -1234,11 +1244,9 @@ export function applyAgendaPredictionRewards(
           for (const otherId of Object.keys(players) as PlayerId[]) {
             if (otherId === prediction.playerId) continue;
             const other = players[otherId];
-            if (other.commandTokens.tactic < 1) continue;
-            players = {
-              ...players,
-              [otherId]: { ...other, commandTokens: { ...other.commandTokens, tactic: other.commandTokens.tactic - 1, onBoard: [...other.commandTokens.onBoard, reward.systemId] } },
-            };
+            if (other.commandTokens.onBoard.includes(reward.systemId)) continue;
+            const placed = placeCommandTokenFromReinforcements(other, reward.systemId);
+            if (placed.ok) players = { ...players, [otherId]: placed.player };
           }
           nextState = { ...nextState, players };
         }
@@ -1272,7 +1280,7 @@ export function applyAgendaPredictionRewards(
       }
       case "dreadnought": {
         const system = nextState.systems[reward.systemId];
-        if (system) {
+        if (system && checkReinforcementsAvailable(nextState, prediction.playerId, [{ unitType: "dreadnought", count: 1 }]).ok) {
           const updatedSystem = addSpaceUnits(system, prediction.playerId, "dreadnought", 1);
           nextState = { ...nextState, systems: { ...nextState.systems, [reward.systemId]: updatedSystem } };
           events.push({ type: "UNITS_PRODUCED", playerId: prediction.playerId, systemId: reward.systemId, unitType: "dreadnought", count: 1, totalCost: 0 });
