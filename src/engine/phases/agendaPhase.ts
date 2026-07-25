@@ -5,6 +5,7 @@ import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
 import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { applyDirectiveResolutionSideEffects } from "./directiveEffects";
+import { applyAgendaPredictionRewards } from "./actionCardEffects";
 
 /**
  * RR 8 AGENDA PHASE. Exactly 2 agendas resolve per phase (fewer if the deck
@@ -264,7 +265,21 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
     }
   }
 
-  return finalizeAgendaResolution({ ...state, players, pendingAgendaVote: null }, rules, pending.agendaId, winner, pending.votesByOutcome);
+  return finalizeAgendaResolutionWithPredictions(state, rules, players, pending, winner);
+}
+
+/** Split out of resolveAgendaVote only so the "apply rider predictions" step has a clear place to sit between the vote tally (above) and RR 8.4/8.5's own outcome-application (finalizeAgendaResolution) — see phases/actionCardEffects.ts's own applyAgendaPredictionRewards for what the 8 rider cards actually do. */
+function finalizeAgendaResolutionWithPredictions(
+  state: GameState,
+  rules: RuleData,
+  playersAfterPredictiveIntelligence: GameState["players"],
+  pending: PendingAgendaVote,
+  winner: string | null,
+): { state: GameState; events: GameEvent[] } {
+  const stateBeforeRewards: GameState = { ...state, players: playersAfterPredictiveIntelligence };
+  const rewardResult = applyAgendaPredictionRewards(stateBeforeRewards, rules, winner, pending.votesByOutcome);
+  const finalized = finalizeAgendaResolution({ ...rewardResult.state, pendingAgendaVote: null }, rules, pending.agendaId, winner, pending.votesByOutcome);
+  return { state: finalized.state, events: [...rewardResult.events, ...finalized.events] };
 }
 
 /**

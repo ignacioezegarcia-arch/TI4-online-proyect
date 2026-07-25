@@ -1,10 +1,14 @@
-import { GameState, Player, PlanetState, SystemState, UnitStack } from "../types/GameState";
+import { GameState, Player, PlanetState, SystemState, UnitStack, PendingAgendaVote, AgendaPredictionReward } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId, ActionCardId, AgendaId, TechId, asActionCardId } from "../types/ids";
+import { PlayerId, PlanetId, SystemId, ActionCardId, AgendaId, TechId, UnitUpgradeId, PromissoryNoteId, asActionCardId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getLawOwner, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { researchTechnology } from "./technology";
+import { getAdjacentSystems, arePlayersNeighbors } from "../rules/adjacency";
+import { drawExplorationCard, applyExplorationCard } from "./exploration";
+import { revealAgenda } from "./agendaPhase";
+import { drawActionCard } from "./actionCards";
 
 /**
  * RR 2 ACTION CARDS — individual card effects.
@@ -518,4 +522,776 @@ export function playScuttle(
   events.push({ type: "TRADE_GOODS_GAINED", playerId: action.playerId, amount: totalCost });
 
   return { ok: true, state: nextState, events };
+}
+
+/**
+ * Batch 3: disruptive / political-warfare cards, plus the 2 remaining
+ * exploration-linked "As an Action" cards.
+ */
+
+/** RR "Insubordination": remove 1 token from another player's tactic pool. Same "reinforcements aren't a separately-tracked pool" simplification as PLAY_UNEXPECTED_ACTION above — the token just leaves their tactic count, there's nowhere else in GameState it needs to reappear. */
+export function playInsubordination(state: GameState, action: { type: "PLAY_INSUBORDINATION"; playerId: PlayerId; targetPlayerId: PlayerId }): ActionResult {
+  const played = playCard(state, action.playerId, "insubordination");
+  if (!played.ok) return played;
+  if (action.targetPlayerId === action.playerId) return { ok: false, error: "Insubordination must target another player." };
+  const target = played.state.players[action.targetPlayerId];
+  if (!target) return { ok: false, error: "Unknown target player." };
+  if (target.commandTokens.tactic < 1) return { ok: false, error: "That player has no tokens in their tactic pool." };
+
+  const updatedTarget: Player = { ...target, commandTokens: { ...target.commandTokens, tactic: target.commandTokens.tactic - 1 } };
+  const nextState: GameState = { ...played.state, players: { ...played.state.players, [action.targetPlayerId]: updatedTarget } };
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("insubordination") }] };
+}
+
+/** RR "Lucky Shot": destroy 1 dreadnought/cruiser/destroyer in a system where this player controls a planet. Simplification (flagged, not silently applied): if the target has BOTH an upgraded and a base stack of the same unitType in that system, this targets whichever stack comes first rather than asking the client to disambiguate — a rare double-stack edge case. */
+export function playLuckyShot(
+  state: GameState,
+  action: { type: "PLAY_LUCKY_SHOT"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId; unitType: "dreadnought" | "cruiser" | "destroyer" },
+): ActionResult {
+  const played = playCard(state, action.playerId, "lucky_shot");
+  if (!played.ok) return played;
+
+  const system = played.state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  if (!system.planets.some((p) => p.controllerId === action.playerId)) {
+    return { ok: false, error: "This player doesn't control a planet in that system." };
+  }
+  const stacks = system.spaceUnitsByPlayer[action.targetPlayerId] ?? [];
+  const stack = stacks.find((s) => s.unitType === action.unitType && s.count > 0);
+  if (!stack) return { ok: false, error: `No ${action.unitType} there belonging to that player.` };
+
+  const updatedStacks = stacks.map((s) => (s === stack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+  const updatedSystem: SystemState = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.targetPlayerId]: updatedStacks } };
+  const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [action.systemId]: updatedSystem } };
+  return {
+    ok: true,
+    state: nextState,
+    events: [
+      { type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("lucky_shot") },
+      { type: "UNITS_DESTROYED", playerId: action.targetPlayerId, systemId: action.systemId, unitType: action.unitType, count: 1 },
+    ],
+  };
+}
+
+/** RR "Reactor Meltdown": destroy 1 space dock in a non-home system. No "another player's" restriction on the printed card — this player's own dock is a legal (if unusual) target too. */
+export function playReactorMeltdown(
+  state: GameState,
+  action: { type: "PLAY_REACTOR_MELTDOWN"; playerId: PlayerId; planetId: PlanetId; targetPlayerId: PlayerId },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "reactor_meltdown");
+  if (!played.ok) return played;
+
+  const found = findPlanet(played.state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  if (rules.planets[action.planetId]?.homeFactionId) {
+    return { ok: false, error: "Reactor Meltdown cannot target a home system." };
+  }
+  const stacks = found.planet.unitsByPlayer[action.targetPlayerId] ?? [];
+  const stack = stacks.find((s) => s.unitType === "space_dock" && s.count > 0);
+  if (!stack) return { ok: false, error: "No space dock there belonging to that player." };
+
+  const updatedStacks = stacks.map((s) => (s === stack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+  const updatedPlanet: PlanetState = { ...found.planet, unitsByPlayer: { ...found.planet.unitsByPlayer, [action.targetPlayerId]: updatedStacks } };
+  const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+  const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [found.systemId]: updatedSystem } };
+  return {
+    ok: true,
+    state: nextState,
+    events: [
+      { type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("reactor_meltdown") },
+      { type: "UNITS_DESTROYED", playerId: action.targetPlayerId, systemId: found.systemId, planetId: action.planetId, unitType: "space_dock", count: 1 },
+    ],
+  };
+}
+
+/** RR "Signal Jamming": force-place a command token from another player's tactic pool into a non-home system in/adjacent to this player's own ships — same "activate a system that already has your own token" restriction (RR 3.3) applies to the target, since it's their token being placed. */
+export function playSignalJamming(
+  state: GameState,
+  action: { type: "PLAY_SIGNAL_JAMMING"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "signal_jamming");
+  if (!played.ok) return played;
+  if (action.targetPlayerId === action.playerId) return { ok: false, error: "Signal Jamming must target another player." };
+
+  const system = played.state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  if (system.planets.some((p) => rules.planets[p.planetId]?.homeFactionId != null)) {
+    return { ok: false, error: "Signal Jamming cannot target a home system." };
+  }
+  const hasOwnShipsHere = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0);
+  const hasOwnShipsAdjacent = getAdjacentSystems(played.state, action.systemId, rules).some((adjId) =>
+    (played.state.systems[adjId]?.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0),
+  );
+  if (!hasOwnShipsHere && !hasOwnShipsAdjacent) {
+    return { ok: false, error: "This player has no ships in or adjacent to that system." };
+  }
+
+  const target = played.state.players[action.targetPlayerId];
+  if (!target) return { ok: false, error: "Unknown target player." };
+  if (target.commandTokens.tactic < 1) return { ok: false, error: "That player has no tokens in their tactic pool." };
+  if (target.commandTokens.onBoard.includes(action.systemId)) {
+    return { ok: false, error: "That player already has a command token in that system." };
+  }
+
+  const updatedTarget: Player = {
+    ...target,
+    commandTokens: { ...target.commandTokens, tactic: target.commandTokens.tactic - 1, onBoard: [...target.commandTokens.onBoard, action.systemId] },
+  };
+  const nextState: GameState = { ...played.state, players: { ...played.state.players, [action.targetPlayerId]: updatedTarget } };
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("signal_jamming") }] };
+}
+
+/** RR "Spy": take 1 random action card from another player's hand. `rng` defaults to Math.random, same override hook phases/exploration.ts's own drawExplorationCard uses (so callers/tests can inject a seeded rng). The stolen card's id is deliberately NOT named in any emitted event — hidden information, same precedent as Impersonation's secret-objective draw. */
+export function playSpy(state: GameState, action: { type: "PLAY_SPY"; playerId: PlayerId; targetPlayerId: PlayerId }, rng: () => number = Math.random): ActionResult {
+  const played = playCard(state, action.playerId, "spy");
+  if (!played.ok) return played;
+  if (action.targetPlayerId === action.playerId) return { ok: false, error: "Spy must target another player." };
+
+  const target = played.state.players[action.targetPlayerId];
+  if (!target) return { ok: false, error: "Unknown target player." };
+  if (target.actionCards.length === 0) return { ok: false, error: "That player has no action cards." };
+
+  const index = Math.floor(rng() * target.actionCards.length);
+  const stolenCardId = target.actionCards[index];
+  const updatedTarget: Player = { ...target, actionCards: target.actionCards.filter((_, i) => i !== index) };
+  const updatedActingPlayer: Player = { ...played.player, actionCards: [...played.player.actionCards, stolenCardId] };
+
+  const nextState: GameState = {
+    ...played.state,
+    players: { ...played.state.players, [action.targetPlayerId]: updatedTarget, [action.playerId]: updatedActingPlayer },
+  };
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("spy") }] };
+}
+
+/** RR "Tactical Bombardment": exhaust every OTHER player's planet in a system where this player has a unit with the Bombardment ability. */
+export function playTacticalBombardment(state: GameState, action: { type: "PLAY_TACTICAL_BOMBARDMENT"; playerId: PlayerId; systemId: SystemId }, rules: RuleData): ActionResult {
+  const played = playCard(state, action.playerId, "tactical_bombardment");
+  if (!played.ok) return played;
+
+  const system = played.state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  const player = played.player;
+  const hasBombardmentUnit = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => {
+    if (s.count === 0) return false;
+    const stats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+    return (stats?.abilities ?? []).includes("bombardment");
+  });
+  if (!hasBombardmentUnit) return { ok: false, error: "This player has no unit with Bombardment in that system." };
+
+  const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("tactical_bombardment") }];
+  const planets = system.planets.map((p) => {
+    if (p.controllerId && p.controllerId !== action.playerId && !p.exhausted) {
+      events.push({ type: "PLANET_EXHAUSTED", playerId: p.controllerId, planetId: p.planetId });
+      return { ...p, exhausted: true };
+    }
+    return p;
+  });
+
+  const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [action.systemId]: { ...system, planets } } };
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "Unstable Planet": exhaust 1 hazardous planet and destroy up to 3 infantry on it. `targetPlayerId`/`destroyCount` are optional (exhaust-only is a legal, if weak, play). Simplification (flagged): only 1 owner's infantry can be targeted per play — the RR 44.identifies-both-sides mid-invasion edge case (see PlanetState's own unitsByPlayer doc comment) isn't handled here, same scope cut as PLAY_REFIT_TROOPS/PLAY_SCUTTLE's single-owner-at-a-time shape above. */
+export function playUnstablePlanet(
+  state: GameState,
+  action: { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId; destroyCount?: number },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "unstable_planet");
+  if (!played.ok) return played;
+
+  const found = findPlanet(played.state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  if (!(rules.planets[action.planetId]?.traits ?? []).includes("hazardous")) {
+    return { ok: false, error: "Unstable Planet must target a hazardous planet." };
+  }
+
+  const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("unstable_planet") }];
+  let updatedPlanet: PlanetState = { ...found.planet, exhausted: true };
+  if (found.planet.controllerId) {
+    events.push({ type: "PLANET_EXHAUSTED", playerId: found.planet.controllerId, planetId: action.planetId });
+  }
+
+  const destroyCount = Math.min(3, Math.max(0, action.destroyCount ?? 0));
+  if (destroyCount > 0 && action.targetPlayerId) {
+    const stacks = updatedPlanet.unitsByPlayer[action.targetPlayerId] ?? [];
+    const infantry = stacks.find((s) => s.unitType === "infantry");
+    const n = Math.min(destroyCount, infantry?.count ?? 0);
+    if (n > 0 && infantry) {
+      const updatedStacks = stacks.map((s) => (s === infantry ? { ...s, count: s.count - n } : s)).filter((s) => s.count > 0);
+      updatedPlanet = { ...updatedPlanet, unitsByPlayer: { ...updatedPlanet.unitsByPlayer, [action.targetPlayerId]: updatedStacks } };
+      events.push({ type: "UNITS_DESTROYED", playerId: action.targetPlayerId, systemId: found.systemId, planetId: action.planetId, unitType: "infantry", count: n });
+    }
+  }
+
+  const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+  const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [found.systemId]: updatedSystem } };
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "Plagiarize": spend 5 influence (exhausting controlled planets, same shape as PLAY_IMPERSONATION above) to gain a non-faction technology owned by a neighbor — bypasses RR 90.7 prerequisites entirely, same "free grant" precedent as directiveEffects.ts's own useResearchGrantReallocation. */
+export function playPlagiarize(
+  state: GameState,
+  action: { type: "PLAY_PLAGIARIZE"; playerId: PlayerId; targetPlayerId: PlayerId; techId: TechId; exhaustPlanetIds: PlanetId[] },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "plagiarize");
+  if (!played.ok) return played;
+  if (!arePlayersNeighbors(played.state, action.playerId, action.targetPlayerId, rules)) {
+    return { ok: false, error: "Plagiarize must target a neighbor." };
+  }
+  const target = played.state.players[action.targetPlayerId];
+  if (!target?.technologies.includes(action.techId)) {
+    return { ok: false, error: "That player doesn't own that technology." };
+  }
+  if (rules.factionTechIds.has(action.techId)) {
+    return { ok: false, error: "Plagiarize cannot target a faction technology." };
+  }
+  if (played.player.technologies.includes(action.techId)) {
+    return { ok: false, error: "This player already owns that technology." };
+  }
+
+  let influence = 0;
+  let systems = played.state.systems;
+  for (const planetId of action.exhaustPlanetIds) {
+    const found = findPlanet(played.state, planetId);
+    if (!found) return { ok: false, error: `No planet ${planetId}.` };
+    if (found.planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    if (found.planet.exhausted) return { ok: false, error: `${planetId} is already exhausted.` };
+    influence += rules.planets[planetId]?.influence ?? 0;
+    systems = {
+      ...systems,
+      [found.systemId]: { ...found.system, planets: found.system.planets.map((p) => (p.planetId === planetId ? { ...p, exhausted: true } : p)) },
+    };
+  }
+  if (influence < 5) return { ok: false, error: "Plagiarize costs 5 influence." };
+
+  const nextState: GameState = {
+    ...played.state,
+    systems,
+    players: { ...played.state.players, [action.playerId]: { ...played.player, technologies: [...played.player.technologies, action.techId] } },
+  };
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("plagiarize") }] };
+}
+
+/** RR "Seize Artifact": take 1 relic fragment (of this player's choice, among types the target actually has) from a neighbor. */
+export function playSeizeArtifact(
+  state: GameState,
+  action: { type: "PLAY_SEIZE_ARTIFACT"; playerId: PlayerId; targetPlayerId: PlayerId; fragmentType: "cultural" | "industrial" | "hazardous" | "unknown" },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "seize_artifact");
+  if (!played.ok) return played;
+  if (!arePlayersNeighbors(played.state, action.playerId, action.targetPlayerId, rules)) {
+    return { ok: false, error: "Seize Artifact must target a neighbor." };
+  }
+  const target = played.state.players[action.targetPlayerId];
+  if (!target) return { ok: false, error: "Unknown target player." };
+  if (target.relicFragments[action.fragmentType] < 1) {
+    return { ok: false, error: `That player has no ${action.fragmentType} relic fragments.` };
+  }
+
+  const updatedTarget: Player = { ...target, relicFragments: { ...target.relicFragments, [action.fragmentType]: target.relicFragments[action.fragmentType] - 1 } };
+  const updatedActingPlayer: Player = {
+    ...played.player,
+    relicFragments: { ...played.player.relicFragments, [action.fragmentType]: played.player.relicFragments[action.fragmentType] + 1 },
+  };
+  const nextState: GameState = {
+    ...played.state,
+    players: { ...played.state.players, [action.targetPlayerId]: updatedTarget, [action.playerId]: updatedActingPlayer },
+  };
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("seize_artifact") }] };
+}
+
+/** RR "Archaeological Expedition": reveal the top 3 cards of the exploration deck matching a trait this player controls a planet of; gain any relic fragments among them (same key-mapping as phases/exploration.ts's own applyExplorationCard), discard the rest. Deliberately does NOT call applyExplorationCard for the whole draw — the printed card only ever grants fragments or discards, it never resolves an "attach"/"keep in play area" card's own effect the way a normal RR 35 explore would. */
+export function playArchaeologicalExpedition(
+  state: GameState,
+  action: { type: "PLAY_ARCHAEOLOGICAL_EXPEDITION"; playerId: PlayerId; planetId: PlanetId },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "archaeological_expedition");
+  if (!played.ok) return played;
+
+  const found = findPlanet(played.state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  if (found.planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
+  const trait = rules.planets[action.planetId]?.traits[0] as "cultural" | "industrial" | "hazardous" | undefined;
+  if (!trait) return { ok: false, error: `${action.planetId} has no trait; no matching exploration deck.` };
+
+  let deck = played.state.explorationDecks?.[trait] ?? [];
+  let discardPile = played.state.explorationDiscardPiles?.[trait] ?? [];
+  let player = played.player;
+  const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("archaeological_expedition") }];
+
+  for (let i = 0; i < 3; i++) {
+    const drawResult = drawExplorationCard(deck, discardPile);
+    deck = drawResult.deck;
+    discardPile = drawResult.discardPile;
+    if (!drawResult.drawn) break;
+    const cardId = drawResult.drawn;
+    const card = rules.explorationCards[cardId];
+    if (card?.isRelicFragment && card.fragmentType) {
+      const key = card.fragmentType === "any" ? "unknown" : card.fragmentType;
+      player = { ...player, relicFragments: { ...player.relicFragments, [key]: player.relicFragments[key] + 1 } };
+      events.push({ type: "RELIC_FRAGMENT_GAINED", playerId: action.playerId, fragmentType: card.fragmentType });
+    } else {
+      discardPile = [...discardPile, cardId];
+    }
+  }
+
+  const nextState: GameState = {
+    ...played.state,
+    explorationDecks: { ...played.state.explorationDecks!, [trait]: deck },
+    explorationDiscardPiles: { ...played.state.explorationDiscardPiles, [trait]: discardPile } as GameState["explorationDiscardPiles"],
+    players: { ...played.state.players, [action.playerId]: player },
+  };
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "Divert Funding": return a non-unit-upgrade, non-faction technology this player owns to the shared pool, then research a DIFFERENT technology normally (paid cost, RR 90.7 prerequisites checked as usual — see RESEARCH_TECHNOLOGY's own doc comment on why `cost` is client-supplied). Reuses phases/technology.ts's own researchTechnology rather than duplicating prerequisite/payment logic. */
+export function playDivertFunding(
+  state: GameState,
+  action: {
+    type: "PLAY_DIVERT_FUNDING";
+    playerId: PlayerId;
+    returnedTechId: TechId;
+    researchTechId: TechId;
+    cost: number;
+    exhaustPlanetIdsForResources: PlanetId[];
+  },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "divert_funding");
+  if (!played.ok) return played;
+
+  if (!played.player.technologies.includes(action.returnedTechId)) {
+    return { ok: false, error: "This player doesn't own that technology." };
+  }
+  if (rules.factionTechIds.has(action.returnedTechId)) {
+    return { ok: false, error: "Divert Funding cannot return a faction technology." };
+  }
+  if (rules.unitUpgradeTechData[action.returnedTechId as unknown as UnitUpgradeId]) {
+    return { ok: false, error: "Divert Funding cannot return a unit upgrade." };
+  }
+  if (action.returnedTechId === action.researchTechId) {
+    return { ok: false, error: "Divert Funding must research a DIFFERENT technology." };
+  }
+
+  const afterReturn: GameState = {
+    ...played.state,
+    players: {
+      ...played.state.players,
+      [action.playerId]: { ...played.player, technologies: played.player.technologies.filter((t) => t !== action.returnedTechId) },
+    },
+  };
+
+  const researched = researchTechnology(afterReturn, action.playerId, action.researchTechId, action.cost, action.exhaustPlanetIdsForResources, rules);
+  if (!researched.ok) return researched;
+
+  return {
+    ok: true,
+    state: researched.state,
+    events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("divert_funding") }, ...researched.events],
+  };
+}
+
+/** RR "Exploration Probe": explore a frontier token in or adjacent to a system containing this player's ships — same underlying draw/apply as phases/exploration.ts's own exploreFrontier, but WITHOUT that function's Dark Energy Tap gate (this card is its own, independent trigger) and with an "in or adjacent" target instead of "the currently-activated system". */
+export function playExplorationProbe(state: GameState, action: { type: "PLAY_EXPLORATION_PROBE"; playerId: PlayerId; systemId: SystemId }, rules: RuleData): ActionResult {
+  const played = playCard(state, action.playerId, "exploration_probe");
+  if (!played.ok) return played;
+
+  const system = played.state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  if (!system.frontierToken) return { ok: false, error: `RR 35: ${action.systemId} has no frontier token.` };
+
+  const hasShipsHere = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0);
+  const hasShipsAdjacent = getAdjacentSystems(played.state, action.systemId, rules).some((adjId) =>
+    (played.state.systems[adjId]?.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0),
+  );
+  if (!hasShipsHere && !hasShipsAdjacent) {
+    return { ok: false, error: "This player has no ships in or adjacent to that system." };
+  }
+
+  const deck = played.state.explorationDecks?.frontier ?? [];
+  const discardPile = played.state.explorationDiscardPiles?.frontier ?? [];
+  let nextState: GameState = { ...played.state, systems: { ...played.state.systems, [action.systemId]: { ...system, frontierToken: false } } };
+  const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("exploration_probe") }];
+
+  const drawResult = drawExplorationCard(deck, discardPile);
+  if (drawResult.drawn) {
+    const cardId = drawResult.drawn;
+    const result = applyExplorationCard(nextState, action.playerId, action.systemId, null, cardId, rules);
+    nextState = result.state;
+    events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: "frontier" });
+    const card = rules.explorationCards[cardId];
+    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea;
+    nextState = {
+      ...nextState,
+      explorationDecks: { ...nextState.explorationDecks!, frontier: drawResult.deck },
+      explorationDiscardPiles: { ...nextState.explorationDiscardPiles, frontier: goesToDiscard ? [...drawResult.discardPile, cardId] : drawResult.discardPile } as GameState["explorationDiscardPiles"],
+    };
+  }
+
+  return { ok: true, state: nextState, events };
+}
+
+/**
+ * Batch 4: RR 8 "after/when an agenda is revealed" reaction cards (14 of
+ * the 66 remaining reactive-timing cards). Unlike batches 1-3, these
+ * don't stand alone — they read/write GameState.pendingAgendaVote, and 1
+ * of them (applyAgendaPredictionRewards) is called FROM agendaPhase.ts's
+ * own resolveAgendaVote rather than from GameEngine.ts's switch directly.
+ */
+
+/** Shared by every card below that removes a player from the current vote (the 8 riders' own "you cannot vote" clause, PLAY_ASSASSINATE_REPRESENTATIVE's identical clause, and PLAY_HACK_ELECTION's reordering) — keeps nextVoterIndex pointing at the same actual player after the array shifts. */
+function removeFromVotingOrder(pending: PendingAgendaVote, playerId: PlayerId): PendingAgendaVote {
+  const index = pending.votingOrder.indexOf(playerId);
+  if (index === -1) return pending;
+  const votingOrder = pending.votingOrder.filter((id) => id !== playerId);
+  const nextVoterIndex = index < pending.nextVoterIndex ? pending.nextVoterIndex - 1 : pending.nextVoterIndex;
+  return { ...pending, votingOrder, nextVoterIndex };
+}
+
+/** Shared bookkeeping for the 8 rider cards: records the prediction (checked later by applyAgendaPredictionRewards) and removes the predictor from this agenda's vote — same mechanism PLAY_ASSASSINATE_REPRESENTATIVE's plain "can't vote" effect uses, just also remembering the reward to apply if right. */
+function submitRiderPrediction(
+  state: GameState,
+  playerId: PlayerId,
+  cardId: ActionCardId,
+  predictedOutcome: string,
+  reward: AgendaPredictionReward,
+): { ok: true; state: GameState } | { ok: false; error: string } {
+  const pending = state.pendingAgendaVote;
+  if (!pending) return { ok: false, error: "No agenda is currently being voted on." };
+  if (pending.predictions?.some((p) => p.playerId === playerId)) {
+    return { ok: false, error: "This player has already predicted on this agenda." };
+  }
+  const withPrediction: PendingAgendaVote = { ...pending, predictions: [...(pending.predictions ?? []), { playerId, cardId, predictedOutcome, reward }] };
+  return { ok: true, state: { ...state, pendingAgendaVote: removeFromVotingOrder(withPrediction, playerId) } };
+}
+
+/** Shared hand-removal + prediction-submission + event-building for all 8 riders below — each exported function only has to validate its own reward-specific target (a planet, a system, a tech) before calling this. */
+function playRiderCard(state: GameState, playerId: PlayerId, cardId: string, predictedOutcome: string, reward: AgendaPredictionReward): ActionResult {
+  const played = playCard(state, playerId, cardId);
+  if (!played.ok) return played;
+  const submitted = submitRiderPrediction(played.state, playerId, asActionCardId(cardId), predictedOutcome, reward);
+  if (!submitted.ok) return submitted;
+  return {
+    ok: true,
+    state: submitted.state,
+    events: [
+      { type: "ACTION_CARD_PLAYED", playerId, cardId: asActionCardId(cardId) },
+      { type: "AGENDA_PREDICTION_MADE", playerId, predictedOutcome },
+    ],
+  };
+}
+
+/** RR "Assassinate Representative": another player cannot vote on this agenda. */
+export function playAssassinateRepresentative(state: GameState, action: { type: "PLAY_ASSASSINATE_REPRESENTATIVE"; playerId: PlayerId; targetPlayerId: PlayerId }): ActionResult {
+  const played = playCard(state, action.playerId, "assassinate_representative");
+  if (!played.ok) return played;
+  const pending = played.state.pendingAgendaVote;
+  if (!pending) return { ok: false, error: "No agenda is currently being voted on." };
+  if (!pending.votingOrder.includes(action.targetPlayerId)) {
+    return { ok: false, error: "That player isn't currently eligible to vote on this agenda." };
+  }
+  const nextState: GameState = { ...played.state, pendingAgendaVote: removeFromVotingOrder(pending, action.targetPlayerId) };
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("assassinate_representative") }] };
+}
+
+/** RR "Veto": discard the just-revealed agenda and reveal the next one instead — reuses agendaPhase.ts's own revealAgenda for the actual reveal (including all of ITS OWN reveal-time checks, e.g. Classified Document Leaks/Committee Formation) rather than duplicating any of that. */
+export function playVeto(state: GameState, action: { type: "PLAY_VETO"; playerId: PlayerId }, rules: RuleData): ActionResult {
+  const played = playCard(state, action.playerId, "veto");
+  if (!played.ok) return played;
+  const pending = played.state.pendingAgendaVote;
+  if (!pending) return { ok: false, error: "No agenda is currently being voted on." };
+
+  const vetoedState: GameState = {
+    ...played.state,
+    pendingAgendaVote: null,
+    agendaDeck: { ...played.state.agendaDeck, discardIds: [...played.state.agendaDeck.discardIds, pending.agendaId] },
+  };
+  const revealed = revealAgenda(vetoedState, rules);
+  if (!revealed.ok) return revealed;
+  return {
+    ok: true,
+    state: revealed.state,
+    events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("veto") }, ...revealed.events],
+  };
+}
+
+/** RR "Hack Election": rebuild the voting order to start right of the speaker and run counterclockwise — the mirror image of RR 8.2.ii's own left-of-speaker/clockwise rotation in agendaPhase.ts's revealAgenda (reverse the seating, then apply that exact same rotation formula). Keeps only players still actually eligible (e.g. already excluded by Assassinate Representative or a rider played earlier in reaction to the same reveal). */
+export function playHackElection(state: GameState, action: { type: "PLAY_HACK_ELECTION"; playerId: PlayerId }): ActionResult {
+  const played = playCard(state, action.playerId, "hack_election");
+  if (!played.ok) return played;
+  const pending = played.state.pendingAgendaVote;
+  if (!pending) return { ok: false, error: "No agenda is currently being voted on." };
+  const speakerId = played.state.seatOrder.find((id) => played.state.players[id]?.isSpeaker);
+  if (!speakerId) return { ok: false, error: "No speaker set — can't determine voting order." };
+
+  const reversedSeatOrder = [...played.state.seatOrder].reverse();
+  const reversedSpeakerIndex = reversedSeatOrder.indexOf(speakerId);
+  const newOrder = [...reversedSeatOrder.slice(reversedSpeakerIndex + 1), ...reversedSeatOrder.slice(0, reversedSpeakerIndex + 1)];
+  const stillEligible = new Set(pending.votingOrder);
+  const reorderedVotingOrder = newOrder.filter((id) => stillEligible.has(id));
+
+  const updatedPending: PendingAgendaVote = { ...pending, votingOrder: reorderedVotingOrder, nextVoterIndex: 0 };
+  return {
+    ok: true,
+    state: { ...played.state, pendingAgendaVote: updatedPending },
+    events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("hack_election") }],
+  };
+}
+
+/** RR "Insider Information": look at the top card of the agenda deck. Pure information, no state change beyond the mechanical discard — this engine already doesn't model hiding a not-yet-revealed agenda's identity from specific players (same scope cut as Committee Formation/Covert Legislation's own comments in agendaPhase.ts), so `state.agendaDeck.deckIds[0]` already IS that information for whoever's allowed to look. */
+export function playInsiderInformation(state: GameState, action: { type: "PLAY_INSIDER_INFORMATION"; playerId: PlayerId }): ActionResult {
+  const played = playCard(state, action.playerId, "insider_information");
+  if (!played.ok) return played;
+  return { ok: true, state: played.state, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("insider_information") }] };
+}
+
+/** RR "Diplomatic Pressure": another player must give this player 1 promissory note of their hand (the specific note is the target's own choice — the client resolves that choice before submitting `promissoryNoteId`). */
+export function playDiplomaticPressure(
+  state: GameState,
+  action: { type: "PLAY_DIPLOMATIC_PRESSURE"; playerId: PlayerId; targetPlayerId: PlayerId; promissoryNoteId: PromissoryNoteId },
+): ActionResult {
+  const played = playCard(state, action.playerId, "diplomatic_pressure");
+  if (!played.ok) return played;
+  if (action.targetPlayerId === action.playerId) return { ok: false, error: "Diplomatic Pressure must target another player." };
+  const target = played.state.players[action.targetPlayerId];
+  if (!target?.promissoryNotesInHand.includes(action.promissoryNoteId)) {
+    return { ok: false, error: "That player doesn't have that promissory note." };
+  }
+
+  const updatedTarget: Player = { ...target, promissoryNotesInHand: target.promissoryNotesInHand.filter((id) => id !== action.promissoryNoteId) };
+  const updatedActingPlayer: Player = { ...played.player, promissoryNotesInHand: [...played.player.promissoryNotesInHand, action.promissoryNoteId] };
+  const nextState: GameState = {
+    ...played.state,
+    players: { ...played.state.players, [action.targetPlayerId]: updatedTarget, [action.playerId]: updatedActingPlayer },
+  };
+  return {
+    ok: true,
+    state: nextState,
+    events: [
+      { type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("diplomatic_pressure") },
+      { type: "PROMISSORY_NOTE_TRANSFERRED", fromPlayerId: action.targetPlayerId, toPlayerId: action.playerId, promissoryNoteId: action.promissoryNoteId },
+    ],
+  };
+}
+
+/** RR "Imperial Rider": if this player's predicted outcome wins, gain 1 victory point. */
+export function playImperialRider(state: GameState, action: { type: "PLAY_IMPERIAL_RIDER"; playerId: PlayerId; predictedOutcome: string }): ActionResult {
+  return playRiderCard(state, action.playerId, "imperial_rider", action.predictedOutcome, { kind: "victory_point" });
+}
+
+/** RR "Trade Rider": if correct, gain 5 trade goods. */
+export function playTradeRider(state: GameState, action: { type: "PLAY_TRADE_RIDER"; playerId: PlayerId; predictedOutcome: string }): ActionResult {
+  return playRiderCard(state, action.playerId, "trade_rider", action.predictedOutcome, { kind: "trade_goods" });
+}
+
+/** RR "Leadership Rider": if correct, gain 3 command tokens split across pools however this player likes. */
+export function playLeadershipRider(
+  state: GameState,
+  action: { type: "PLAY_LEADERSHIP_RIDER"; playerId: PlayerId; predictedOutcome: string; tactic: number; fleet: number; strategy: number },
+): ActionResult {
+  if (action.tactic < 0 || action.fleet < 0 || action.strategy < 0 || action.tactic + action.fleet + action.strategy !== 3) {
+    return { ok: false, error: "Leadership Rider's reward is exactly 3 command tokens, split however this player likes." };
+  }
+  return playRiderCard(state, action.playerId, "leadership_rider", action.predictedOutcome, {
+    kind: "command_tokens",
+    tactic: action.tactic,
+    fleet: action.fleet,
+    strategy: action.strategy,
+  });
+}
+
+/** RR "Construction Rider": if correct, place 1 space dock from reinforcements on a planet this player controls (chosen now, at play time). */
+export function playConstructionRider(
+  state: GameState,
+  action: { type: "PLAY_CONSTRUCTION_RIDER"; playerId: PlayerId; predictedOutcome: string; planetId: PlanetId },
+): ActionResult {
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  if (found.planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
+  return playRiderCard(state, action.playerId, "construction_rider", action.predictedOutcome, { kind: "space_dock", planetId: action.planetId });
+}
+
+/** RR "Diplomacy Rider": if correct, every OTHER player places a command token from their tactic pool in a system (chosen now) containing a planet this player controls. Simplification (flagged): "reinforcements" isn't a separately-tracked pool (same convention as PLAY_UNEXPECTED_ACTION/PLAY_SIGNAL_JAMMING above), so this always draws from each other player's tactic pool specifically rather than their choice of pool. */
+export function playDiplomacyRider(state: GameState, action: { type: "PLAY_DIPLOMACY_RIDER"; playerId: PlayerId; predictedOutcome: string; systemId: SystemId }): ActionResult {
+  const system = state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  if (!system.planets.some((p) => p.controllerId === action.playerId)) {
+    return { ok: false, error: "This player doesn't control a planet in that system." };
+  }
+  return playRiderCard(state, action.playerId, "diplomacy_rider", action.predictedOutcome, { kind: "command_token_to_others", systemId: action.systemId });
+}
+
+/** RR "Politics Rider": if correct, draw 3 action cards and gain the speaker token. */
+export function playPoliticsRider(state: GameState, action: { type: "PLAY_POLITICS_RIDER"; playerId: PlayerId; predictedOutcome: string }): ActionResult {
+  return playRiderCard(state, action.playerId, "politics_rider", action.predictedOutcome, { kind: "action_cards_and_speaker" });
+}
+
+/** RR "Technology Rider": if correct, research 1 technology (free — cost 0 — but RR 90.7 prerequisites still apply, same as phases/technology.ts's own researchTechnology always enforces regardless of cost). */
+export function playTechnologyRider(state: GameState, action: { type: "PLAY_TECHNOLOGY_RIDER"; playerId: PlayerId; predictedOutcome: string; techId: TechId }): ActionResult {
+  if (state.players[action.playerId]?.technologies.includes(action.techId)) {
+    return { ok: false, error: "This player already owns that technology." };
+  }
+  return playRiderCard(state, action.playerId, "technology_rider", action.predictedOutcome, { kind: "technology", techId: action.techId });
+}
+
+/** RR "Warfare Rider": if correct, place 1 dreadnought from reinforcements in a system (chosen now) containing this player's ships. */
+export function playWarfareRider(state: GameState, action: { type: "PLAY_WARFARE_RIDER"; playerId: PlayerId; predictedOutcome: string; systemId: SystemId }): ActionResult {
+  const system = state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  const hasOwnShip = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0);
+  if (!hasOwnShip) return { ok: false, error: "This player has no ships in that system." };
+  return playRiderCard(state, action.playerId, "warfare_rider", action.predictedOutcome, { kind: "dreadnought", systemId: action.systemId });
+}
+
+/** RR "Sanction": no reward for the predictor — if correct, EVERY player who voted for that outcome returns 1 command token from their fleet pool, checked in applyAgendaPredictionRewards against `votesByOutcome` (not something the predictor themselves benefits from directly, hence the empty-looking { kind: "sanction" } payload). */
+export function playSanction(state: GameState, action: { type: "PLAY_SANCTION"; playerId: PlayerId; predictedOutcome: string }): ActionResult {
+  return playRiderCard(state, action.playerId, "sanction", action.predictedOutcome, { kind: "sanction" });
+}
+
+/**
+ * Called from agendaPhase.ts's own resolveAgendaVote, right before it
+ * hands off to finalizeAgendaResolution — checks every rider prediction
+ * submitted on the CURRENT pendingAgendaVote against the actual winning
+ * outcome and applies whichever rewards were correct. Kept out of
+ * agendaPhase.ts itself, same "mechanics only, not what a specific
+ * card/law does" separation that file's own header comment already
+ * describes for laws/directives.
+ */
+export function applyAgendaPredictionRewards(
+  state: GameState,
+  rules: RuleData,
+  winner: string | null,
+  votesByOutcome: Record<string, { playerId: PlayerId; votes: number }[]>,
+): { state: GameState; events: GameEvent[] } {
+  const predictions = state.pendingAgendaVote?.predictions ?? [];
+  if (predictions.length === 0) return { state, events: [] };
+
+  let nextState = state;
+  const events: GameEvent[] = [];
+
+  for (const prediction of predictions) {
+    const correct = prediction.predictedOutcome === winner;
+    events.push({ type: "AGENDA_PREDICTION_RESOLVED", playerId: prediction.playerId, correct });
+    if (!correct) continue;
+    const player = nextState.players[prediction.playerId];
+    if (!player) continue;
+    const reward = prediction.reward;
+
+    switch (reward.kind) {
+      case "victory_point": {
+        nextState = {
+          ...nextState,
+          players: { ...nextState.players, [prediction.playerId]: { ...player, victoryPoints: { ...player.victoryPoints, current: player.victoryPoints.current + 1 } } },
+        };
+        events.push({ type: "VICTORY_POINT_GAINED", playerId: prediction.playerId, amount: 1 });
+        break;
+      }
+      case "trade_goods": {
+        nextState = { ...nextState, players: { ...nextState.players, [prediction.playerId]: { ...player, tradeGoods: player.tradeGoods + 5 } } };
+        events.push({ type: "TRADE_GOODS_GAINED", playerId: prediction.playerId, amount: 5 });
+        break;
+      }
+      case "command_tokens": {
+        nextState = {
+          ...nextState,
+          players: {
+            ...nextState.players,
+            [prediction.playerId]: {
+              ...player,
+              commandTokens: {
+                ...player.commandTokens,
+                tactic: player.commandTokens.tactic + reward.tactic,
+                fleet: player.commandTokens.fleet + reward.fleet,
+                strategy: player.commandTokens.strategy + reward.strategy,
+              },
+            },
+          },
+        };
+        events.push({ type: "COMMAND_TOKENS_GAINED", playerId: prediction.playerId, tactic: reward.tactic, fleet: reward.fleet, strategy: reward.strategy });
+        break;
+      }
+      case "space_dock": {
+        // Re-checked here (not just at play time) since resolution can happen slightly later — silently skipped if this player no longer controls that planet, rather than failing the whole resolution over 1 rider's now-stale target.
+        const found = findPlanet(nextState, reward.planetId);
+        if (found && found.planet.controllerId === prediction.playerId) {
+          const updatedPlanet = addPlanetUnits(found.planet, prediction.playerId, "space_dock", 1);
+          const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === reward.planetId ? updatedPlanet : p)) };
+          nextState = { ...nextState, systems: { ...nextState.systems, [found.systemId]: updatedSystem } };
+          events.push({ type: "UNITS_PRODUCED", playerId: prediction.playerId, systemId: found.systemId, planetId: reward.planetId, unitType: "space_dock", count: 1, totalCost: 0 });
+        }
+        break;
+      }
+      case "command_token_to_others": {
+        const system = nextState.systems[reward.systemId];
+        if (system) {
+          let players = nextState.players;
+          for (const otherId of Object.keys(players) as PlayerId[]) {
+            if (otherId === prediction.playerId) continue;
+            const other = players[otherId];
+            if (other.commandTokens.tactic < 1) continue;
+            players = {
+              ...players,
+              [otherId]: { ...other, commandTokens: { ...other.commandTokens, tactic: other.commandTokens.tactic - 1, onBoard: [...other.commandTokens.onBoard, reward.systemId] } },
+            };
+          }
+          nextState = { ...nextState, players };
+        }
+        break;
+      }
+      case "action_cards_and_speaker": {
+        let hand = player.actionCards;
+        for (let i = 0; i < 3; i++) {
+          const drawResult = drawActionCard(nextState);
+          nextState = { ...nextState, actionCardDeck: drawResult.deck, actionCardDiscardPile: drawResult.discardPile };
+          if (!drawResult.drawn) break;
+          hand = [...hand, drawResult.drawn];
+        }
+        const previousSpeakerId = nextState.seatOrder.find((id) => nextState.players[id]?.isSpeaker);
+        let players: GameState["players"] = { ...nextState.players, [prediction.playerId]: { ...nextState.players[prediction.playerId], actionCards: hand } };
+        if (previousSpeakerId && previousSpeakerId !== prediction.playerId) {
+          players = { ...players, [previousSpeakerId]: { ...players[previousSpeakerId], isSpeaker: false } };
+        }
+        players = { ...players, [prediction.playerId]: { ...players[prediction.playerId], isSpeaker: true } };
+        nextState = { ...nextState, players };
+        events.push({ type: "SPEAKER_CHANGED", playerId: prediction.playerId });
+        break;
+      }
+      case "technology": {
+        const researched = researchTechnology(nextState, prediction.playerId, reward.techId, 0, [], rules);
+        if (researched.ok) {
+          nextState = researched.state;
+          events.push(...researched.events);
+        }
+        break;
+      }
+      case "dreadnought": {
+        const system = nextState.systems[reward.systemId];
+        if (system) {
+          const updatedSystem = addSpaceUnits(system, prediction.playerId, "dreadnought", 1);
+          nextState = { ...nextState, systems: { ...nextState.systems, [reward.systemId]: updatedSystem } };
+          events.push({ type: "UNITS_PRODUCED", playerId: prediction.playerId, systemId: reward.systemId, unitType: "dreadnought", count: 1, totalCost: 0 });
+        }
+        break;
+      }
+      case "sanction": {
+        const voters = votesByOutcome[winner ?? ""] ?? [];
+        let players = nextState.players;
+        for (const voter of voters) {
+          const voterPlayer = players[voter.playerId];
+          if (!voterPlayer || voterPlayer.commandTokens.fleet < 1) continue;
+          players = { ...players, [voter.playerId]: { ...voterPlayer, commandTokens: { ...voterPlayer.commandTokens, fleet: voterPlayer.commandTokens.fleet - 1 } } };
+        }
+        nextState = { ...nextState, players };
+        break;
+      }
+    }
+  }
+
+  return { state: nextState, events };
 }
