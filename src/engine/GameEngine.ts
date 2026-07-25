@@ -40,7 +40,43 @@ import {
   playFighterConscription,
   playRefitTroops,
   playScuttle,
+  playInsubordination,
+  playLuckyShot,
+  playReactorMeltdown,
+  playSignalJamming,
+  playSpy,
+  playTacticalBombardment,
+  playUnstablePlanet,
+  playPlagiarize,
+  playSeizeArtifact,
+  playArchaeologicalExpedition,
+  playDivertFunding,
+  playExplorationProbe,
+  playAssassinateRepresentative,
+  playVeto,
+  playHackElection,
+  playInsiderInformation,
+  playDiplomaticPressure,
+  playImperialRider,
+  playTradeRider,
+  playLeadershipRider,
+  playConstructionRider,
+  playDiplomacyRider,
+  playPoliticsRider,
+  playTechnologyRider,
+  playWarfareRider,
+  playSanction,
+  playFlankSpeed,
+  playInTheSilenceOfSpace,
+  playLostStarChart,
+  playSolarFlare,
+  playNavSuite,
+  playMoraleBoost,
+  playSkilledRetreat,
+  playBunker,
+  playBlitz,
 } from "./phases/actionCardEffects";
+import { passPriority } from "./rules/priorityWindow";
 import { revealAgenda, castVotes } from "./phases/agendaPhase";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
@@ -414,6 +450,114 @@ export const GameEngine = {
       case "PLAY_SCUTTLE":
         result = playScuttle(state, action, rules);
         break;
+      case "PLAY_INSUBORDINATION":
+        result = playInsubordination(state, action);
+        break;
+      case "PLAY_LUCKY_SHOT":
+        result = playLuckyShot(state, action);
+        break;
+      case "PLAY_REACTOR_MELTDOWN":
+        result = playReactorMeltdown(state, action, rules);
+        break;
+      case "PLAY_SIGNAL_JAMMING":
+        result = playSignalJamming(state, action, rules);
+        break;
+      case "PLAY_SPY":
+        result = playSpy(state, action);
+        break;
+      case "PLAY_TACTICAL_BOMBARDMENT":
+        result = playTacticalBombardment(state, action, rules);
+        break;
+      case "PLAY_UNSTABLE_PLANET":
+        result = playUnstablePlanet(state, action, rules);
+        break;
+      case "PLAY_PLAGIARIZE":
+        result = playPlagiarize(state, action, rules);
+        break;
+      case "PLAY_SEIZE_ARTIFACT":
+        result = playSeizeArtifact(state, action, rules);
+        break;
+      case "PLAY_ARCHAEOLOGICAL_EXPEDITION":
+        result = playArchaeologicalExpedition(state, action, rules);
+        break;
+      case "PLAY_DIVERT_FUNDING":
+        result = playDivertFunding(state, action, rules);
+        break;
+      case "PLAY_EXPLORATION_PROBE":
+        result = playExplorationProbe(state, action, rules);
+        break;
+      case "PLAY_ASSASSINATE_REPRESENTATIVE":
+        result = playAssassinateRepresentative(state, action);
+        break;
+      case "PLAY_VETO":
+        result = playVeto(state, action, rules);
+        break;
+      case "PLAY_HACK_ELECTION":
+        result = playHackElection(state, action);
+        break;
+      case "PLAY_INSIDER_INFORMATION":
+        result = playInsiderInformation(state, action);
+        break;
+      case "PLAY_DIPLOMATIC_PRESSURE":
+        result = playDiplomaticPressure(state, action);
+        break;
+      case "PLAY_IMPERIAL_RIDER":
+        result = playImperialRider(state, action);
+        break;
+      case "PLAY_TRADE_RIDER":
+        result = playTradeRider(state, action);
+        break;
+      case "PLAY_LEADERSHIP_RIDER":
+        result = playLeadershipRider(state, action);
+        break;
+      case "PLAY_CONSTRUCTION_RIDER":
+        result = playConstructionRider(state, action);
+        break;
+      case "PLAY_DIPLOMACY_RIDER":
+        result = playDiplomacyRider(state, action);
+        break;
+      case "PLAY_POLITICS_RIDER":
+        result = playPoliticsRider(state, action);
+        break;
+      case "PLAY_TECHNOLOGY_RIDER":
+        result = playTechnologyRider(state, action);
+        break;
+      case "PLAY_WARFARE_RIDER":
+        result = playWarfareRider(state, action);
+        break;
+      case "PLAY_SANCTION":
+        result = playSanction(state, action);
+        break;
+      case "PLAY_FLANK_SPEED":
+        result = playFlankSpeed(state, action);
+        break;
+      case "PLAY_IN_THE_SILENCE_OF_SPACE":
+        result = playInTheSilenceOfSpace(state, action);
+        break;
+      case "PLAY_LOST_STAR_CHART":
+        result = playLostStarChart(state, action);
+        break;
+      case "PLAY_SOLAR_FLARE":
+        result = playSolarFlare(state, action);
+        break;
+      case "PLAY_NAV_SUITE":
+        result = playNavSuite(state, action);
+        break;
+      case "PLAY_MORALE_BOOST":
+        result = playMoraleBoost(state, action);
+        break;
+      case "PLAY_SKILLED_RETREAT":
+        result = playSkilledRetreat(state, action, rules);
+        break;
+      case "PLAY_BUNKER":
+        result = playBunker(state, action);
+        break;
+      case "PLAY_BLITZ":
+        result = playBlitz(state, action);
+        break;
+      case "PASS_PRIORITY":
+        result = passPriority(state, action);
+        break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
       // as the cases above — see phases/README.md for the recipe.
@@ -491,6 +635,19 @@ export const GameEngine = {
     }
     if (state.pendingCommandTokenGains?.[playerId]) {
       legal.push("PLACE_GAINED_COMMAND_TOKENS");
+    }
+
+    // RR 1.19/1.20: whoever's turn it currently is in an open priority
+    // window (see rules/priorityWindow.ts) can always at least pass on it.
+    // This does NOT enumerate which specific PLAY_<CARD> reactive actions
+    // are also legal right now (that depends on which matching cards this
+    // player actually holds, plus each one's own further legality checks —
+    // same "not modeled here" scope cut PLAY_ACTION_CARD's own comment
+    // below already covers) — whatever's asking this player should offer
+    // PASS_PRIORITY alongside any of their held cards whose printed timing
+    // matches the window's own `kind`.
+    if (state.pendingPriorityWindow && state.pendingPriorityWindow.order[state.pendingPriorityWindow.currentIndex] === playerId) {
+      legal.push("PASS_PRIORITY");
     }
 
     // RR 2.4/2.7: discarding (voluntary, e.g. hand-limit compliance) and
