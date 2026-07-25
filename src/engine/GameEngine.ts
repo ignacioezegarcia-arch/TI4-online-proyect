@@ -40,6 +40,32 @@ import {
   playFighterConscription,
   playRefitTroops,
   playScuttle,
+  playInsubordination,
+  playLuckyShot,
+  playReactorMeltdown,
+  playSignalJamming,
+  playSpy,
+  playTacticalBombardment,
+  playUnstablePlanet,
+  playPlagiarize,
+  playSeizeArtifact,
+  playArchaeologicalExpedition,
+  playDivertFunding,
+  playExplorationProbe,
+  playAssassinateRepresentative,
+  playVeto,
+  playHackElection,
+  playInsiderInformation,
+  playDiplomaticPressure,
+  playImperialRider,
+  playTradeRider,
+  playLeadershipRider,
+  playConstructionRider,
+  playDiplomacyRider,
+  playPoliticsRider,
+  playTechnologyRider,
+  playWarfareRider,
+  playSanction,
 } from "./phases/actionCardEffects";
 import { revealAgenda, castVotes } from "./phases/agendaPhase";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
@@ -413,6 +439,84 @@ export const GameEngine = {
         break;
       case "PLAY_SCUTTLE":
         result = playScuttle(state, action, rules);
+        break;
+      case "PLAY_INSUBORDINATION":
+        result = playInsubordination(state, action);
+        break;
+      case "PLAY_LUCKY_SHOT":
+        result = playLuckyShot(state, action);
+        break;
+      case "PLAY_REACTOR_MELTDOWN":
+        result = playReactorMeltdown(state, action, rules);
+        break;
+      case "PLAY_SIGNAL_JAMMING":
+        result = playSignalJamming(state, action, rules);
+        break;
+      case "PLAY_SPY":
+        result = playSpy(state, action);
+        break;
+      case "PLAY_TACTICAL_BOMBARDMENT":
+        result = playTacticalBombardment(state, action, rules);
+        break;
+      case "PLAY_UNSTABLE_PLANET":
+        result = playUnstablePlanet(state, action, rules);
+        break;
+      case "PLAY_PLAGIARIZE":
+        result = playPlagiarize(state, action, rules);
+        break;
+      case "PLAY_SEIZE_ARTIFACT":
+        result = playSeizeArtifact(state, action, rules);
+        break;
+      case "PLAY_ARCHAEOLOGICAL_EXPEDITION":
+        result = playArchaeologicalExpedition(state, action, rules);
+        break;
+      case "PLAY_DIVERT_FUNDING":
+        result = playDivertFunding(state, action, rules);
+        break;
+      case "PLAY_EXPLORATION_PROBE":
+        result = playExplorationProbe(state, action, rules);
+        break;
+      case "PLAY_ASSASSINATE_REPRESENTATIVE":
+        result = playAssassinateRepresentative(state, action);
+        break;
+      case "PLAY_VETO":
+        result = playVeto(state, action, rules);
+        break;
+      case "PLAY_HACK_ELECTION":
+        result = playHackElection(state, action);
+        break;
+      case "PLAY_INSIDER_INFORMATION":
+        result = playInsiderInformation(state, action);
+        break;
+      case "PLAY_DIPLOMATIC_PRESSURE":
+        result = playDiplomaticPressure(state, action);
+        break;
+      case "PLAY_IMPERIAL_RIDER":
+        result = playImperialRider(state, action);
+        break;
+      case "PLAY_TRADE_RIDER":
+        result = playTradeRider(state, action);
+        break;
+      case "PLAY_LEADERSHIP_RIDER":
+        result = playLeadershipRider(state, action);
+        break;
+      case "PLAY_CONSTRUCTION_RIDER":
+        result = playConstructionRider(state, action);
+        break;
+      case "PLAY_DIPLOMACY_RIDER":
+        result = playDiplomacyRider(state, action);
+        break;
+      case "PLAY_POLITICS_RIDER":
+        result = playPoliticsRider(state, action);
+        break;
+      case "PLAY_TECHNOLOGY_RIDER":
+        result = playTechnologyRider(state, action);
+        break;
+      case "PLAY_WARFARE_RIDER":
+        result = playWarfareRider(state, action);
+        break;
+      case "PLAY_SANCTION":
+        result = playSanction(state, action);
         break;
 
       // --- Not yet implemented. Each of these follows the exact same shape
