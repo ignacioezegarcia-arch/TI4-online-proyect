@@ -1,4 +1,3 @@
-import { AgendaPredictionReward } from "./GameState";
 import {
   ActionCardId,
   AgendaId,
@@ -253,45 +252,6 @@ export type GameAction =
   | { type: "PLAY_FIGHTER_CONSCRIPTION"; playerId: PlayerId }
   | { type: "PLAY_REFIT_TROOPS"; playerId: PlayerId; planetIds: PlanetId[] }
   | { type: "PLAY_SCUTTLE"; playerId: PlayerId; targets: { systemId: SystemId; unitType: UnitType }[] }
-  | { type: "PLAY_INSUBORDINATION"; playerId: PlayerId; targetPlayerId: PlayerId }
-  | { type: "PLAY_LUCKY_SHOT"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId; unitType: "dreadnought" | "cruiser" | "destroyer" }
-  | { type: "PLAY_REACTOR_MELTDOWN"; playerId: PlayerId; planetId: PlanetId; targetPlayerId: PlayerId }
-  | { type: "PLAY_SIGNAL_JAMMING"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId }
-  | { type: "PLAY_SPY"; playerId: PlayerId; targetPlayerId: PlayerId }
-  | { type: "PLAY_TACTICAL_BOMBARDMENT"; playerId: PlayerId; systemId: SystemId }
-  | { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId; destroyCount?: number }
-  | { type: "PLAY_PLAGIARIZE"; playerId: PlayerId; targetPlayerId: PlayerId; techId: TechId; exhaustPlanetIds: PlanetId[] }
-  | { type: "PLAY_ARCHAEOLOGICAL_EXPEDITION"; playerId: PlayerId; planetId: PlanetId }
-  | {
-      type: "PLAY_DIVERT_FUNDING";
-      playerId: PlayerId;
-      returnedTechId: TechId;
-      researchTechId: TechId;
-      cost: number;
-      exhaustPlanetIdsForResources: PlanetId[];
-    }
-  | { type: "PLAY_EXPLORATION_PROBE"; playerId: PlayerId; systemId: SystemId }
-  | { type: "PLAY_SEIZE_ARTIFACT"; playerId: PlayerId; targetPlayerId: PlayerId; fragmentType: "cultural" | "industrial" | "hazardous" | "unknown" }
-
-  // --- RR 8 "after/when an agenda is revealed" reaction cards. Each of
-  // the 8 riders below shares the "predict, can't vote, reward if right"
-  // shape (see GameState.ts's own AgendaPredictionReward/PendingAgendaVote.
-  // predictions doc comments) — resolved later, at agenda resolution, not
-  // immediately when played.
-  | { type: "PLAY_ASSASSINATE_REPRESENTATIVE"; playerId: PlayerId; targetPlayerId: PlayerId }
-  | { type: "PLAY_VETO"; playerId: PlayerId }
-  | { type: "PLAY_HACK_ELECTION"; playerId: PlayerId }
-  | { type: "PLAY_INSIDER_INFORMATION"; playerId: PlayerId }
-  | { type: "PLAY_DIPLOMATIC_PRESSURE"; playerId: PlayerId; targetPlayerId: PlayerId; promissoryNoteId: PromissoryNoteId }
-  | { type: "PLAY_IMPERIAL_RIDER"; playerId: PlayerId; predictedOutcome: string }
-  | { type: "PLAY_TRADE_RIDER"; playerId: PlayerId; predictedOutcome: string }
-  | { type: "PLAY_LEADERSHIP_RIDER"; playerId: PlayerId; predictedOutcome: string; tactic: number; fleet: number; strategy: number }
-  | { type: "PLAY_CONSTRUCTION_RIDER"; playerId: PlayerId; predictedOutcome: string; planetId: PlanetId }
-  | { type: "PLAY_DIPLOMACY_RIDER"; playerId: PlayerId; predictedOutcome: string; systemId: SystemId }
-  | { type: "PLAY_POLITICS_RIDER"; playerId: PlayerId; predictedOutcome: string }
-  | { type: "PLAY_TECHNOLOGY_RIDER"; playerId: PlayerId; predictedOutcome: string; techId: TechId }
-  | { type: "PLAY_WARFARE_RIDER"; playerId: PlayerId; predictedOutcome: string; systemId: SystemId }
-  | { type: "PLAY_SANCTION"; playerId: PlayerId; predictedOutcome: string }
   | {
       type: "RESEARCH_TECHNOLOGY";
       playerId: PlayerId;
@@ -537,12 +497,6 @@ export type GameEvent =
   | { type: "PLANET_READIED"; playerId: PlayerId; planetId: PlanetId }
   | { type: "PLANET_EXHAUSTED"; playerId: PlayerId; planetId: PlanetId }
   | { type: "LAW_REPEALED"; agendaId: AgendaId }
-  | { type: "AGENDA_PREDICTION_MADE"; playerId: PlayerId; predictedOutcome: string }
-  | { type: "AGENDA_PREDICTION_RESOLVED"; playerId: PlayerId; correct: boolean }
-  | { type: "VICTORY_POINT_GAINED"; playerId: PlayerId; amount: number }
-  | { type: "SPEAKER_CHANGED"; playerId: PlayerId }
-  | { type: "COMMAND_TOKENS_GAINED"; playerId: PlayerId; tactic: number; fleet: number; strategy: number }
-  | { type: "PROMISSORY_NOTE_TRANSFERRED"; fromPlayerId: PlayerId; toPlayerId: PlayerId; promissoryNoteId: PromissoryNoteId }
   | { type: "AGENDA_REVEALED"; agendaId: AgendaId }
   | { type: "VOTES_CAST"; playerId: PlayerId; outcome: string; votes: number }
   | { type: "AGENDA_RESOLVED"; agendaId: AgendaId; outcome: string; becameLaw: boolean }
