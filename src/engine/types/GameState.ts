@@ -596,4 +596,29 @@ export interface PendingAgendaVote {
    * means it stays readied).
    */
   predictiveIntelligenceBonusUsedBy?: Partial<Record<PlayerId, string>>;
+  /**
+   * The 8 "rider" action cards (Imperial/Leadership/... Rider) plus any
+   * future card sharing the same "predict aloud, can't vote, reward if
+   * right" shape (RR/PoK political cards) — checked once against `winner`
+   * in phases/actionCardEffects.ts's own applyAgendaPredictionRewards,
+   * called from agendaPhase.ts's resolveAgendaVote right before it hands
+   * off to finalizeAgendaResolution. The predicting player is ALSO
+   * removed from `votingOrder` above at submission time (phases/
+   * actionCardEffects.ts's own submitRiderPrediction) — same mechanism
+   * PLAY_ASSASSINATE_REPRESENTATIVE's plain "can't vote" effect uses,
+   * just with a reward attached.
+   */
+  predictions?: { playerId: PlayerId; cardId: ActionCardId; predictedOutcome: string; reward: AgendaPredictionReward }[];
 }
+
+/** Reward payloads for the 8 rider cards (see PendingAgendaVote.predictions above) — the specific choice each reward needs (which planet, which system, which tech, ...) is captured at PLAY time since applying it later, at agenda resolution, happens with no further interactive input in this engine's model. */
+export type AgendaPredictionReward =
+  | { kind: "victory_point" } // RR "Imperial Rider"
+  | { kind: "trade_goods" } // RR "Trade Rider": flat 5, no extra param
+  | { kind: "command_tokens"; tactic: number; fleet: number; strategy: number } // RR "Leadership Rider": must sum to 3
+  | { kind: "space_dock"; planetId: PlanetId } // RR "Construction Rider"
+  | { kind: "command_token_to_others"; systemId: SystemId } // RR "Diplomacy Rider"
+  | { kind: "action_cards_and_speaker" } // RR "Politics Rider": draw 3 + gain speaker token
+  | { kind: "technology"; techId: TechId } // RR "Technology Rider"
+  | { kind: "dreadnought"; systemId: SystemId } // RR "Warfare Rider"
+  | { kind: "sanction" }; // RR "Sanction": no reward for the predictor themselves — see its own doc comment in actionCardEffects.ts
