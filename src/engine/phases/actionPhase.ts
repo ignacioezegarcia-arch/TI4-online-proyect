@@ -103,6 +103,16 @@ export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): 
  *     strategy phase).
  */
 export function autoAdvancePhase(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
+  // RR 1.19/1.20: never advance a phase while a priority window (or a
+  // Sabotage-eligible action-card announcement) is still open — see
+  // GameEngine.ts's own announceActionCard/rules/priorityWindow.ts. Not a
+  // realistic case today (nothing currently causes activePlayerId to go
+  // null or every status-phase player to finish scoring WHILE a window is
+  // open), but a real one could exist once faction/leader/relic abilities
+  // add more trigger points, so this is a deliberate, cheap guard rather
+  // than an assumption this can never happen.
+  if (state.pendingPriorityWindow || state.pendingActionCardAnnouncement) return { state, events: [] };
+
   if (state.phase === "action") {
     if (state.activePlayerId !== null) return { state, events: [] };
     if (!Object.values(state.players).every((p) => p.hasPassed || p.eliminated)) {

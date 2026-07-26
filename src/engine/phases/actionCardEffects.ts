@@ -390,7 +390,12 @@ export function playWarEffort(state: GameState, action: { type: "PLAY_WAR_EFFORT
 }
 
 /** RR "Ghost Ship": place 1 destroyer from reinforcements in a non-home system that contains a wormhole and no other player's ships. */
-export function playGhostShip(state: GameState, action: { type: "PLAY_GHOST_SHIP"; playerId: PlayerId; systemId: SystemId }, rules: RuleData): ActionResult {
+/** RR (yjmrobert.com/tirules/rules/r_action_cards): if none are left in reinforcements, this player may instead relocate a destroyer already on the board from a system that does NOT contain 1 of their own command tokens — `relocateFromSystemId` identifies that source. */
+export function playGhostShip(
+  state: GameState,
+  action: { type: "PLAY_GHOST_SHIP"; playerId: PlayerId; systemId: SystemId; relocateFromSystemId?: SystemId },
+  rules: RuleData,
+): ActionResult {
   const played = playCard(state, action.playerId, "ghost_ship");
   if (!played.ok) return played;
 
@@ -401,11 +406,32 @@ export function playGhostShip(state: GameState, action: { type: "PLAY_GHOST_SHIP
   if (system.wormholes.length === 0) return { ok: false, error: "That system doesn't contain a wormhole." };
   const hasOtherShips = Object.entries(system.spaceUnitsByPlayer).some(([pid, stacks]) => pid !== action.playerId && (stacks ?? []).some((s) => s.count > 0));
   if (hasOtherShips) return { ok: false, error: "That system contains another player's ships." };
-  const reinforcementsCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "destroyer", count: 1 }]);
-  if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
-  const updatedSystem = addSpaceUnits(system, action.playerId, "destroyer", 1);
-  const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [action.systemId]: updatedSystem } };
+  let systems = played.state.systems;
+  const reinforcementsCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "destroyer", count: 1 }]);
+  if (!reinforcementsCheck.ok) {
+    if (!action.relocateFromSystemId) {
+      return { ok: false, error: "No destroyers left in reinforcements — specify relocateFromSystemId to relocate an existing one instead." };
+    }
+    if (played.player.commandTokens.onBoard.includes(action.relocateFromSystemId)) {
+      return { ok: false, error: "Cannot relocate a destroyer from a system that contains one of this player's own command tokens." };
+    }
+    const sourceSystem = systems[action.relocateFromSystemId];
+    const sourceStacks = sourceSystem?.spaceUnitsByPlayer[action.playerId] ?? [];
+    const sourceStack = sourceStacks.find((s) => s.unitType === "destroyer" && s.count > 0);
+    if (!sourceSystem || !sourceStack) {
+      return { ok: false, error: `No destroyer belonging to this player in ${action.relocateFromSystemId}.` };
+    }
+    const updatedSourceStacks = sourceStacks.map((s) => (s === sourceStack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+    systems = {
+      ...systems,
+      [action.relocateFromSystemId]: { ...sourceSystem, spaceUnitsByPlayer: { ...sourceSystem.spaceUnitsByPlayer, [action.playerId]: updatedSourceStacks } },
+    };
+  }
+
+  const updatedSystem = addSpaceUnits(systems[action.systemId], action.playerId, "destroyer", 1);
+  systems = { ...systems, [action.systemId]: updatedSystem };
+  const nextState: GameState = { ...played.state, systems };
   return {
     ok: true,
     state: nextState,
@@ -743,6 +769,18 @@ export function playPlagiarize(
   action: { type: "PLAY_PLAGIARIZE"; playerId: PlayerId; targetPlayerId: PlayerId; techId: TechId; exhaustPlanetIds: PlanetId[] },
   rules: RuleData,
 ): ActionResult {
+  // KNOWN GAP, flagged rather than half-implemented: RR (yjmrobert.com/
+  // tirules/rules/r_action_cards) confirms Plagiarize also can't target
+  // the GENERIC version of a unit upgrade if the target neighbor owns
+  // the FACTION-SPECIFIC variant of that same unit type (e.g. a neighbor
+  // holding their own faction's Cruiser II blocks gaining the generic
+  // Cruiser II from them too, not just their exact card). Implementing
+  // this precisely needs a techId -> UnitType lookup for EVERY unit
+  // upgrade (generic and faction) that RuleData doesn't expose yet
+  // (rules/ruleDataMapping.ts's own unitUpgradeTechData only carries
+  // color/prerequisites) — rather than guess via an imprecise proxy that
+  // could wrongly block or wrongly allow a real case, this is left as a
+  // documented gap for whoever adds that lookup.
   const played = playCard(state, action.playerId, "plagiarize");
   if (!played.ok) return played;
   if (!arePlayersNeighbors(played.state, action.playerId, action.targetPlayerId, rules)) {
@@ -1515,4 +1553,47 @@ export function playBlitz(state: GameState, action: { type: "PLAY_BLITZ"; player
 
   const nextState = advancePriorityWindowAfterAction({ ...played.state, pendingTacticalAction: { ...pending, blitzPlayerId: action.playerId } }, action.playerId);
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("blitz") }] };
+}
+
+/**
+ * RR (yjmrobert.com/tirules/rules/r_action_cards + the Xxcha Kingdom's
+ * own Instinct Training rules): cancel another player's just-announced
+ * action card entirely — no cost is paid, no effect occurs, and (per the
+ * rider-specific note on that same page) if the cancelled card was one
+ * that "will have an effect later, such as a rider", it can ONLY ever be
+ * cancelled right here, at its original announcement, never once it
+ * resolves. The cancelled card was never actually removed from the
+ * announcer's hand yet (GameEngine.ts's own announceActionCard doesn't
+ * touch it — only the real handler's own playCard call would have,
+ * during resolution), so that removal + discard happens here instead.
+ */
+export function playSabotage(state: GameState, action: { type: "PLAY_SABOTAGE"; playerId: PlayerId }): ActionResult {
+  if (!isPlayersTurnInWindow(state, "action_card_announced", action.playerId)) {
+    return { ok: false, error: "It isn't this player's turn in the current action-card-announcement priority window." };
+  }
+  const announced = state.pendingActionCardAnnouncement;
+  if (!announced) return { ok: false, error: "No action card is currently pending Sabotage." };
+
+  const played = playCard(state, action.playerId, "sabotage");
+  if (!played.ok) return played;
+
+  const announcer = played.state.players[announced.playerId];
+  const updatedAnnouncer: Player = { ...announcer, actionCards: announcer.actionCards.filter((c) => c !== announced.cardId) };
+  const nextState: GameState = {
+    ...played.state,
+    players: { ...played.state.players, [announced.playerId]: updatedAnnouncer },
+    actionCardDiscardPile: [...(played.state.actionCardDiscardPile ?? []), announced.cardId],
+    pendingActionCardAnnouncement: undefined,
+    pendingPriorityWindow: played.state.stashedPriorityWindow ?? null,
+    stashedPriorityWindow: undefined,
+  };
+
+  return {
+    ok: true,
+    state: nextState,
+    events: [
+      { type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("sabotage") },
+      { type: "ACTION_CARD_CANCELLED", playerId: announced.playerId, cardId: announced.cardId, cancelledBy: action.playerId },
+    ],
+  };
 }
