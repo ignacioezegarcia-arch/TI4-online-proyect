@@ -86,6 +86,22 @@ const CHAINED_NEXT_KIND: Partial<Record<PendingPriorityWindow["kind"], PendingPr
   system_activated: "after_system_activated",
 };
 
+/**
+ * RR (yjmrobert.com/tirules/rules/r_action_cards): the order OTHER
+ * players get asked whether they want to play Sabotage against a just-
+ * announced action card — action phase uses RR 1.19's own initiative
+ * order from the active player; strategy/agenda phase uses RR 1.20's own
+ * speaker order (confirmed: "during the upcoming agenda phase, all
+ * abilities stay resolved in speaker order, not initiative order"). The
+ * announcer themselves is excluded — they have no reason to Sabotage
+ * their own card.
+ */
+export function computeActionCardAnnounceWindowOrder(state: GameState, announcerId: PlayerId): PlayerId[] {
+  const base =
+    state.phase === "agenda" || state.phase === "strategy" ? agendaPhaseWindowOrder(state) : actionPhaseWindowOrder(state, state.activePlayerId ?? announcerId, Object.keys(state.players) as PlayerId[]);
+  return base.filter((id) => id !== announcerId && !state.players[id]?.eliminated);
+}
+
 /** RR 1.19: "Once every player has consecutively declined to resolve an ability during a timing window, no more abilities may be resolved during that window." The generic PASS_PRIORITY action — legal any time it's this player's turn in ANY open window, regardless of `kind` (the caller doesn't need to know which one is open to pass on it). */
 export function passPriority(state: GameState, action: { type: "PASS_PRIORITY"; playerId: PlayerId }): ActionResult {
   const window = state.pendingPriorityWindow;
