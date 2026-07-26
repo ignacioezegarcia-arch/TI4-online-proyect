@@ -49,10 +49,11 @@ export function canShipReachSystem(
   from: SystemId,
   to: SystemId,
   baseMoveValue: number,
-  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean } = {},
+  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean; ignoreAllAnomalyEffects?: boolean } = {},
   rules?: RuleData,
 ): boolean {
   if (from === to) return true;
+  const ignoreAsteroidFields = techs.ignoreAsteroidFields || techs.ignoreAllAnomalyEffects;
 
   const originAnomalies = state.systems[from]?.anomalies ?? [];
   // Nebula overrides (doesn't add to) the ship's move value when leaving it.
@@ -61,15 +62,21 @@ export function canShipReachSystem(
   // authoritative here rather than guess an interaction order.
   // RR "Shared Research" ("for"): units can move through nebulae as normal
   // while this law is active — the clamp below is simply skipped.
-  const nebulaClampLifted = isLawActiveWithOutcome(state, "shared_research" as AgendaId, "for");
+  // "Nav Suite": same clamp-skip, this player's own action-card choice
+  // instead of an active law — see this function's own `techs` param doc.
+  const nebulaClampLifted = isLawActiveWithOutcome(state, "shared_research" as AgendaId, "for") || techs.ignoreAllAnomalyEffects;
   const maxBudget = hasNebula(originAnomalies) && !nebulaClampLifted ? 1 : baseMoveValue;
   if (maxBudget <= 0) return false;
 
   // BFS where the state is (system, hasUsedRiftBonus) rather than just
   // system, because the same system can be reached with or without having
   // banked the gravity-rift bonus, and that changes how many hops remain
-  // available for the rest of the path.
-  const startRiftUsed = hasGravityRift(originAnomalies);
+  // available for the rest of the path. "Nav Suite" (ignoreAllAnomalyEffects)
+  // forfeits the gravity-rift bonus along with every other anomaly effect —
+  // flagged interpretation call: the card says "ignore the effects of
+  // anomalies" without carving out an exception for beneficial ones, so
+  // this treats the rift's own bonus as one of those ignored effects too.
+  const startRiftUsed = hasGravityRift(originAnomalies) && !techs.ignoreAllAnomalyEffects;
   const bestHopsForState = new Map<string, number>();
   bestHopsForState.set(stateKey(from, startRiftUsed), 0);
   let frontier: { systemId: SystemId; hops: number; riftUsed: boolean }[] = [
@@ -91,16 +98,16 @@ export function canShipReachSystem(
         const neighborAnomalies = state.systems[neighborId]?.anomalies ?? [];
 
         if (isDestination) {
-          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields: techs.ignoreAsteroidFields })) continue;
+          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields })) continue;
           return true;
         }
 
-        if (!canShipPassThroughTile(neighborAnomalies, techs.ignoreAsteroidFields)) continue;
+        if (!canShipPassThroughTile(neighborAnomalies, ignoreAsteroidFields)) continue;
         const blockedByEnemyFleet =
           !techs.ignoreEnemyFleets && playersWithShipsInSystem(state, neighborId).some((p) => p !== playerId);
         if (blockedByEnemyFleet) continue;
 
-        const riftUsed = current.riftUsed || hasGravityRift(neighborAnomalies);
+        const riftUsed = current.riftUsed || (hasGravityRift(neighborAnomalies) && !techs.ignoreAllAnomalyEffects);
         const key = stateKey(neighborId, riftUsed);
         const bestKnown = bestHopsForState.get(key);
         if (bestKnown !== undefined && bestKnown <= hops) continue;

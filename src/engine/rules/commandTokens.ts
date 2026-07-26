@@ -1,6 +1,7 @@
 import { GameState, Player } from "../types/GameState";
 import { PlayerId, AgendaId } from "../types/ids";
 import { isLawActiveWithOutcome } from "../phases/agendaEffects";
+import { COMMAND_TOKEN_TOTAL_SUPPLY } from "./reinforcements";
 
 /**
  * RR 20: shared logic for placing NEWLY GAINED command tokens into
@@ -30,6 +31,12 @@ export function placeGainedCommandTokens(
   const newFleetTotal = player.commandTokens.fleet + placement.fleet;
   if (newFleetTotal > 4 && isLawActiveWithOutcome(state, "fleet_regulations" as AgendaId, "for")) {
     return { ok: false, error: 'RR "Fleet Regulations": a player\'s fleet pool cannot exceed 4 command tokens while this law is active.' };
+  }
+
+  // RR/the wiki's own Reinforcements page: 16 command tokens total per player (rules/reinforcements.ts) — covers every pool AND every on-board token at once.
+  const newTotal = player.commandTokens.tactic + placement.tactic + newFleetTotal + player.commandTokens.strategy + placement.strategy + player.commandTokens.onBoard.length;
+  if (newTotal > COMMAND_TOKEN_TOTAL_SUPPLY) {
+    return { ok: false, error: `RR: this player only has ${COMMAND_TOKEN_TOTAL_SUPPLY} command tokens total (including any already on the board) — this would need ${newTotal}.` };
   }
 
   return {

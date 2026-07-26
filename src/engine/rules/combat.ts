@@ -138,6 +138,13 @@ function getMoraleBoostHitOnBonus(state: GameState, playerId: PlayerId): number 
   return moraleBoost.round === (state.pendingTacticalAction?.combatRound ?? 1) ? 1 : 0;
 }
 
+/** "Fighter Prototype": +2 to the result of this player's FIGHTER combat rolls, round 1 of a space combat ONLY — expressed as -2 to hitOn, same convention as Morale Boost above. Explicitly checks combatRound === 1 (not just "was this set during a combat_round_start window", since that window also reopens for round 2+ via wrapUpCombatRound's own next-round branch). */
+function getFighterPrototypeHitOnBonus(state: GameState, playerId: PlayerId, unitType: UnitType): number {
+  if (unitType !== "fighter") return 0;
+  if (state.pendingTacticalAction?.fighterPrototypePlayerId !== playerId) return 0;
+  return (state.pendingTacticalAction?.combatRound ?? 1) === 1 ? 2 : 0;
+}
+
 export function buildSpaceCombatEntries(
   state: GameState,
   rules: RuleData,
@@ -174,7 +181,8 @@ export function buildSpaceCombatEntries(
       // identical, same convention as this file's other die-modifier
       // agendas/techs, e.g. Antimass Deflectors).
       const prophecyOfIxthBonus = stack.unitType === "fighter" && getLawOwner(state, "prophecy_of_ixth" as AgendaId) === playerId ? 1 : 0;
-      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus;
+      const fighterPrototypeBonus = getFighterPrototypeHitOnBonus(state, playerId, stack.unitType);
+      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus;
 
       entries.push({
         playerId,
@@ -574,6 +582,8 @@ export function buildSpaceCannonDefenseEntries(
   attackerId: PlayerId,
   plasmaScoringUnitType?: UnitType,
 ): CombatUnitEntry[] {
+  // "Disable": this attacker's opponents' PDS lose Space Cannon entirely for the rest of the invasion.
+  if (state.pendingTacticalAction?.disablePlayerId === attackerId) return [];
   const player = state.players[defenderId];
   if (!player) return [];
   const stacks = (planet.unitsByPlayer[defenderId] ?? []) as UnitStack[];

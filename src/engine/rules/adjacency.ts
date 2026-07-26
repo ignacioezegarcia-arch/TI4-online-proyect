@@ -49,12 +49,16 @@ export function getAdjacentSystems(state: GameState, systemId: SystemId, rules?:
   });
   if (effectiveWormholes.length === 0) return physical;
 
-  // RR "Wormhole Reconstruction" ("for"): confirmed, ALL systems that
-  // contain EITHER an alpha or a beta wormhole become mutually adjacent to
-  // EACH OTHER — a looser UNION than the normal matching-type rule (alpha
-  // only links to alpha, beta only to beta); only applies when this
-  // system's own qualifying wormhole is itself alpha or beta.
-  const wormholeReconstruction = isLawActiveWithOutcome(state, "wormhole_reconstruction" as AgendaId, "for");
+  // RR "Wormhole Reconstruction" ("for") / "Lost Star Chart" (this player's
+  // own action card, this tactical action only): confirmed, ALL systems
+  // that contain EITHER an alpha or a beta wormhole become mutually
+  // adjacent to EACH OTHER — a looser UNION than the normal matching-type
+  // rule (alpha only links to alpha, beta only to beta); only applies when
+  // this system's own qualifying wormhole is itself alpha or beta. Both
+  // sources share the exact same mechanic, just a permanent law vs. a
+  // 1-tactical-action card — no need to distinguish them past this line.
+  const wormholeReconstruction =
+    isLawActiveWithOutcome(state, "wormhole_reconstruction" as AgendaId, "for") || Boolean(state.pendingTacticalAction?.lostStarChartActive);
   const hasAlphaOrBeta = effectiveWormholes.some((w) => w === "alpha" || w === "beta");
 
   const wormholeLinked = Object.values(state.systems)
