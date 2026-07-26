@@ -249,7 +249,7 @@ export type GameAction =
   | { type: "PLAY_FRONTLINE_DEPLOYMENT"; playerId: PlayerId; planetId: PlanetId }
   | { type: "PLAY_RISE_OF_A_MESSIAH"; playerId: PlayerId }
   | { type: "PLAY_WAR_EFFORT"; playerId: PlayerId; systemId: SystemId }
-  | { type: "PLAY_GHOST_SHIP"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_GHOST_SHIP"; playerId: PlayerId; systemId: SystemId; relocateFromSystemId?: SystemId }
   | { type: "PLAY_FIGHTER_CONSCRIPTION"; playerId: PlayerId }
   | { type: "PLAY_REFIT_TROOPS"; playerId: PlayerId; planetIds: PlanetId[] }
   | { type: "PLAY_SCUTTLE"; playerId: PlayerId; targets: { systemId: SystemId; unitType: UnitType }[] }
@@ -301,6 +301,8 @@ export type GameAction =
   | { type: "PLAY_SKILLED_RETREAT"; playerId: PlayerId; toSystemId: SystemId }
   | { type: "PLAY_BUNKER"; playerId: PlayerId }
   | { type: "PLAY_BLITZ"; playerId: PlayerId }
+  /** RR (yjmrobert.com/tirules/rules/r_action_cards + Xxcha Kingdom's own Instinct Training rules): cancel another player's just-ANNOUNCED action card — legal only during the "action_card_announced" window that card's own announcement opened, never once it's already resolved (matches Instinct Training's own explicit "may only be cancelled when it is originally played" rule for riders). */
+  | { type: "PLAY_SABOTAGE"; playerId: PlayerId }
   /** RR 1.19/1.20: declines this player's current turn in an open priority window (see types/GameState.ts's own PendingPriorityWindow doc comment) — legal any time it's their turn in ANY open window, whichever kind it is. */
   | { type: "PASS_PRIORITY"; playerId: PlayerId }
   | {
@@ -554,7 +556,12 @@ export type GameEvent =
   | { type: "SPEAKER_CHANGED"; playerId: PlayerId }
   | { type: "COMMAND_TOKENS_GAINED"; playerId: PlayerId; tactic: number; fleet: number; strategy: number }
   | { type: "PROMISSORY_NOTE_TRANSFERRED"; fromPlayerId: PlayerId; toPlayerId: PlayerId; promissoryNoteId: PromissoryNoteId }
-  | { type: "PRIORITY_WINDOW_CLOSED"; kind: "agenda_revealed" | "combat_round_start" | "invasion_start" | "system_activated" | "after_system_activated" }
+  | {
+      type: "PRIORITY_WINDOW_CLOSED";
+      kind: "agenda_revealed" | "combat_round_start" | "invasion_start" | "system_activated" | "after_system_activated" | "action_card_announced";
+    }
+  | { type: "ACTION_CARD_ANNOUNCED"; playerId: PlayerId; cardId: ActionCardId }
+  | { type: "ACTION_CARD_CANCELLED"; playerId: PlayerId; cardId: ActionCardId; cancelledBy: PlayerId }
   | { type: "AGENDA_REVEALED"; agendaId: AgendaId }
   | { type: "VOTES_CAST"; playerId: PlayerId; outcome: string; votes: number }
   | { type: "AGENDA_RESOLVED"; agendaId: AgendaId; outcome: string; becameLaw: boolean }

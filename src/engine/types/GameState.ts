@@ -294,6 +294,38 @@ export interface GameState {
    * relic/leader ability plugs into an EXISTING `kind` or adds a new one.
    */
   pendingPriorityWindow: PendingPriorityWindow | null;
+  /**
+   * RR (yjmrobert.com/tirules/rules/r_action_cards, confirmed via the
+   * Xxcha Kingdom's own Instinct Training rules): a player playing ANY
+   * action card must announce its targets/variable-cost BEFORE Sabotage
+   * (or a Sabotage-like cancel effect) may be played — dice are rolled,
+   * technology choices are revealed, etc. only after every other eligible
+   * player has declined that chance. This holds the ANNOUNCED action
+   * (untyped here — GameState.ts can't import GameAction without creating
+   * a circular import with types/Actions.ts, which already imports FROM
+   * this file for AgendaPredictionReward; GameEngine.ts casts it back to
+   * GameAction, since that file already imports both) while the
+   * "action_card_announced" priority window (opened at the same time,
+   * see rules/priorityWindow.ts) runs its course. Once that window fully
+   * closes with no cancellation, GameEngine.ts dispatches this SAME
+   * stored action to its real handler for the first time — nothing
+   * (hand removal, cost payment, effect) happens at announce time itself.
+   */
+  pendingActionCardAnnouncement?: { playerId: PlayerId; cardId: ActionCardId; action: unknown };
+  /**
+   * A card can be announced WHILE another priority window is already open
+   * (e.g. a rider during "agenda_revealed", or Morale Boost during
+   * "combat_round_start") — this stashes that OUTER window here for the
+   * duration of the resulting "action_card_announced" one, then restores
+   * it once that inner window closes (whether the card resolved or got
+   * Sabotaged), so the outer window's own round-robin picks up exactly
+   * where it left off. Deliberately only 1 level deep: announcing a
+   * second card (e.g. Sabotage targeting a Sabotage) while one is already
+   * pending here is refused outright rather than silently attempting
+   * arbitrary-depth nesting — an extremely rare edge case, flagged rather
+   * than guessed at.
+   */
+  stashedPriorityWindow?: PendingPriorityWindow | null;
   /** RR 8: exactly 2 agendas get resolved per agenda phase (fewer if the deck runs out). Reset to 0 when the agenda phase begins. */
   agendaPhaseAgendasResolved?: number;
   /** RR "Public Execution": the elected player cannot vote on any agendas for the REST of the current agenda phase (not future ones) — reset alongside agendaPhaseAgendasResolved whenever a fresh agenda phase begins. Checked when building each new agenda's voting order (see phases/agendaPhase.ts's revealAgenda). */
@@ -677,7 +709,8 @@ export interface PendingPriorityWindow {
     | "combat_round_start"
     | "invasion_start"
     | "system_activated"
-    | "after_system_activated";
+    | "after_system_activated"
+    | "action_card_announced";
   order: PlayerId[];
   currentIndex: number;
   consecutivePasses: number;
