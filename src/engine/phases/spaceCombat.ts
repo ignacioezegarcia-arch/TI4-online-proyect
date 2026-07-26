@@ -22,7 +22,12 @@ import { openInvasionStartWindowIfNeeded } from "./invasion";
 export function openCombatRoundStartWindowIfNeeded(state: GameState): GameState {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "spaceCombat" || pending.combatRound === undefined) return state;
-  if ((pending.afbPendingPlayers?.length ?? 0) > 0 || pending.assaultCannonPendingPlayer) return state;
+  // Only Assault Cannon (mandatory, not a "wish to resolve" ability — see
+  // its own doc comment above) gates this; AFB no longer does — RR: round
+  // 1's "start of combat"/"start of combat round" window is BEFORE AFB,
+  // so `afbPendingPlayers` being populated at the same time `combatRound`
+  // is set is the NORMAL case this should still open for, not skip.
+  if (pending.assaultCannonPendingPlayer) return state;
   if (state.pendingPriorityWindow) return state;
   const participants = playersWithShipsInSystem(state, pending.systemId);
   const order = actionPhaseWindowOrder(state, pending.playerId, participants);
@@ -43,6 +48,15 @@ export function openCombatRoundStartWindowIfNeeded(state: GameState): GameState 
  * phases/spaceCannonOffense.ts once that step clears) always goes through
  * computeSpaceCombatEntry below, so AFB eligibility is checked exactly once
  * in one place regardless of which step led here.
+ *
+ * RR (yjmrobert.com/tirules/rules/r_space_combat): "before combat" occurs
+ * immediately before Anti-Fighter Barrage, and "start of combat"/"start of
+ * combat round" are the SAME window during round 1 — so the
+ * combat_round_start priority window (rules/priorityWindow.ts) for round 1
+ * opens BEFORE AFB is even offered, not after (useAntiFighterBarrage below
+ * is gated on that window having fully closed first). AFB itself doesn't
+ * compete for that window at all — it's each side using their OWN units'
+ * ability, simultaneously, not a contested/priority-ordered choice.
  *
  * NOT implemented yet, flagged rather than silently skipped:
  *  - A card/ability granting an AFB roll to a unit that doesn't actually
@@ -103,16 +117,17 @@ function checkAssaultCannonTrigger(state: GameState, rules: RuleData, systemId: 
   return opponentStacks.some((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter" && s.count > 0);
 }
 
+/** RR (yjmrobert.com/tirules/rules/r_space_combat): "before combat" occurs immediately before Anti-Fighter Barrage, and during round 1, "start of combat" and "start of combat round" are the SAME window — so `combatRound` is set to 1 (and the combat_round_start priority window opened, by this function's own callers) BEFORE AFB eligibility is even checked, not after. AFB itself doesn't compete for that window at all — RR: "the players MAY SIMULTANEOUSLY use [AFB]", not a priority-ordered choice — it's simply gated (see useAntiFighterBarrage/skipAntiFighterBarrage) on that window having fully closed first. */
 function computeAfbEntry(
   state: GameState,
   rules: RuleData,
   systemId: SystemId,
-): { combatRound?: number; afbPendingPlayers?: PlayerId[]; pendingHits: Record<string, number> } {
+): { combatRound: number; afbPendingPlayers?: PlayerId[]; pendingHits: Record<string, number> } {
   const afbEligible = getAntiFighterBarrageParticipants(state, rules, systemId);
   if (afbEligible.length === 0) {
     return { combatRound: 1, pendingHits: {} };
   }
-  return { afbPendingPlayers: afbEligible, pendingHits: {} };
+  return { combatRound: 1, afbPendingPlayers: afbEligible, pendingHits: {} };
 }
 
 /** RR "Assault Cannon": the mandatory (no skip — see this project's own note on why) destruction the triggered player owes. They choose WHICH of their own non-fighter ships to destroy, same "real choice, not engine-picked" pattern as everywhere else in this codebase. Once resolved, if this was the ATTACKER's trigger (stage "attacker"), the DEFENDER's own trigger is checked next against the now-current ship count — continuing the confirmed resolution order — before finally moving on to AFB/combat rounds. */
@@ -176,6 +191,9 @@ export function useAntiFighterBarrage(
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "spaceCombat") {
     return { ok: false, error: "RR 67.1: not currently in space combat." };
+  }
+  if (state.pendingPriorityWindow?.kind === "combat_round_start") {
+    return { ok: false, error: "RR 1.19/1.20: every player must be given (and decline) their chance to play a start-of-combat card before Anti-Fighter Barrage." };
   }
   const afbPending = pending.afbPendingPlayers ?? [];
   if (!afbPending.includes(action.playerId)) {
@@ -274,11 +292,13 @@ export function assignAntiFighterBarrageHits(
 /**
  * RR 67.1/78.3a: if AFB wipes out one (or both) side's ships entirely,
  * space combat ends IMMEDIATELY right here — it never even reaches a
- * normal combat round. Previously this unconditionally jumped to
- * `combatRound: 1` regardless, meaning a side reduced to zero ships by
- * AFB alone would still (incorrectly) sit around waiting for a combat
- * round that should never happen, instead of moving straight to the
- * "invasion" step like any other space-combat conclusion.
+ * normal combat round.
+ *
+ * combatRound is ALREADY 1 by the time this runs (set by computeAfbEntry,
+ * before AFB even started — see this file's own header comment on why
+ * "start of combat"/"start of combat round 1" has to precede AFB, not
+ * follow it), so if combat continues past AFB, there's nothing left to
+ * open or set here beyond clearing the resolved afbPendingPlayers marker.
  */
 function beginCombatRoundsAfterAFB(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingTacticalAction!;
@@ -295,7 +315,11 @@ function beginCombatRoundsAfterAFB(state: GameState, rules: RuleData): { state: 
     return { state: nextState, events: [{ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId }] };
   }
 
-  return { state: openCombatRoundStartWindowIfNeeded({ ...state, pendingTacticalAction: { ...pending, combatRound: 1, afbPendingPlayers: undefined } }), events: [] };
+  // combatRound is already 1 from computeAfbEntry, and the round's own
+  // combat_round_start window already ran its course BEFORE AFB even
+  // began (see this function's own header comment on the reordering) —
+  // nothing left to open here, just clear the now-resolved AFB marker.
+  return { state: { ...state, pendingTacticalAction: { ...pending, afbPendingPlayers: undefined } }, events: [] };
 }
 
 export function announceRetreat(
