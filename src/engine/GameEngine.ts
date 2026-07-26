@@ -1,6 +1,6 @@
 import { GameState } from "./types/GameState";
 import { GameAction, ActionResult, GameEvent } from "./types/Actions";
-import { PlayerId, asTechId } from "./types/ids";
+import { PlayerId, AgendaId, ActionCardId, asTechId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
 import { chooseStrategyCard, getStrategyCardsPerPlayer } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
@@ -75,8 +75,9 @@ import {
   playSkilledRetreat,
   playBunker,
   playBlitz,
+  playSabotage,
 } from "./phases/actionCardEffects";
-import { passPriority } from "./rules/priorityWindow";
+import { passPriority, computeActionCardAnnounceWindowOrder } from "./rules/priorityWindow";
 import { revealAgenda, castVotes } from "./phases/agendaPhase";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
@@ -95,7 +96,7 @@ import {
   useTransitDiodes,
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
-import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective } from "./phases/agendaEffects";
+import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective, getLawOwner } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
   placeColonialRedistributionInfantry,
@@ -125,24 +126,73 @@ import { checkAndApplyEliminations, checkForVictory } from "./phases/elimination
  *   await supabase.from('games').update({ state: result.state }).eq('id', gameId);
  *   await supabase.from('game_events').insert(result.events.map(e => ({ game_id: gameId, ...e })));
  */
-export const GameEngine = {
-  /**
-   * Validate + apply a single action. Returns a *new* GameState (never
-   * mutates the input) plus the events that occurred, or an error and the
-   * original state is implicitly still valid.
-   *
-   * After a successful action, this always runs autoAdvancePhase so callers
-   * never have to remember to check "did everyone just pass?" themselves.
-   */
-  applyAction(state: GameState, action: GameAction, rules: RuleData): ActionResult {
-    if (state.phase === "ended") {
-      return { ok: false, error: "Game has already ended." };
-    }
+/**
+ * RR (yjmrobert.com/tirules/rules/r_action_cards + the Xxcha Kingdom's
+ * own Instinct Training rules): playing ANY action card first ANNOUNCES
+ * it — nothing about the card resolves yet, nothing is paid, no dice are
+ * rolled, no hidden choice (e.g. which technology Focused Research
+ * researches) is even revealed — while every other eligible player gets
+ * the RR 1.19/1.20 "action_card_announced" priority window to play
+ * Sabotage against it. Only once that window fully closes with no
+ * cancellation does applyAction's own PASS_PRIORITY handling re-dispatch
+ * this SAME stored action to dispatchAction for real, running its actual
+ * handler (playMoraleBoost, playFocusedResearch, whichever) for the
+ * first time.
+ */
+function announceActionCard(state: GameState, action: GameAction & { playerId: PlayerId }, rules: RuleData): ActionResult {
+  if (state.pendingActionCardAnnouncement) {
+    return { ok: false, error: "Another action card's announcement is still pending resolution — it must resolve or be cancelled first." };
+  }
+  const cardId = action.type.replace(/^PLAY_/, "").toLowerCase() as ActionCardId;
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  if (!player.actionCards.includes(cardId)) {
+    return { ok: false, error: `This player doesn't have ${cardId} in hand.` };
+  }
+  // RR "Political Censure": can't even announce a play while this law is active for them — same guard phases/actionCardEffects.ts's own playCard uses once a card actually resolves, checked again here so an ineligible player's announcement doesn't needlessly open a Sabotage window for something that could never legally resolve anyway.
+  if (getLawOwner(state, "political_censure" as AgendaId) === action.playerId) {
+    return { ok: false, error: 'RR "Political Censure": this player cannot play action cards while they own this card.' };
+  }
 
-    const guard = guardTurnLegality(state, action);
-    if (guard) return { ok: false, error: guard };
+  const order = computeActionCardAnnounceWindowOrder(state, action.playerId);
+  const nextState: GameState = {
+    ...state,
+    pendingActionCardAnnouncement: { playerId: action.playerId, cardId, action },
+    stashedPriorityWindow: state.pendingPriorityWindow,
+    pendingPriorityWindow: order.length > 0 ? { kind: "action_card_announced", order, currentIndex: 0, consecutivePasses: 0 } : null,
+  };
 
-    let result: ActionResult;
+  // Nobody eligible to Sabotage at all (e.g. everyone else eliminated) — resolve immediately, same as a window that opened and instantly closed.
+  if (order.length === 0) {
+    return resolveAnnouncedActionCard(nextState, rules);
+  }
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_ANNOUNCED", playerId: action.playerId, cardId }] };
+}
+
+/** Restores whatever OUTER priority window (if any) was stashed when this card was announced, clears the announcement, and dispatches the originally-submitted action to its real handler for the first time. Shared by announceActionCard's own 0-eligible-Sabotage-responders shortcut and applyAction's own PASS_PRIORITY handling once the window closes normally. */
+function resolveAnnouncedActionCard(state: GameState, rules: RuleData): ActionResult {
+  const announced = state.pendingActionCardAnnouncement;
+  if (!announced) return { ok: false, error: "No action card announcement is pending." };
+  const stateWithoutAnnouncement: GameState = {
+    ...state,
+    pendingActionCardAnnouncement: undefined,
+    pendingPriorityWindow: state.stashedPriorityWindow ?? null,
+    stashedPriorityWindow: undefined,
+  };
+  return dispatchAction(stateWithoutAnnouncement, announced.action as GameAction, rules);
+}
+
+/**
+ * The raw per-action-type dispatch table — used directly by applyAction
+ * below for every action, AND called a second time, internally, the
+ * moment an "action_card_announced" priority window fully closes with no
+ * Sabotage (see applyAction's own PASS_PRIORITY handling and
+ * announceActionCard below) — that second call is what actually runs a
+ * card's real handler for the first time, since the initial PLAY_<CARD>
+ * submission itself only ever announces, never resolves.
+ */
+function dispatchAction(state: GameState, action: GameAction, rules: RuleData): ActionResult {
+  let result: ActionResult;
     switch (action.type) {
       case "CHOOSE_STRATEGY_CARD":
         result = chooseStrategyCard(state, action);
@@ -555,6 +605,9 @@ export const GameEngine = {
       case "PLAY_BLITZ":
         result = playBlitz(state, action);
         break;
+      case "PLAY_SABOTAGE":
+        result = playSabotage(state, action);
+        break;
       case "PASS_PRIORITY":
         result = passPriority(state, action);
         break;
@@ -570,6 +623,54 @@ export const GameEngine = {
         return { ok: false, error: `Unknown action: ${JSON.stringify(exhaustiveCheck)}` };
       }
     }
+  return result;
+}
+
+export const GameEngine = {
+  /**
+   * Validate + apply a single action. Returns a *new* GameState (never
+   * mutates the input) plus the events that occurred, or an error and the
+   * original state is implicitly still valid.
+   *
+   * After a successful action, this always runs autoAdvancePhase so callers
+   * never have to remember to check "did everyone just pass?" themselves.
+   */
+  applyAction(state: GameState, action: GameAction, rules: RuleData): ActionResult {
+    if (state.phase === "ended") {
+      return { ok: false, error: "Game has already ended." };
+    }
+
+    const guard = guardTurnLegality(state, action);
+    if (guard) return { ok: false, error: guard };
+
+    // RR (yjmrobert.com/tirules/rules/r_action_cards): every action card
+    // must be ANNOUNCED before it resolves, giving every other eligible
+    // player a chance to Sabotage it first — see announceActionCard's own
+    // doc comment. PLAY_ACTION_CARD (the generic mechanical-only fallback
+    // for cards without their own dedicated action yet) and PLAY_SABOTAGE
+    // itself (which resolves directly against an ALREADY-open
+    // "action_card_announced" window rather than opening its own) are the
+    // only 2 exceptions.
+    if (action.type.startsWith("PLAY_") && action.type !== "PLAY_ACTION_CARD" && action.type !== "PLAY_SABOTAGE") {
+      return announceActionCard(state, action as GameAction & { playerId: PlayerId }, rules);
+    }
+
+    const dispatchResult = dispatchAction(state, action, rules);
+    // If this action just closed an "action_card_announced" window
+    // (every eligible player consecutively passed on Sabotage — a
+    // successful Sabotage instead clears pendingActionCardAnnouncement
+    // itself, so this check naturally skips resolving a cancelled card),
+    // immediately dispatch the stored action to its real handler and
+    // merge in whatever events that produces.
+    const result: ActionResult =
+      dispatchResult.ok && dispatchResult.state && state.pendingPriorityWindow?.kind === "action_card_announced" && !dispatchResult.state.pendingPriorityWindow && dispatchResult.state.pendingActionCardAnnouncement
+        ? (() => {
+            const resolved = resolveAnnouncedActionCard(dispatchResult.state, rules);
+            return resolved.ok
+              ? { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] }
+              : resolved;
+          })()
+        : dispatchResult;
 
     if (!result.ok || !result.state) return result;
 
@@ -650,12 +751,18 @@ export const GameEngine = {
       legal.push("PASS_PRIORITY");
     }
 
-    // RR 2.4/2.7: discarding (voluntary, e.g. hand-limit compliance) and
-    // playing an action card aren't tied to a specific phase the way most
-    // other actions here are — a card's own printed timing window decides
-    // when it's legal, and that per-card timing text isn't modeled yet
-    // (same deferred-content scope as the card's effect itself). Offered
-    // here as generally available whenever the player holds any.
+    // RR 2.4/2.7: PLAY_ACTION_CARD here is only the generic, mechanical-
+    // only fallback for the handful of action cards that don't have their
+    // own dedicated PLAY_<CARD> action yet (see phases/actionCards.ts's
+    // own header comment) — for those, this project genuinely doesn't
+    // model the card's own printed timing window, so it's offered
+    // whenever the player holds any, same deferred-content scope as the
+    // card's own effect. Every card that DOES have its own dedicated
+    // action (most of them, by now) isn't enumerated here at all — its
+    // real legality depends on which specific timing window is currently
+    // open (see rules/priorityWindow.ts) plus its own target-specific
+    // checks, which this deliberately-conservative function doesn't
+    // reach into. Voluntary discard has no timing restriction either way.
     if (player.actionCards.length > 0) {
       legal.push("DISCARD_ACTION_CARD", "PLAY_ACTION_CARD");
     }
