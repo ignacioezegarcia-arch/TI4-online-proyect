@@ -131,6 +131,13 @@ export function resolveCombatRound(entries: CombatUnitEntry[], diceRolls: number
  *    `hitOn`/`diceCount` per entry before dice are rolled, rather than
  *    reworking resolveCombatRound itself.
  */
+/** "Morale Boost": +1 to the result of this player's combat rolls THIS round only — expressed as -1 to hitOn (same convention as every other die modifier here). Self-expiring: only true while `combatRound` still matches the round it was played in. */
+function getMoraleBoostHitOnBonus(state: GameState, playerId: PlayerId): number {
+  const moraleBoost = state.pendingTacticalAction?.moraleBoost;
+  if (!moraleBoost || moraleBoost.playerId !== playerId) return 0;
+  return moraleBoost.round === (state.pendingTacticalAction?.combatRound ?? 1) ? 1 : 0;
+}
+
 export function buildSpaceCombatEntries(
   state: GameState,
   rules: RuleData,
@@ -154,6 +161,7 @@ export function buildSpaceCombatEntries(
     const isDefender = playerId !== activePlayerId;
     const player = state.players[playerId];
     const stacks = (system.spaceUnitsByPlayer[playerId] ?? []) as UnitStack[];
+    const moraleBoostBonus = getMoraleBoostHitOnBonus(state, playerId);
 
     for (const stack of stacks) {
       if (!SHIP_TYPES.includes(stack.unitType) || stack.count <= 0) continue;
@@ -166,7 +174,7 @@ export function buildSpaceCombatEntries(
       // identical, same convention as this file's other die-modifier
       // agendas/techs, e.g. Antimass Deflectors).
       const prophecyOfIxthBonus = stack.unitType === "fighter" && getLawOwner(state, "prophecy_of_ixth" as AgendaId) === playerId ? 1 : 0;
-      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus;
+      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus;
 
       entries.push({
         playerId,
@@ -205,6 +213,7 @@ export function buildGroundCombatEntries(
     if (playerId === blockedPlayerId) continue;
     const player = state.players[playerId];
     const stacks = (planet.unitsByPlayer[playerId] ?? []) as UnitStack[];
+    const moraleBoostBonus = getMoraleBoostHitOnBonus(state, playerId);
     for (const stack of stacks) {
       if (!GROUND_FORCE_TYPES.includes(stack.unitType) || stack.count <= 0) continue;
       const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
@@ -217,7 +226,7 @@ export function buildGroundCombatEntries(
       // half of this version's text.
       const diceMultiplier =
         usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier, hitOn: stats.combat, unitType: stack.unitType });
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier, hitOn: stats.combat - moraleBoostBonus, unitType: stack.unitType });
     }
   }
   return entries;
@@ -237,6 +246,8 @@ export function buildBombardmentEntries(
   attackerId: PlayerId,
   /** RR "Plasma Scoring": which of the attacker's own Bombardment-capable unit types gets the +1 die — the player's own choice (matters when they have more than one qualifying type with different hitOn values), so the caller must supply it explicitly rather than this function guessing. Ignored if the player doesn't own the tech, or doesn't actually have that unit type bombarding here. */
   plasmaScoringUnitType?: UnitType,
+  /** "Bunker"/"Blitz" both need to know who actually controls the planet being bombarded — optional because callers that don't care about either card (or haven't picked a target planet yet) can simply omit it. */
+  defenderId?: PlayerId,
 ): CombatUnitEntry[] {
   const system = state.systems[systemId];
   if (!system) return [];
@@ -249,18 +260,23 @@ export function buildBombardmentEntries(
   // buildGroundCombatEntries above.
   const bombardmentDiceMultiplier =
     usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
+  // "Bunker": -4 to the RESULT of enemy Bombardment rolls against planets this player controls — expressed as +4 to hitOn (same convention as every other die modifier in this file).
+  const bunkerPenalty = defenderId && state.pendingTacticalAction?.bunkerPlayerId === defenderId ? 4 : 0;
+  // "Blitz": every one of the attacker's non-fighter ships here that doesn't already have Bombardment gains Bombardment 6 (1 die) for the rest of this invasion.
+  const blitzActive = state.pendingTacticalAction?.blitzPlayerId === attackerId;
 
   const entries: CombatUnitEntry[] = [];
   for (const stack of stacks) {
     if (stack.count <= 0) continue;
+    if (stack.unitType === "fighter") continue; // "Blitz" only ever grants Bombardment to NON-fighter ships — fighters never qualify even with it active.
     const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
-    const bombardment = stats?.abilityValues?.bombardment;
+    const bombardment = stats?.abilityValues?.bombardment ?? (blitzActive && SHIP_TYPES.includes(stack.unitType) ? { value: 6, dice: 1 } : undefined);
     if (!bombardment) continue;
     let diceCount = stack.count * bombardment.dice * bombardmentDiceMultiplier;
     if (applyPlasmaScoringTo === stack.unitType) {
       diceCount += 1;
     }
-    entries.push({ playerId: attackerId, diceCount, hitOn: bombardment.value });
+    entries.push({ playerId: attackerId, diceCount, hitOn: bombardment.value + bunkerPenalty });
   }
   return entries;
 }
@@ -466,6 +482,9 @@ export function getSpaceCannonOffenseEligiblePlayers(
   targetSystemId: SystemId,
   activePlayerId: PlayerId,
 ): PlayerId[] {
+  // "Solar Flare": no OTHER player may target the active player's ships with Space Cannon this movement — doesn't stop the active player's own Space Cannon Offense against someone else, so this only ever filters out candidates whose target would be the active player.
+  const solarFlareProtectsActivePlayer =
+    state.pendingTacticalAction?.systemId === targetSystemId && state.pendingTacticalAction?.solarFlarePlayerId === activePlayerId;
   return Object.keys(state.players)
     .filter((id): id is PlayerId => !state.players[id as PlayerId].eliminated)
     .filter((id) => {
@@ -476,6 +495,7 @@ export function getSpaceCannonOffenseEligiblePlayers(
       // since this project doesn't support 3+-way combats yet anyway.
       const targetId = id === activePlayerId ? playersWithShipsInSystem(state, targetSystemId).find((pid) => pid !== activePlayerId) : activePlayerId;
       if (!targetId) return false;
+      if (solarFlareProtectsActivePlayer && targetId === activePlayerId && id !== activePlayerId) return false;
       return spaceCannonEntriesForPlayer(state, rules, id, targetSystemId, targetId).length > 0;
     });
 }
@@ -532,7 +552,8 @@ export function buildAntiFighterBarrageEntries(
   }
 
   if (diceCount === 0 || hitOn === null) return [];
-  return [{ playerId: firingPlayerId, diceCount, hitOn }];
+  // "Morale Boost": now legal to have been played for round 1 BEFORE Anti-Fighter Barrage (RR: "start of combat" == "start of combat round 1", which is itself before AFB) — same -1-to-hitOn convention as buildSpaceCombatEntries' own getMoraleBoostHitOnBonus.
+  return [{ playerId: firingPlayerId, diceCount, hitOn: hitOn - getMoraleBoostHitOnBonus(state, firingPlayerId) }];
 }
 
 // ---------------------------------------------------------------------
