@@ -103,6 +103,16 @@ export interface Player {
   isSpeaker: boolean;
   /** RR 3.3: has this player passed for the remainder of the current action phase? Reset every action phase. */
   hasPassed: boolean;
+  /** RR "Political Stability": true for the round this player chose to keep their strategy card(s) instead of returning them — checked once by phases/actionPhase.ts's own startNewRound, then cleared there. */
+  politicalStabilityKeepCards?: boolean;
+  /** RR "Political Stability": true for exactly 1 upcoming strategy phase — this player doesn't choose a strategy card that round (phases/strategyPhase.ts's own isPlayersStrategyTurnInternal skips them). Cleared once that strategy phase's picks are all done. */
+  skipsNextStrategyPick?: boolean;
+  /** RR "Master Plan": true once played, until the next time this player's OWN action would otherwise end their turn (phases/actionPhase.ts's own maybeAdvanceActivePlayer) — consumed then, granting exactly 1 extra action. */
+  masterPlanBonusAvailable?: boolean;
+  /** RR "War Machine": true once played, until the next PRODUCE_UNITS this player performs (phases/production.ts's own executeProduction) — consumed then. */
+  warMachineActive?: boolean;
+  /** RR "Public Disgrace": strategy card id(s) this player was just forced to NOT re-pick after an undone choice (phases/strategyPhase.ts's own chooseStrategyCard checks this) — cleared the moment they successfully pick anything else. */
+  excludedStrategyCardIds?: StrategyCardId[];
   eliminated: boolean;
 
   commandTokens: CommandTokens;
@@ -219,6 +229,8 @@ export interface GameState {
 
   /** Which strategy card ids are still unclaimed in the common play area this round, and trade goods sitting on them (RR 73.2). */
   unclaimedStrategyCards: { cardId: StrategyCardId; tradeGoods: number }[];
+  /** RR "Public Disgrace": which card the most recent CHOOSE_STRATEGY_CARD pick actually resolved to — read by playPublicDisgrace to know what to undo. Only meaningful while a "strategy_card_chosen" priority window is open; never read otherwise. */
+  lastStrategyCardChoice?: { playerId: PlayerId; cardId: StrategyCardId; tradeGoodsGained: number };
 
   objectives: ObjectiveState[];
   agendaDeck: AgendaDeckState;
@@ -294,6 +306,16 @@ export interface GameState {
    * relic/leader ability plugs into an EXISTING `kind` or adds a new one.
    */
   pendingPriorityWindow: PendingPriorityWindow | null;
+  /** One-shot marker for RR "Political Stability"'s own status->strategy-phase transition window (phases/actionPhase.ts's own autoAdvancePhase) — set true once that window has run its course for the CURRENT status phase, reset (implicitly, by simply not being copied forward) the next time startNewRound actually runs. */
+  statusPhaseStrategyReturnWindowDone?: boolean;
+  /** Same one-shot-per-round shape as statusPhaseStrategyReturnWindowDone above, but for RR "Ancient Burial Sites"'s own "at the start of the agenda phase" window (phases/actionPhase.ts's own autoAdvancePhase) — reset every time startNewRound actually runs. */
+  agendaPhaseStartWindowDone?: boolean;
+  /** Same one-shot shape, scoped to a single agenda's own resolution (reset the moment the NEXT agenda is revealed, or a new round begins) — RR "Confusing/Confounding Legal Text"'s own "elected_as_outcome" window, see finalizeAgendaResolution's own doc comment on its timing. */
+  electedOutcomeWindowDone?: boolean;
+  /** Same one-shot shape, scoped to a single agenda resolution's own RR "Deadly Plot" window — set true the moment the window opens (not just once closed), so a re-entrant resolveAgendaVote call (GameEngine.ts's own window-close handling) proceeds straight past it instead of re-opening. Cleared again once finalizeAgendaResolutionWithPredictions actually runs. */
+  outcomeWouldBeResolvedWindowDone?: boolean;
+  /** Same one-shot-continuation idea as the agenda-phase markers above, but for RR "Infiltrate"/"Reparations"' own "planet_control_gained" window — 2 different call sites (phases/invasion.ts's own commitGroundForces uncontested-landing branch, and wrapUpGroundCombat) open it, each needing a DIFFERENT continuation once it closes, so GameEngine.ts's own window-close handling reads this to know which. */
+  pendingPlanetControlGainedContinuation?: "check_ground_forces_committed" | "ground_combat_wrap_up";
   /**
    * RR (yjmrobert.com/tirules/rules/r_action_cards, confirmed via the
    * Xxcha Kingdom's own Instinct Training rules): a player playing ANY
@@ -312,6 +334,8 @@ export interface GameState {
    * (hand removal, cost payment, effect) happens at announce time itself.
    */
   pendingActionCardAnnouncement?: { playerId: PlayerId; cardId: ActionCardId; action: unknown };
+  /** RR "Coup d'Etat": the same announce-then-window shape as pendingActionCardAnnouncement above, but for RESOLVE_STRATEGY_PRIMARY specifically (GameEngine.ts's own applyAction intercepts it the same way) — opens the "strategic_action_start" priority window before a strategic action actually resolves, so Coup d'Etat can cancel it outright (ending that player's turn, no exhaustion) instead of only ever being able to react to already-resolved effects. */
+  pendingStrategicActionAnnouncement?: { playerId: PlayerId; action: unknown };
   /**
    * A card can be announced WHILE another priority window is already open
    * (e.g. a rider during "agenda_revealed", or Morale Boost during
@@ -504,6 +528,10 @@ export interface PendingTacticalAction {
   combatRound?: number;
   /** Players who have announced a retreat this combat round but not yet executed it (RR 67.4), and where to. */
   retreating?: { playerId: PlayerId; toSystemId: SystemId }[];
+  /** "Intercept": this player cannot retreat for the rest of this space combat round — checked by phases/spaceCombat.ts's own announceRetreat. */
+  interceptedPlayerId?: PlayerId;
+  /** "Waylay": this player's own Anti-Fighter Barrage hits can be assigned against ANY of the opponent's ships this round, not just fighters (phases/spaceCombat.ts's own assignAntiFighterBarrageHits). */
+  waylayPlayerId?: PlayerId;
   /**
    * RR 67.6/38.2: hits scored against each player in the current combat
    * round that they still need to assign (destroy/flip units for) via
@@ -556,10 +584,14 @@ export interface PendingTacticalAction {
   navSuiteActive?: boolean;
   /** "Morale Boost": +1 to the result of every one of this player's combat rolls — expressed as -1 to hitOn, same convention as every other die modifier in rules/combat.ts. Self-expiring by design: only checked when `round` matches the CURRENT `combatRound` above, so it never needs an explicit clear step once that round ends. */
   moraleBoost?: { playerId: PlayerId; round: number };
+  /** "Fighter Prototype": +2 to the result of this player's fighter combat rolls, round 1 of a space combat only (rules/combat.ts's own getFighterPrototypeHitOnBonus explicitly checks combatRound === 1, since this same window reopens for round 2+ too). */
+  fighterPrototypePlayerId?: PlayerId;
   /** "Bunker": -4 to the result of enemy Bombardment rolls against planets this player controls, for the rest of this invasion (phases/invasion.ts's own bombard/buildBombardmentEntries) — expressed as +4 to hitOn. */
   bunkerPlayerId?: PlayerId;
   /** "Blitz": every one of this player's non-fighter ships in the active system that doesn't already have Bombardment gains Bombardment 6 (1 die) for the rest of this invasion (rules/combat.ts's own buildBombardmentEntries). */
   blitzPlayerId?: PlayerId;
+  /** "Disable": this player's opponents' PDS units in the active system lose Planetary Shield (phases/invasion.ts's own bombard) and Space Cannon (rules/combat.ts's own buildSpaceCannonDefenseEntries) for the rest of the invasion. */
+  disablePlayerId?: PlayerId;
   /** Set true the first time EITHER phases/invasion.ts's own bombard or commitGroundForces actually runs this invasion step (regardless of whether bombardment scored any hits — a miss leaves no other trace in this interface at all, so this can't be inferred from pendingHits/currentInvasionPlanetId being unset). Exists ONLY so PLAY_BUNKER/PLAY_BLITZ can enforce their own "at the start of an invasion" timing precisely instead of the fragile "nothing else happens to be pending right now" proxy this file used before — with multiple contested planets in 1 invasion step, that proxy could let either card be played after a DIFFERENT planet's bombardment already happened. */
   invasionStepStarted?: boolean;
   /**
@@ -710,7 +742,20 @@ export interface PendingPriorityWindow {
     | "invasion_start"
     | "system_activated"
     | "after_system_activated"
-    | "action_card_announced";
+    | "action_card_announced"
+    | "strategy_phase_start"
+    | "strategy_card_chosen"
+    | "status_phase_strategy_card_return"
+    | "strategic_action_start"
+    | "agenda_phase_start"
+    | "after_speaker_votes"
+    | "elected_as_outcome"
+    | "after_you_cast_votes"
+    | "outcome_would_be_resolved"
+    | "planet_control_gained"
+    | "ground_forces_committed"
+    | "after_another_player_activates_system"
+    | "space_combat_won";
   order: PlayerId[];
   currentIndex: number;
   consecutivePasses: number;

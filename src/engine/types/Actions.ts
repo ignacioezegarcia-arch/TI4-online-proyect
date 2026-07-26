@@ -303,6 +303,56 @@ export type GameAction =
   | { type: "PLAY_BLITZ"; playerId: PlayerId }
   /** RR (yjmrobert.com/tirules/rules/r_action_cards + Xxcha Kingdom's own Instinct Training rules): cancel another player's just-ANNOUNCED action card — legal only during the "action_card_announced" window that card's own announcement opened, never once it's already resolved (matches Instinct Training's own explicit "may only be cancelled when it is originally played" rule for riders). */
   | { type: "PLAY_SABOTAGE"; playerId: PlayerId }
+  | { type: "PLAY_SUMMIT"; playerId: PlayerId }
+  | { type: "PLAY_MANIPULATE_INVESTMENTS"; playerId: PlayerId; distribution: { cardId: StrategyCardId; amount: number }[] }
+  | { type: "PLAY_POLITICAL_STABILITY"; playerId: PlayerId }
+  | { type: "PLAY_PUBLIC_DISGRACE"; playerId: PlayerId }
+  | { type: "PLAY_COUP_DETAT"; playerId: PlayerId }
+  | { type: "PLAY_ANCIENT_BURIAL_SITES"; playerId: PlayerId; targetPlayerId: PlayerId }
+  | { type: "PLAY_DISTINGUISHED_COUNCILOR"; playerId: PlayerId }
+  | { type: "PLAY_BRIBERY"; playerId: PlayerId; tradeGoodsToSpend: number }
+  | { type: "PLAY_CONFUSING_LEGAL_TEXT"; playerId: PlayerId; newElectedPlayerId: PlayerId }
+  | { type: "PLAY_CONFOUNDING_LEGAL_TEXT"; playerId: PlayerId }
+  | { type: "PLAY_DEADLY_PLOT"; playerId: PlayerId }
+  | { type: "PLAY_CRIPPLE_DEFENSES"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLAY_PLAGUE"; playerId: PlayerId; planetId: PlanetId; diceRolls: number[] }
+  | { type: "PLAY_DISABLE"; playerId: PlayerId }
+  | { type: "PLAY_INFILTRATE"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLAY_REPARATIONS"; playerId: PlayerId; exhaustPlanetId: PlanetId; readyPlanetId: PlanetId }
+  | { type: "PLAY_PARLEY"; playerId: PlayerId; targetPlanetId: PlanetId; committedPlayerId: PlayerId }
+  | { type: "PLAY_GHOST_SQUAD"; playerId: PlayerId; moves: { fromPlanetId: PlanetId; toPlanetId: PlanetId; unitType: "infantry" | "mech"; count: number }[] }
+  | { type: "PLAY_UPGRADE"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_HARNESS_ENERGY"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_RALLY"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_COUNTERSTROKE"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_FORWARD_SUPPLY_BASE"; playerId: PlayerId; systemId: SystemId; chosenPlayerId: PlayerId }
+  | { type: "PLAY_DECOY_OPERATION"; playerId: PlayerId; systemId: SystemId; fromPlanetIds: PlanetId[]; toPlanetId: PlanetId }
+  | { type: "PLAY_MASTER_PLAN"; playerId: PlayerId }
+  | { type: "PLAY_FIGHTER_PROTOTYPE"; playerId: PlayerId }
+  | { type: "PLAY_EMERGENCY_REPAIRS"; playerId: PlayerId }
+  | { type: "PLAY_SALVAGE"; playerId: PlayerId; opponentId: PlayerId }
+  | { type: "PLAY_SHIELDS_HOLDING"; playerId: PlayerId; hitsToCancel: number }
+  | { type: "PLAY_MANEUVERING_JETS"; playerId: PlayerId }
+  | { type: "PLAY_WAR_MACHINE"; playerId: PlayerId }
+  | { type: "PLAY_REVERSE_ENGINEER"; playerId: PlayerId; targetCardId: ActionCardId }
+  | { type: "PLAY_INTERCEPT"; playerId: PlayerId; opponentId: PlayerId }
+  | { type: "PLAY_ROUT"; playerId: PlayerId; opponentId: PlayerId; opponentToSystemId: SystemId }
+  | { type: "PLAY_WAYLAY"; playerId: PlayerId }
+  | { type: "PLAY_COURAGEOUS_TO_THE_END"; playerId: PlayerId; destroyedUnitType: UnitType; diceRolls: number[]; opponentUnitTypeToDestroy: UnitType }
+  | { type: "PLAY_DIRECT_HIT"; playerId: PlayerId; opponentId: PlayerId; unitType: UnitType }
+  | { type: "PLAY_REFLECTIVE_SHIELDING"; playerId: PlayerId; unitType: UnitType; hitAssignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] }
+  | {
+      type: "PLAY_EXPERIMENTAL_BATTLESTATION";
+      playerId: PlayerId;
+      spaceDockSystemId: SystemId;
+      targetSystemId: SystemId;
+      opponentId: PlayerId;
+      diceRolls: number[];
+      hitAssignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
+    }
+  | { type: "PLAY_FIRE_TEAM"; playerId: PlayerId; rerollUnitType: "infantry" | "mech"; newDiceRolls: number[] }
+  | { type: "PLAY_SCRAMBLE_FREQUENCY"; playerId: PlayerId; opponentId: PlayerId; opponentUnitType: UnitType; newDiceRolls: number[] }
+  | { type: "PLAY_REVEAL_PROTOTYPE"; playerId: PlayerId; techId: TechId; exhaustPlanetIdsForResources: PlanetId[] }
   /** RR 1.19/1.20: declines this player's current turn in an open priority window (see types/GameState.ts's own PendingPriorityWindow doc comment) — legal any time it's their turn in ANY open window, whichever kind it is. */
   | { type: "PASS_PRIORITY"; playerId: PlayerId }
   | {
@@ -558,10 +608,30 @@ export type GameEvent =
   | { type: "PROMISSORY_NOTE_TRANSFERRED"; fromPlayerId: PlayerId; toPlayerId: PlayerId; promissoryNoteId: PromissoryNoteId }
   | {
       type: "PRIORITY_WINDOW_CLOSED";
-      kind: "agenda_revealed" | "combat_round_start" | "invasion_start" | "system_activated" | "after_system_activated" | "action_card_announced";
+      kind:
+        | "agenda_revealed"
+        | "combat_round_start"
+        | "invasion_start"
+        | "system_activated"
+        | "after_system_activated"
+        | "action_card_announced"
+        | "strategy_phase_start"
+        | "strategy_card_chosen"
+        | "status_phase_strategy_card_return"
+        | "strategic_action_start"
+        | "agenda_phase_start"
+        | "after_speaker_votes"
+        | "elected_as_outcome"
+        | "after_you_cast_votes"
+        | "outcome_would_be_resolved"
+        | "planet_control_gained"
+        | "ground_forces_committed"
+        | "after_another_player_activates_system"
+        | "space_combat_won";
     }
   | { type: "ACTION_CARD_ANNOUNCED"; playerId: PlayerId; cardId: ActionCardId }
   | { type: "ACTION_CARD_CANCELLED"; playerId: PlayerId; cardId: ActionCardId; cancelledBy: PlayerId }
+  | { type: "ELECTED_PLAYER_CHANGED"; agendaId: AgendaId; fromPlayerId: PlayerId; toPlayerId: PlayerId }
   | { type: "AGENDA_REVEALED"; agendaId: AgendaId }
   | { type: "VOTES_CAST"; playerId: PlayerId; outcome: string; votes: number }
   | { type: "AGENDA_RESOLVED"; agendaId: AgendaId; outcome: string; becameLaw: boolean }
