@@ -9,6 +9,7 @@ import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
 import { applyExplorationCard, drawExplorationCard } from "./exploration";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 import { executeProduction } from "./production";
+import { checkReinforcementsAvailable } from "../rules/reinforcements";
 
 /**
  * RR "Technology" — the standalone abilities of 6 exhaustable/passive
@@ -72,6 +73,8 @@ export function useSelfAssemblyRoutines(
   if (!producedHere) {
     return { ok: false, error: "This player hasn't used Production in that system this tactical action." };
   }
+  const reinforcementsCheck = checkReinforcementsAvailable(state, action.playerId, [{ unitType: "mech", count: 1 }]);
+  if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
   const stacks = planet.unitsByPlayer[action.playerId] ?? [];
   const existing = stacks.find((s) => s.unitType === "mech" && !s.upgradeId);

@@ -114,6 +114,10 @@ export function executeProduction(
   if (productionLimit === null) {
     return { ok: false, error: `RR 58: no Production-capable unit (e.g. a Space Dock) on ${planetId}.` };
   }
+  // RR "War Machine": +4 to the total Production value for this 1 use.
+  if (player.warMachineActive) {
+    productionLimit += 4;
+  }
 
   // RR "Minister of Industry": confirmed, the owner isn't limited to ONE
   // producer per system — every one of THEIR OWN Production-capable
@@ -166,6 +170,10 @@ export function executeProduction(
   // per-unit loop above, floored at 0 so a cheap single unit can't go
   // negative.
   if (totalCost > 0 && player.technologies.includes(asTechId("sarween_tools"))) {
+    totalCost = Math.max(0, totalCost - 1);
+  }
+  // RR "War Machine": reduce the combined cost by 1 too (stacks with Sarween Tools — 2 separate, independent reductions).
+  if (totalCost > 0 && player.warMachineActive) {
     totalCost = Math.max(0, totalCost - 1);
   }
 
@@ -309,6 +317,7 @@ export function executeProduction(
         exhaustedTechnologies: usedAiDevelopmentAlgorithmForCost
           ? [...player.exhaustedTechnologies, asTechId("ai_development_algorithm")]
           : player.exhaustedTechnologies,
+        warMachineActive: false,
       },
     },
   };

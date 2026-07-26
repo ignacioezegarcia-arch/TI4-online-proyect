@@ -3,6 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, StrategyCardId, AgendaId } from "../types/ids";
 import { computeInitiativeOrder } from "../rules/initiative";
 import { isLawActiveWithOutcome } from "./agendaEffects";
+import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
 
 /**
  * RR 73.1c/33.9: how many strategy cards each player picks this round — 2
@@ -48,6 +49,9 @@ export function chooseStrategyCard(
   if (!entry) {
     return { ok: false, error: `RR 73.1: strategy card ${action.cardId} is not available — already chosen this round.` };
   }
+  if (player.excludedStrategyCardIds?.includes(action.cardId)) {
+    return { ok: false, error: 'RR "Public Disgrace": this player must choose a different strategy card.' };
+  }
 
   if (!isPlayersStrategyTurnInternal(state, action.playerId)) {
     return { ok: false, error: "RR 73.1: it's not this player's turn to choose a strategy card." };
@@ -76,36 +80,55 @@ export function chooseStrategyCard(
     strategyCards: [...recipient.strategyCards, { cardId: action.cardId, exhausted: false }],
     tradeGoods: recipient.tradeGoods + tradeGoodsGained,
   };
+  const players: GameState["players"] = { ...state.players, [recipientId]: updatedRecipient };
+  // RR "Public Disgrace": the CHOOSER's own exclusion clears once they've successfully picked something (regardless of who, via Checks and Balances, ends up actually holding it).
+  if (players[action.playerId]?.excludedStrategyCardIds) {
+    players[action.playerId] = { ...players[action.playerId], excludedStrategyCardIds: undefined };
+  }
 
   let nextState: GameState = {
     ...state,
-    players: { ...state.players, [recipientId]: updatedRecipient },
+    players,
     unclaimedStrategyCards: state.unclaimedStrategyCards.filter((c) => c.cardId !== action.cardId),
+    lastStrategyCardChoice: { playerId: recipientId, cardId: action.cardId, tradeGoodsGained },
   };
 
   const events: GameEvent[] = [{ type: "STRATEGY_CARD_CHOSEN", playerId: recipientId, cardId: action.cardId }];
 
-  // RR 73.2: once every player holds their strategy card(s) for the round,
-  // place 1 trade good on every card that ended up unchosen (a no-op in 4p,
-  // where every card is always claimed — RR 73.2 bullet), then move on to
-  // the action phase (RR 43: initiative order comes from the chosen cards).
-  if (everyoneHasEnoughCards(nextState)) {
-    nextState = {
-      ...nextState,
-      unclaimedStrategyCards: nextState.unclaimedStrategyCards.map((c) => ({ ...c, tradeGoods: c.tradeGoods + 1 })),
-      phase: "action",
-    };
-    const initiativeOrder = computeInitiativeOrder(nextState);
-    nextState = { ...nextState, initiativeOrder, activePlayerId: initiativeOrder[0] ?? null };
-    events.push({ type: "PHASE_CHANGED", from: "strategy", to: "action", round: nextState.round });
+  // RR "Public Disgrace": every OTHER player gets a chance to force this pick to be redone before anything else happens (including RR 73.2's own "is everyone done" check below).
+  const disgraceOrder = agendaPhaseWindowOrder(nextState).filter((id) => id !== recipientId && !nextState.players[id]?.eliminated);
+  if (disgraceOrder.length > 0) {
+    nextState = { ...nextState, pendingPriorityWindow: { kind: "strategy_card_chosen", order: disgraceOrder, currentIndex: 0, consecutivePasses: 0 } };
+    return { ok: true, state: nextState, events };
   }
 
-  return { ok: true, state: nextState, events };
+  return finishStrategyCardChoiceIfPhaseComplete(nextState, events);
+}
+
+/** RR 73.2: once every player holds their strategy card(s) for the round (and, if applicable, RR "Public Disgrace"'s own reactive window on this pick has fully closed with no redo forced), place 1 trade good on every unchosen card and move to the action phase. Split out so both the no-Sabotage-eligible-responders shortcut above and PASS_PRIORITY's own window-closing path (GameEngine.ts) can reach it. */
+export function finishStrategyCardChoiceIfPhaseComplete(state: GameState, events: GameEvent[]): ActionResult {
+  if (!everyoneHasEnoughCards(state)) {
+    return { ok: true, state, events };
+  }
+  const clearedSkips: GameState["players"] = {};
+  for (const [id, p] of Object.entries(state.players)) {
+    clearedSkips[id as PlayerId] = p.skipsNextStrategyPick ? { ...p, skipsNextStrategyPick: false } : p;
+  }
+  const nextState: GameState = {
+    ...state,
+    players: clearedSkips,
+    unclaimedStrategyCards: state.unclaimedStrategyCards.map((c) => ({ ...c, tradeGoods: c.tradeGoods + 1 })),
+    phase: "action",
+  };
+  const initiativeOrder = computeInitiativeOrder(nextState);
+  const finalState: GameState = { ...nextState, initiativeOrder, activePlayerId: initiativeOrder[0] ?? null };
+  return { ok: true, state: finalState, events: [...events, { type: "PHASE_CHANGED", from: "strategy", to: "action", round: finalState.round }] };
 }
 
 function everyoneHasEnoughCards(state: GameState): boolean {
   const cardsNeeded = getStrategyCardsPerPlayer(state);
-  return Object.values(state.players).every((p) => p.strategyCards.length >= cardsNeeded);
+  // RR "Political Stability": a skipping player never reaches cardsNeeded — treated as already satisfied instead of blocking the phase forever.
+  return Object.values(state.players).every((p) => p.skipsNextStrategyPick || p.strategyCards.length >= cardsNeeded);
 }
 
 function isPlayersStrategyTurnInternal(state: GameState, playerId: PlayerId): boolean {
@@ -114,6 +137,8 @@ function isPlayersStrategyTurnInternal(state: GameState, playerId: PlayerId): bo
   const startIndex = state.seatOrder.indexOf(speakerId);
   const rotated = [...state.seatOrder.slice(startIndex), ...state.seatOrder.slice(0, startIndex)];
   for (const candidateId of rotated) {
+    // RR "Political Stability": this player sat out picking a card this round entirely — treated the same as already having their full count, for ordering purposes only.
+    if (state.players[candidateId].skipsNextStrategyPick) continue;
     if (state.players[candidateId].strategyCards.length < cardsNeeded) {
       return candidateId === playerId;
     }

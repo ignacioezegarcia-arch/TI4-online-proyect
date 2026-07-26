@@ -188,11 +188,7 @@ export function castVotes(
     };
     const nextState: GameState = { ...state, pendingAgendaVote: updatedVote };
     const events: GameEvent[] = [{ type: "VOTES_CAST", playerId: action.playerId, outcome: action.outcome, votes: 1 }];
-    if (updatedVote.nextVoterIndex >= updatedVote.votingOrder.length) {
-      const resolved = resolveAgendaVote(nextState, rules);
-      return { ok: true, state: resolved.state, events: [...events, ...resolved.events] };
-    }
-    return { ok: true, state: nextState, events };
+    return openAfterYouCastVotesWindow(nextState, action.playerId, events);
   }
 
   let votes = 0;
@@ -232,13 +228,16 @@ export function castVotes(
   nextState = { ...nextState, pendingAgendaVote: updatedVote };
 
   const events: GameEvent[] = [{ type: "VOTES_CAST", playerId: action.playerId, outcome: action.outcome, votes }];
+  return openAfterYouCastVotesWindow(nextState, action.playerId, events);
+}
 
-  if (updatedVote.nextVoterIndex >= updatedVote.votingOrder.length) {
-    const resolved = resolveAgendaVote(nextState, rules);
-    return { ok: true, state: resolved.state, events: [...events, ...resolved.events] };
-  }
-
-  return { ok: true, state: nextState, events };
+/** RR "Distinguished Councilor": every CAST_VOTES opens this single-participant (just the voter) window before checking whether the agenda is now fully voted on — see GameEngine.ts's own applyAction, which resolves the agenda (if this really was the last vote) only once this window closes. */
+function openAfterYouCastVotesWindow(state: GameState, playerId: PlayerId, events: GameEvent[]): ActionResult {
+  return {
+    ok: true,
+    state: { ...state, pendingPriorityWindow: { kind: "after_you_cast_votes", order: [playerId], currentIndex: 0, consecutivePasses: 0 } },
+    events,
+  };
 }
 
 function exhaustPlanet(state: GameState, planetId: PlanetId): GameState {
@@ -258,7 +257,7 @@ function exhaustPlanet(state: GameState, planetId: PlanetId): GameState {
 }
 
 /** RR 8.4/8.5: tally votes, resolve the winning outcome, then either reveal the next agenda or end the agenda phase (RR 8 always resolves exactly 2, or fewer once the deck runs dry). */
-function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
+export function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingAgendaVote!;
   const totals = Object.entries(pending.votesByOutcome).map(([outcome, votes]) => ({
     outcome,
@@ -282,7 +281,27 @@ function resolveAgendaVote(state: GameState, rules: RuleData): { state: GameStat
     }
   }
 
-  return finalizeAgendaResolutionWithPredictions(state, rules, players, pending, winner);
+  // RR "Deadly Plot": every player gets 1 chance, right as the winning
+  // outcome is ABOUT to be resolved (before finalizeAgendaResolutionWithPredictions
+  // runs at all), to discard the agenda entirely instead — the card's own
+  // function checks the "you voted for or predicted a DIFFERENT outcome"
+  // eligibility; this window itself opens for everyone regardless.
+  const stateWithPlayers: GameState = { ...state, players };
+  if (!stateWithPlayers.outcomeWouldBeResolvedWindowDone) {
+    if (!stateWithPlayers.pendingPriorityWindow) {
+      const order = agendaPhaseWindowOrder(stateWithPlayers).filter((id) => !stateWithPlayers.players[id]?.eliminated);
+      if (order.length > 0) {
+        return {
+          state: { ...stateWithPlayers, outcomeWouldBeResolvedWindowDone: true, pendingPriorityWindow: { kind: "outcome_would_be_resolved", order, currentIndex: 0, consecutivePasses: 0 } },
+          events: [],
+        };
+      }
+    } else if (stateWithPlayers.pendingPriorityWindow.kind === "outcome_would_be_resolved") {
+      return { state: stateWithPlayers, events: [] };
+    }
+  }
+
+  return finalizeAgendaResolutionWithPredictions({ ...stateWithPlayers, outcomeWouldBeResolvedWindowDone: undefined }, rules, players, pending, winner);
 }
 
 /** Split out of resolveAgendaVote only so the "apply rider predictions" step has a clear place to sit between the vote tally (above) and RR 8.4/8.5's own outcome-application (finalizeAgendaResolution) — see phases/actionCardEffects.ts's own applyAgendaPredictionRewards for what the 8 rider cards actually do. */
@@ -493,7 +512,46 @@ export function finalizeAgendaResolution(
     }
   }
 
+  // RR "Confusing Legal Text"/"Confounding Legal Text": if this agenda's
+  // outcome elected a specific player, every player gets 1 chance to
+  // redirect who that election actually lands on, before the agenda
+  // phase moves on (next agenda revealed, or next round begins).
+  // Deliberate timing simplification, flagged rather than a full "before
+  // the law is even recorded" intercept (which would need deferring
+  // every OTHER side effect above too — Anti-Intellectual Revolution,
+  // Homeland Defense Act, etc. — since they all run before this point):
+  // the redirect happens after lawOwnerId is already recorded, then gets
+  // corrected in place — functionally identical by the time anything
+  // downstream actually reads that ownership, just not a literal
+  // before-the-fact intercept.
+  if (lawOwnerId !== "common" && nextState.lastResolvedAgenda?.agendaId === agendaId && !nextState.electedOutcomeWindowDone) {
+    if (!nextState.pendingPriorityWindow) {
+      const order = agendaPhaseWindowOrder(nextState).filter((id) => !nextState.players[id]?.eliminated);
+      if (order.length > 0) {
+        return { state: { ...nextState, pendingPriorityWindow: { kind: "elected_as_outcome", order, currentIndex: 0, consecutivePasses: 0 } }, events };
+      }
+    } else if (nextState.pendingPriorityWindow.kind === "elected_as_outcome") {
+      return { state: nextState, events };
+    }
+    nextState = { ...nextState, electedOutcomeWindowDone: true };
+  }
+
+  return continueAgendaPhaseAfterElectionReaction(nextState, rules, events);
+}
+
+/**
+ * Everything that happens once RR "Confusing/Confounding Legal Text"'s
+ * own "elected_as_outcome" window (if it was even needed) has fully
+ * closed — split out of finalizeAgendaResolution so GameEngine.ts can
+ * call this SAME continuation once that window closes, without
+ * re-running everything earlier in finalizeAgendaResolution a second
+ * time (which would double-apply side effects like queuing Anti-
+ * Intellectual Revolution's own exhaustion).
+ */
+export function continueAgendaPhaseAfterElectionReaction(state: GameState, rules: RuleData, events: GameEvent[]): { state: GameState; events: GameEvent[] } {
+  let nextState = state;
   if ((nextState.agendaPhaseAgendasResolved ?? 0) < 2 && nextState.agendaDeck.deckIds.length > 0) {
+    nextState = { ...nextState, electedOutcomeWindowDone: undefined };
     const revealed = revealAgenda(nextState, rules);
     if (revealed.ok) return { state: revealed.state, events: [...events, ...revealed.events] };
     return { state: nextState, events };

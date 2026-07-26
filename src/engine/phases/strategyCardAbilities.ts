@@ -8,6 +8,7 @@ import { researchTechnology, researchUnitUpgrade } from "./technology";
 import { scoreObjectiveCore } from "./actionPhase";
 import { maybeApplyMinisterOfCommerce, getLawOwner, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
+import { checkReinforcementsAvailable, COMMAND_TOKEN_TOTAL_SUPPLY } from "../rules/reinforcements";
 
 /**
  * RR 20-ish, one section per strategy card (data/strategyCards.json has the
@@ -467,6 +468,11 @@ function applyTokenGain(state: GameState, playerId: PlayerId, dist: { tactic: nu
     return { ok: false, error: 'RR "Fleet Regulations": a player\'s fleet pool cannot exceed 4 command tokens while this law is active.' };
   }
   const player = state.players[playerId];
+  // RR/the wiki's own Reinforcements page: 16 command tokens total per player, covering every pool AND every on-board token at once — see rules/reinforcements.ts's own doc comments.
+  const newTotal = dist.tactic + dist.fleet + dist.strategy + player.commandTokens.onBoard.length;
+  if (newTotal > COMMAND_TOKEN_TOTAL_SUPPLY) {
+    return { ok: false, error: `RR: this player only has ${COMMAND_TOKEN_TOTAL_SUPPLY} command tokens total (including any already on the board) — this distribution would need ${newTotal}.` };
+  }
   return {
     ok: true,
     state: { ...state, players: { ...state.players, [playerId]: { ...player, commandTokens: { ...player.commandTokens, tactic: dist.tactic, fleet: dist.fleet, strategy: dist.strategy } } } },
@@ -504,6 +510,8 @@ function placeStructuresFree(
         return { ok: false, error: `RR 85: ${planetId} can have at most ${limit} ${unitType}(s); it already has ${existingOnPlanet}.` };
       }
     }
+    const reinforcementsCheck = checkReinforcementsAvailable(next, playerId, [{ unitType, count: 1 }]);
+    if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
     const stacks = (planet.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
     const existing = stacks.find((s) => s.unitType === unitType);

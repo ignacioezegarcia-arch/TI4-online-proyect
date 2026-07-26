@@ -19,6 +19,12 @@ import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 
 /** Called at every point in this file where pendingTacticalAction might have JUST landed on a genuine "a combat round begins now" state (round 1 after Assault Cannon/AFB have both already resolved or never triggered at all, OR round N+1 right after the previous round wrapped up) — opens the RR 1.19 "combat_round_start" priority window (see rules/priorityWindow.ts) for the (exactly 2, per this project's own combat-participant limitation) combatants, active-player-first. A safe no-op if we're not actually at a fresh round start yet (still mid-AFB/Assault-Cannon, or combat already ended and moved to "invasion"), or if a window is somehow already open. */
+/** RR "Salvage": opens a single-participant window for the winner right as space combat concludes — chains into openInvasionStartWindowIfNeeded once closed (GameEngine.ts's own window-close handling), same "after you win" before "at the start of an invasion" ordering RR 1.16 implies. */
+export function openSpaceCombatWonWindowIfNeeded(state: GameState, winnerId: PlayerId): GameState {
+  if (state.pendingPriorityWindow || state.players[winnerId]?.eliminated) return state;
+  return { ...state, pendingPriorityWindow: { kind: "space_combat_won", order: [winnerId], currentIndex: 0, consecutivePasses: 0 } };
+}
+
 export function openCombatRoundStartWindowIfNeeded(state: GameState): GameState {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "spaceCombat" || pending.combatRound === undefined) return state;
@@ -249,7 +255,9 @@ export function assignAntiFighterBarrageHits(
   if (!hitsOwed || hitsOwed <= 0) {
     return { ok: false, error: "This player has no pending Anti-Fighter Barrage hits to assign." };
   }
-  if (action.assignments.some((a) => a.unitType !== "fighter")) {
+  // RR "Waylay": if the OPPOSING player (whoever dealt these hits) played it, AFB hits can target any ship here, not just fighters.
+  const waylayActive = pending.waylayPlayerId !== undefined && pending.waylayPlayerId !== action.playerId;
+  if (!waylayActive && action.assignments.some((a) => a.unitType !== "fighter")) {
     return { ok: false, error: "RR 67.1: Anti-Fighter Barrage can only hit fighters." };
   }
 
@@ -311,7 +319,7 @@ function beginCombatRoundsAfterAFB(state: GameState, rules: RuleData): { state: 
     let nextState = state;
     if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
     nextState = { ...nextState, pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" } };
-    nextState = openInvasionStartWindowIfNeeded(nextState);
+    nextState = winnerId ? openSpaceCombatWonWindowIfNeeded(nextState, winnerId) : openInvasionStartWindowIfNeeded(nextState);
     return { state: nextState, events: [{ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId }] };
   }
 
@@ -341,6 +349,9 @@ export function announceRetreat(
   }
   if (pending.retreating?.some((r) => r.playerId === action.playerId)) {
     return { ok: false, error: "This player has already announced a retreat this round." };
+  }
+  if (pending.interceptedPlayerId === action.playerId) {
+    return { ok: false, error: 'RR "Intercept": this player cannot retreat during this round of space combat.' };
   }
   // RR 67.4/78.4b: if the DEFENDER has already announced a retreat this
   // round, the ATTACKER cannot also announce one — previously unchecked,
@@ -653,7 +664,7 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
           ? { playerId: pending.playerId, systemId, step: "spaceCombat", pendingCapacityOverflow: { playerId: winnerId, excessCount: overflow } }
           : { playerId: pending.playerId, systemId, step: "invasion" },
     };
-    nextState = openInvasionStartWindowIfNeeded(nextState);
+    nextState = winnerId && overflow === 0 ? openSpaceCombatWonWindowIfNeeded(nextState, winnerId) : openInvasionStartWindowIfNeeded(nextState);
     events.push({ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId });
     return { state: nextState, events };
   }
@@ -809,10 +820,9 @@ export function removeExcessCapacityUnits(
   stacks = stacks.filter((s) => s.count > 0);
 
   const updatedSystem: SystemState = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: stacks } };
-  const nextState: GameState = {
-    ...state,
-    systems: { ...state.systems, [systemId]: updatedSystem },
-    pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" },
-  };
+  const nextState: GameState = openSpaceCombatWonWindowIfNeeded(
+    { ...state, systems: { ...state.systems, [systemId]: updatedSystem }, pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" } },
+    action.playerId,
+  );
   return { ok: true, state: openInvasionStartWindowIfNeeded(nextState), events: [] };
 }

@@ -7,6 +7,7 @@ import { getAdjacentSystems } from "../rules/adjacency";
 import { researchTechnology } from "./technology";
 import { resolveStrategySecondary } from "./strategyCardAbilities";
 import { maybeQueueSecretObjectiveLimit } from "./agendaEffects";
+import { checkReinforcementsAvailable } from "../rules/reinforcements";
 
 /**
  * RR 7 DIRECTIVES — the actual per-directive mechanics, mirroring
@@ -240,6 +241,7 @@ export function applyDirectiveResolutionSideEffects(
         const homeSystem = homeSystemId ? nextState.systems[homeSystemId] : undefined;
         const targetPlanet = homeSystem?.planets.find((pl) => pl.controllerId === p.id);
         if (!homeSystemId || !homeSystem || !targetPlanet) continue;
+        if (!checkReinforcementsAvailable(nextState, p.id, [{ unitType: "mech", count: 1 }]).ok) continue;
         const stacks = targetPlanet.unitsByPlayer[p.id] ?? [];
         const existing = stacks.find((s) => s.unitType === "mech" && !s.upgradeId);
         const updatedStacks = existing ? stacks.map((s) => (s === existing ? { ...s, count: s.count + 1 } : s)) : [...stacks, { unitType: "mech" as const, count: 1, damagedCount: 0 }];

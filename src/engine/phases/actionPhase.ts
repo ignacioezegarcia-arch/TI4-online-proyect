@@ -8,6 +8,7 @@ import { revealAgenda } from "./agendaPhase";
 import { drawActionCard } from "./actionCards";
 import { placeGainedCommandTokens } from "../rules/commandTokens";
 import { getLawOwner } from "./agendaEffects";
+import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
 
 /**
  * RR 3.2-3.5 PASS.
@@ -83,6 +84,10 @@ export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): 
   if (player?.technologies.includes(asTechId("fleet_logistics")) && actionsSoFar < 1) {
     return { ...state, activePlayerActionsTaken: actionsSoFar + 1 };
   }
+  // RR "Master Plan": same "stay active for 1 more action" shape as Fleet Logistics above, granted by the action card instead of a tech — consumed the moment it's used (unlike Fleet Logistics, which is a standing ability every turn).
+  if (player?.masterPlanBonusAvailable) {
+    return { ...state, players: { ...state.players, [playerId]: { ...player, masterPlanBonusAvailable: false } } };
+  }
   return advanceActivePlayer(state);
 }
 
@@ -152,7 +157,42 @@ export function autoAdvancePhase(state: GameState, rules: RuleData): { state: Ga
       return { state: next, events };
     }
 
+    // RR "Political Stability": every player gets 1 last chance, right
+    // before strategy cards actually return to the common play area, to
+    // keep theirs instead — same "block until resolved, once" shape as
+    // pendingCommandTokenGains just above. statusPhaseStrategyReturnWindowDone
+    // is the one-shot marker (mirroring pendingCommandTokenGains ===
+    // undefined's own role) so this doesn't re-open every time
+    // autoAdvancePhase re-runs after the window has already closed.
+    if (!next.statusPhaseStrategyReturnWindowDone) {
+      if (!next.pendingPriorityWindow) {
+        const order = agendaPhaseWindowOrder(next).filter((id) => !next.players[id]?.eliminated);
+        if (order.length > 0) {
+          return { state: { ...next, pendingPriorityWindow: { kind: "status_phase_strategy_card_return", order, currentIndex: 0, consecutivePasses: 0 } }, events };
+        }
+      } else if (next.pendingPriorityWindow.kind === "status_phase_strategy_card_return") {
+        return { state: next, events };
+      }
+      next = { ...next, statusPhaseStrategyReturnWindowDone: true };
+    }
+
     if (state.mecatolCustodiansRemoved) {
+      // RR "Ancient Burial Sites": every player gets 1 chance, right as
+      // the agenda phase is ABOUT to begin, before even the first agenda
+      // is revealed — same one-shot-marker shape as
+      // statusPhaseStrategyReturnWindowDone just above.
+      if (!next.agendaPhaseStartWindowDone) {
+        if (!next.pendingPriorityWindow) {
+          const order = agendaPhaseWindowOrder(next).filter((id) => !next.players[id]?.eliminated);
+          if (order.length > 0) {
+            return { state: { ...next, pendingPriorityWindow: { kind: "agenda_phase_start", order, currentIndex: 0, consecutivePasses: 0 } }, events };
+          }
+        } else if (next.pendingPriorityWindow.kind === "agenda_phase_start") {
+          return { state: next, events };
+        }
+        next = { ...next, agendaPhaseStartWindowDone: true };
+      }
+
       next = { ...next, phase: "agenda", agendaPhaseAgendasResolved: 0, agendaPhaseBannedFromVoting: [] };
       events.push({ type: "PHASE_CHANGED", from: "status", to: "agenda", round: next.round });
       const revealed = revealAgenda(next, rules);
@@ -649,6 +689,11 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
 export function startNewRound(state: GameState, rules: RuleData): GameState {
   const players: GameState["players"] = {};
   for (const [id, player] of Object.entries(state.players)) {
+    // RR "Political Stability": this player keeps their strategy card(s) — they don't return, and this player skips picking a NEW one this upcoming strategy phase instead (see phases/strategyPhase.ts's own isPlayersStrategyTurnInternal for where that skip is enforced).
+    if (player.politicalStabilityKeepCards) {
+      players[id as PlayerId] = { ...player, hasPassed: false, politicalStabilityKeepCards: false, skipsNextStrategyPick: true };
+      continue;
+    }
     players[id as PlayerId] = { ...player, hasPassed: false, strategyCards: [] };
   }
 
@@ -687,7 +732,7 @@ export function startNewRound(state: GameState, rules: RuleData): GameState {
           ]),
         );
 
-  return {
+  const nextState: GameState = {
     ...state,
     players,
     systems,
@@ -702,7 +747,13 @@ export function startNewRound(state: GameState, rules: RuleData): GameState {
     pendingArmsReductionExhaustTechSpecialty: undefined,
     pendingNewConstitutionExhaustHomeSystem: undefined,
     strategyCardSecondariesUsedBy: undefined,
+    statusPhaseStrategyReturnWindowDone: undefined,
+    agendaPhaseStartWindowDone: undefined,
+    electedOutcomeWindowDone: undefined,
   };
+  // RR 1.20: "at the start of the strategy phase" — speaker-first order, same as agenda phase (rules/priorityWindow.ts's own agendaPhaseWindowOrder covers "strategy OR agenda phase" identically).
+  const order = agendaPhaseWindowOrder(nextState).filter((id) => !nextState.players[id]?.eliminated);
+  return order.length > 0 ? { ...nextState, pendingPriorityWindow: { kind: "strategy_phase_start", order, currentIndex: 0, consecutivePasses: 0 } } : nextState;
 }
 
 /** RR 20/70.5: resolves this player's own pending command-token gain (from GameState.pendingCommandTokenGains) — their own choice of how to split it across their 3 pools, subject to RR "Fleet Regulations"'s own cap when active. See rules/commandTokens.ts's shared validate+place logic. */

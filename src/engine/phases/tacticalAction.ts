@@ -145,7 +145,11 @@ export function moveShips(
   if (pending.step !== "movement") {
     return { ok: false, error: `RR 78: expected step "movement", tactical action is at "${pending.step}".` };
   }
-  if (state.pendingPriorityWindow?.kind === "system_activated" || state.pendingPriorityWindow?.kind === "after_system_activated") {
+  if (
+    state.pendingPriorityWindow?.kind === "system_activated" ||
+    state.pendingPriorityWindow?.kind === "after_system_activated" ||
+    state.pendingPriorityWindow?.kind === "after_another_player_activates_system"
+  ) {
     return { ok: false, error: "RR 1.16/1.19: this player must be given (and decline) their chance to play a system-activation card before moving ships." };
   }
 

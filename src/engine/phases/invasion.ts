@@ -77,7 +77,7 @@ export function bombard(
   if (pending.currentInvasionPlanetId || (pending.pendingHits && Object.keys(pending.pendingHits).length > 0)) {
     return { ok: false, error: "RR 44.1: resolve the current pending hits before bombarding again." };
   }
-  if (state.pendingPriorityWindow?.kind === "invasion_start") {
+  if (state.pendingPriorityWindow?.kind === "invasion_start" || state.pendingPriorityWindow?.kind === "space_combat_won") {
     return { ok: false, error: "RR 1.19/1.20: every eligible player must be given (and decline) their chance to play an invasion-start card before bombarding." };
   }
 
@@ -98,8 +98,10 @@ export function bombard(
 
   // RR 65.3: if the bombarding player has a war sun in this system, Planetary Shield is ignored entirely — see planetHasShield's own note.
   const attackerHasWarSunInSystem = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.unitType === "war_sun" && s.count > 0);
+  // "Disable": this attacker's opponents' PDS units lose Planetary Shield (and Space Cannon, checked separately in Space Cannon Defense) for the rest of this invasion.
+  const disableActive = pending.disablePlayerId === action.playerId;
 
-  if (planetHasShield(planet, defenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules, attackerHasWarSunInSystem)) {
+  if (!disableActive && planetHasShield(planet, defenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules, attackerHasWarSunInSystem)) {
     return { ok: false, error: `RR 15/44.1: ${action.targetPlanetId} has Planetary Shield — Bombardment can't target it.` };
   }
   // RR "Conventions of War" ("for"): Bombardment can't target units on a cultural planet while this law is active.
@@ -277,7 +279,7 @@ export function commitGroundForces(
   if (pending.currentInvasionPlanetId || (pending.pendingHits && Object.keys(pending.pendingHits).length > 0)) {
     return { ok: false, error: "RR 44.2: resolve the current pending hits before committing more ground forces." };
   }
-  if (state.pendingPriorityWindow?.kind === "invasion_start") {
+  if (state.pendingPriorityWindow?.kind === "invasion_start" || state.pendingPriorityWindow?.kind === "space_combat_won") {
     return { ok: false, error: "RR 1.19/1.20: every eligible player must be given (and decline) their chance to play an invasion-start card before committing ground forces." };
   }
   // RR 27.1: units cannot commit ground forces to land on Mecatol Rex
@@ -343,11 +345,36 @@ export function commitGroundForces(
   } else {
     // Uncontested landing — establish control immediately (RR 44.5), no combat needed.
     const controlResult = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules);
+    const previousControllerId = planet.controllerId;
     nextState = controlResult.state;
     events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId: action.targetPlanetId, playerId: action.playerId });
+
+    // RR "Infiltrate"/"Reparations": both react to control just changing — same window, participants are whoever could plausibly react (the new controller, and the previous one if it was a different, non-eliminated player).
+    const controlParticipants = [action.playerId, ...(previousControllerId && previousControllerId !== action.playerId && !nextState.players[previousControllerId]?.eliminated ? [previousControllerId] : [])];
+    const controlOrder = actionPhaseWindowOrder(nextState, action.playerId, controlParticipants);
+    if (controlOrder.length > 0) {
+      return {
+        ok: true,
+        state: { ...nextState, pendingPlanetControlGainedContinuation: "check_ground_forces_committed", pendingPriorityWindow: { kind: "planet_control_gained", order: controlOrder, currentIndex: 0, consecutivePasses: 0 } },
+        events,
+      };
+    }
   }
 
-  return { ok: true, state: nextState, events };
+  return checkGroundForcesCommittedWindow(nextState, action.playerId, systemId, events);
+}
+
+/** RR "Parley"/"Ghost Squad": both react to ground forces just having been committed to land — opens regardless of contested/uncontested, for whoever else controls a planet in this system (only they could plausibly want either card). Split out so it's reachable both inline (no "planet_control_gained" reaction needed first) and from GameEngine.ts, once that window closes with pendingPlanetControlGainedContinuation === "check_ground_forces_committed". */
+export function checkGroundForcesCommittedWindow(state: GameState, playerId: PlayerId, systemId: SystemId, events: GameEvent[]): ActionResult {
+  const system = state.systems[systemId];
+  const otherControllersHere = [...new Set((system?.planets ?? []).filter((p) => p.controllerId && p.controllerId !== playerId).map((p) => p.controllerId as PlayerId))].filter(
+    (id) => !state.players[id]?.eliminated,
+  );
+  const commitOrder = actionPhaseWindowOrder(state, playerId, otherControllersHere);
+  if (commitOrder.length > 0) {
+    return { ok: true, state: { ...state, pendingPriorityWindow: { kind: "ground_forces_committed", order: commitOrder, currentIndex: 0, consecutivePasses: 0 } }, events };
+  }
+  return { ok: true, state, events };
 }
 
 /**
@@ -924,6 +951,7 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
 
   if (survivors.length <= 1) {
     const winner = survivors[0] ?? null;
+    const previousControllerId = planet.controllerId;
     if (winner) {
       const controlResult = setPlanetController(nextState, systemId, planetId, winner, rules);
       nextState = controlResult.state;
@@ -932,15 +960,18 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
     }
     events.push({ type: "GROUND_COMBAT_ENDED", systemId, planetId, survivingPlayerId: winner });
 
-    const queue = pending.remainingInvasionPlanetIds ?? [];
-    nextState = {
-      ...nextState,
-      pendingTacticalAction:
-        queue.length > 0
-          ? { ...pending, currentInvasionPlanetId: undefined, combatRound: undefined, pendingHits: {} }
-          : { playerId: pending.playerId, systemId, step: "production" },
-    };
-    return { state: nextState, events };
+    // RR "Infiltrate"/"Reparations": same window commitGroundForces' own uncontested-landing branch opens.
+    if (winner && previousControllerId !== winner) {
+      const controlParticipants = [winner, ...(previousControllerId && !nextState.players[previousControllerId]?.eliminated ? [previousControllerId] : [])];
+      const controlOrder = actionPhaseWindowOrder(nextState, pending.playerId, controlParticipants);
+      if (controlOrder.length > 0) {
+        return {
+          state: { ...nextState, pendingPlanetControlGainedContinuation: "ground_combat_wrap_up", pendingPriorityWindow: { kind: "planet_control_gained", order: controlOrder, currentIndex: 0, consecutivePasses: 0 } },
+          events,
+        };
+      }
+    }
+    return finishGroundCombatWrapUp(nextState, pending, systemId, events);
   }
 
   // Both sides still standing — next round, no retreat option in ground combat (RR 38).
@@ -956,6 +987,19 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
     },
   };
   return { state: openGroundCombatRoundStartWindowIfNeeded(nextState), events };
+}
+
+/** The queue/next-step tail of wrapUpGroundCombat's own "combat's over, someone (or no one) survived" branch — split out so GameEngine.ts can reach it once RR "Infiltrate"/"Reparations"' own "planet_control_gained" window closes, without re-running the control-establishment/Shard-of-the-Throne/GROUND_COMBAT_ENDED logic a second time. */
+export function finishGroundCombatWrapUp(state: GameState, pending: NonNullable<GameState["pendingTacticalAction"]>, systemId: SystemId, events: GameEvent[]): { state: GameState; events: GameEvent[] } {
+  const queue = pending.remainingInvasionPlanetIds ?? [];
+  const nextState: GameState = {
+    ...state,
+    pendingTacticalAction:
+      queue.length > 0
+        ? { ...pending, currentInvasionPlanetId: undefined, combatRound: undefined, pendingHits: {} }
+        : { playerId: pending.playerId, systemId, step: "production" },
+  };
+  return { state: nextState, events };
 }
 
 /** RR 25.1: gaining control of a planet ALWAYS exhausts its planet card — no exceptions, regardless of how control was gained (invasion win, uncontested landing, anything else). RR 53.2: a legendary planet's separate ability card only readies if this is the FIRST time it's ever been controlled (i.e. it's coming "from the deck"); if it's being taken FROM another player, it keeps whatever exhausted/readied state it already had — untouched here, on purpose. RR 25.1c: if the planet wasn't already controlled by ANOTHER player (i.e. this is genuinely the first time anyone's controlled it), the new controller explores it automatically — this used to only happen via the separate, player-initiated EXPLORE_PLANET action, which incorrectly made exploring a planet an optional extra step rather than an automatic consequence of gaining control. */

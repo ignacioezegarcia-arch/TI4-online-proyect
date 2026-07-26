@@ -6,6 +6,7 @@ import { RuleData, getUnitStats } from "../types/RuleData";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { isDemilitarizedZone } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
+import { checkReinforcementsAvailable } from "../rules/reinforcements";
 
 /**
  * RR 53 LEGENDARY PLANETS: each of the 4 legendary planets has its own
@@ -108,6 +109,8 @@ export function useImperialArmsVault(
 
   if (action.choice === "mech") {
     if (!action.targetPlanetId) return { ok: false, error: "This choice needs a targetPlanetId." };
+    const reinforcementsCheck = checkReinforcementsAvailable(state, action.playerId, [{ unitType: "mech", count: 1 }]);
+    if (!reinforcementsCheck.ok) return reinforcementsCheck;
     const placed = placeGroundForces(state, action.playerId, action.targetPlanetId, "mech", 1);
     if (!placed.ok) return placed;
     workingState = placed.state;
