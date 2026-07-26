@@ -2,7 +2,7 @@ import { GameState } from "./types/GameState";
 import { GameAction, ActionResult, GameEvent } from "./types/Actions";
 import { PlayerId, AgendaId, ActionCardId, asTechId } from "./types/ids";
 import { RuleData } from "./types/RuleData";
-import { chooseStrategyCard, getStrategyCardsPerPlayer } from "./phases/strategyPhase";
+import { chooseStrategyCard, getStrategyCardsPerPlayer, finishStrategyCardChoiceIfPhaseComplete } from "./phases/strategyPhase";
 import { activateSystem, moveShips } from "./phases/tacticalAction";
 import { announceRetreat, resolveSpaceCombatRound, assignHits, useAntiFighterBarrage, assignAntiFighterBarrageHits, useDuraniumArmor, skipDuraniumArmor, useAssaultCannonDestruction, removeExcessCapacityUnits } from "./phases/spaceCombat";
 import {
@@ -76,9 +76,52 @@ import {
   playBunker,
   playBlitz,
   playSabotage,
+  playSummit,
+  playManipulateInvestments,
+  playPoliticalStability,
+  playPublicDisgrace,
+  playCoupDetat,
+  playAncientBurialSites,
+  playDistinguishedCouncilor,
+  playBribery,
+  playConfusingLegalText,
+  playConfoundingLegalText,
+  playDeadlyPlot,
+  playCrippleDefenses,
+  playPlague,
+  playDisable,
+  playInfiltrate,
+  playReparations,
+  playParley,
+  playGhostSquad,
+  playUpgrade,
+  playHarnessEnergy,
+  playRally,
+  playCounterstroke,
+  playForwardSupplyBase,
+  playDecoyOperation,
+  playMasterPlan,
+  playFighterPrototype,
+  playEmergencyRepairs,
+  playSalvage,
+  playShieldsHolding,
+  playManeuveringJets,
+  playWarMachine,
+  playReverseEngineer,
+  playIntercept,
+  playRout,
+  playWaylay,
+  playCourageousToTheEnd,
+  playDirectHit,
+  playReflectiveShielding,
+  playExperimentalBattlestation,
+  playFireTeam,
+  playScrambleFrequency,
+  playRevealPrototype,
 } from "./phases/actionCardEffects";
-import { passPriority, computeActionCardAnnounceWindowOrder } from "./rules/priorityWindow";
-import { revealAgenda, castVotes } from "./phases/agendaPhase";
+import { passPriority, computeActionCardAnnounceWindowOrder, actionPhaseWindowOrder, agendaPhaseWindowOrder } from "./rules/priorityWindow";
+import { revealAgenda, castVotes, resolveAgendaVote, continueAgendaPhaseAfterElectionReaction } from "./phases/agendaPhase";
+import { checkGroundForcesCommittedWindow, finishGroundCombatWrapUp, openInvasionStartWindowIfNeeded } from "./phases/invasion";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
 import { explorePlanet, exploreFrontier, purgeRelicFragments } from "./phases/exploration";
@@ -176,6 +219,36 @@ function resolveAnnouncedActionCard(state: GameState, rules: RuleData): ActionRe
   const stateWithoutAnnouncement: GameState = {
     ...state,
     pendingActionCardAnnouncement: undefined,
+    pendingPriorityWindow: state.stashedPriorityWindow ?? null,
+    stashedPriorityWindow: undefined,
+  };
+  return dispatchAction(stateWithoutAnnouncement, announced.action as GameAction, rules);
+}
+
+/** RR "Coup d'Etat": same shape as announceActionCard above, but for RESOLVE_STRATEGY_PRIMARY — opens "strategic_action_start" (order: every OTHER player, action-phase/initiative order) before the strategic action actually resolves, so Coup d'Etat can cancel it outright instead of only reacting after the fact. */
+function announceStrategicAction(state: GameState, action: GameAction & { playerId: PlayerId }, rules: RuleData): ActionResult {
+  if (state.pendingStrategicActionAnnouncement) {
+    return { ok: false, error: "Another strategic action's announcement is still pending resolution." };
+  }
+  const order = actionPhaseWindowOrder(state, state.activePlayerId ?? action.playerId, Object.keys(state.players) as PlayerId[]).filter(
+    (id) => id !== action.playerId && !state.players[id]?.eliminated,
+  );
+  const nextState: GameState = {
+    ...state,
+    pendingStrategicActionAnnouncement: { playerId: action.playerId, action },
+    stashedPriorityWindow: state.pendingPriorityWindow,
+    pendingPriorityWindow: order.length > 0 ? { kind: "strategic_action_start", order, currentIndex: 0, consecutivePasses: 0 } : null,
+  };
+  if (order.length === 0) return resolveAnnouncedStrategicAction(nextState, rules);
+  return { ok: true, state: nextState, events: [] };
+}
+
+function resolveAnnouncedStrategicAction(state: GameState, rules: RuleData): ActionResult {
+  const announced = state.pendingStrategicActionAnnouncement;
+  if (!announced) return { ok: false, error: "No strategic action announcement is pending." };
+  const stateWithoutAnnouncement: GameState = {
+    ...state,
+    pendingStrategicActionAnnouncement: undefined,
     pendingPriorityWindow: state.stashedPriorityWindow ?? null,
     stashedPriorityWindow: undefined,
   };
@@ -608,6 +681,132 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       case "PLAY_SABOTAGE":
         result = playSabotage(state, action);
         break;
+      case "PLAY_SUMMIT":
+        result = playSummit(state, action);
+        break;
+      case "PLAY_MANIPULATE_INVESTMENTS":
+        result = playManipulateInvestments(state, action);
+        break;
+      case "PLAY_POLITICAL_STABILITY":
+        result = playPoliticalStability(state, action);
+        break;
+      case "PLAY_PUBLIC_DISGRACE":
+        result = playPublicDisgrace(state, action);
+        break;
+      case "PLAY_COUP_DETAT":
+        result = playCoupDetat(state, action);
+        break;
+      case "PLAY_ANCIENT_BURIAL_SITES":
+        result = playAncientBurialSites(state, action, rules);
+        break;
+      case "PLAY_DISTINGUISHED_COUNCILOR":
+        result = playDistinguishedCouncilor(state, action);
+        break;
+      case "PLAY_BRIBERY":
+        result = playBribery(state, action);
+        break;
+      case "PLAY_CONFUSING_LEGAL_TEXT":
+        result = playConfusingLegalText(state, action);
+        break;
+      case "PLAY_CONFOUNDING_LEGAL_TEXT":
+        result = playConfoundingLegalText(state, action);
+        break;
+      case "PLAY_DEADLY_PLOT":
+        result = playDeadlyPlot(state, action, rules);
+        break;
+      case "PLAY_CRIPPLE_DEFENSES":
+        result = playCrippleDefenses(state, action);
+        break;
+      case "PLAY_PLAGUE":
+        result = playPlague(state, action);
+        break;
+      case "PLAY_DISABLE":
+        result = playDisable(state, action);
+        break;
+      case "PLAY_INFILTRATE":
+        result = playInfiltrate(state, action);
+        break;
+      case "PLAY_REPARATIONS":
+        result = playReparations(state, action);
+        break;
+      case "PLAY_PARLEY":
+        result = playParley(state, action);
+        break;
+      case "PLAY_GHOST_SQUAD":
+        result = playGhostSquad(state, action);
+        break;
+      case "PLAY_UPGRADE":
+        result = playUpgrade(state, action);
+        break;
+      case "PLAY_HARNESS_ENERGY":
+        result = playHarnessEnergy(state, action, rules);
+        break;
+      case "PLAY_RALLY":
+        result = playRally(state, action);
+        break;
+      case "PLAY_COUNTERSTROKE":
+        result = playCounterstroke(state, action);
+        break;
+      case "PLAY_FORWARD_SUPPLY_BASE":
+        result = playForwardSupplyBase(state, action);
+        break;
+      case "PLAY_DECOY_OPERATION":
+        result = playDecoyOperation(state, action);
+        break;
+      case "PLAY_MASTER_PLAN":
+        result = playMasterPlan(state, action);
+        break;
+      case "PLAY_FIGHTER_PROTOTYPE":
+        result = playFighterPrototype(state, action);
+        break;
+      case "PLAY_EMERGENCY_REPAIRS":
+        result = playEmergencyRepairs(state, action);
+        break;
+      case "PLAY_SALVAGE":
+        result = playSalvage(state, action);
+        break;
+      case "PLAY_SHIELDS_HOLDING":
+        result = playShieldsHolding(state, action);
+        break;
+      case "PLAY_MANEUVERING_JETS":
+        result = playManeuveringJets(state, action);
+        break;
+      case "PLAY_WAR_MACHINE":
+        result = playWarMachine(state, action);
+        break;
+      case "PLAY_REVERSE_ENGINEER":
+        result = playReverseEngineer(state, action);
+        break;
+      case "PLAY_INTERCEPT":
+        result = playIntercept(state, action);
+        break;
+      case "PLAY_ROUT":
+        result = playRout(state, action, rules);
+        break;
+      case "PLAY_WAYLAY":
+        result = playWaylay(state, action);
+        break;
+      case "PLAY_COURAGEOUS_TO_THE_END":
+        result = playCourageousToTheEnd(state, action, rules);
+        break;
+      case "PLAY_DIRECT_HIT":
+        result = playDirectHit(state, action);
+        break;
+      case "PLAY_REFLECTIVE_SHIELDING":
+        result = playReflectiveShielding(state, action, rules);
+        break;
+      case "PLAY_EXPERIMENTAL_BATTLESTATION":
+        result = playExperimentalBattlestation(state, action, rules);
+        break;
+      case "PLAY_FIRE_TEAM":
+        result = playFireTeam(state, action, rules);
+        break;
+      case "PLAY_SCRAMBLE_FREQUENCY":
+        result = playScrambleFrequency(state, action, rules);
+        break;
+      case "PLAY_REVEAL_PROTOTYPE":
+        result = playRevealPrototype(state, action, rules);
+        break;
       case "PASS_PRIORITY":
         result = passPriority(state, action);
         break;
@@ -654,23 +853,86 @@ export const GameEngine = {
     if (action.type.startsWith("PLAY_") && action.type !== "PLAY_ACTION_CARD" && action.type !== "PLAY_SABOTAGE") {
       return announceActionCard(state, action as GameAction & { playerId: PlayerId }, rules);
     }
+    // RR "Coup d'Etat": same announce-first treatment as action cards, but for a strategic action's own primary ability resolving.
+    if (action.type === "RESOLVE_STRATEGY_PRIMARY" && "playerId" in action) {
+      return announceStrategicAction(state, action as GameAction & { playerId: PlayerId }, rules);
+    }
 
     const dispatchResult = dispatchAction(state, action, rules);
-    // If this action just closed an "action_card_announced" window
-    // (every eligible player consecutively passed on Sabotage — a
-    // successful Sabotage instead clears pendingActionCardAnnouncement
-    // itself, so this check naturally skips resolving a cancelled card),
-    // immediately dispatch the stored action to its real handler and
-    // merge in whatever events that produces.
-    const result: ActionResult =
-      dispatchResult.ok && dispatchResult.state && state.pendingPriorityWindow?.kind === "action_card_announced" && !dispatchResult.state.pendingPriorityWindow && dispatchResult.state.pendingActionCardAnnouncement
-        ? (() => {
-            const resolved = resolveAnnouncedActionCard(dispatchResult.state, rules);
-            return resolved.ok
-              ? { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] }
-              : resolved;
-          })()
-        : dispatchResult;
+    // If this action just closed a window that has its own "now actually
+    // do the thing" follow-up (every eligible player consecutively
+    // passed — a successful Sabotage/Public Disgrace instead clears its
+    // own pending marker directly, so these checks naturally skip when
+    // that happened), run that follow-up and merge in whatever events it
+    // produces.
+    let result: ActionResult = dispatchResult;
+    if (dispatchResult.ok && dispatchResult.state && !dispatchResult.state.pendingPriorityWindow) {
+      if (state.pendingPriorityWindow?.kind === "action_card_announced" && dispatchResult.state.pendingActionCardAnnouncement) {
+        const resolved = resolveAnnouncedActionCard(dispatchResult.state, rules);
+        result = resolved.ok ? { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] } : resolved;
+      } else if (state.pendingPriorityWindow?.kind === "strategy_card_chosen" && dispatchResult.state.lastStrategyCardChoice) {
+        const finished = finishStrategyCardChoiceIfPhaseComplete(dispatchResult.state, dispatchResult.events ?? []);
+        result = finished;
+      } else if (state.pendingPriorityWindow?.kind === "strategic_action_start" && dispatchResult.state.pendingStrategicActionAnnouncement) {
+        const resolved = resolveAnnouncedStrategicAction(dispatchResult.state, rules);
+        result = resolved.ok ? { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] } : resolved;
+      } else if (state.pendingPriorityWindow?.kind === "after_you_cast_votes") {
+        // RR "Distinguished Councilor"/"Bribery": if this really was the last vote (RR 8.2.ii: voting order always ends with the speaker), open "after_speaker_votes" for everyone next — actual resolution is deferred to THAT window closing, not this one.
+        const pendingVote = dispatchResult.state.pendingAgendaVote;
+        if (pendingVote && pendingVote.nextVoterIndex >= pendingVote.votingOrder.length) {
+          const order = agendaPhaseWindowOrder(dispatchResult.state).filter((id) => !dispatchResult.state.players[id]?.eliminated);
+          result =
+            order.length > 0
+              ? { ok: true, state: { ...dispatchResult.state, pendingPriorityWindow: { kind: "after_speaker_votes", order, currentIndex: 0, consecutivePasses: 0 } }, events: dispatchResult.events ?? [] }
+              : (() => {
+                  const resolved = resolveAgendaVote(dispatchResult.state, rules);
+                  return { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] };
+                })();
+        }
+      } else if (state.pendingPriorityWindow?.kind === "after_speaker_votes" && dispatchResult.state.pendingAgendaVote) {
+        const resolved = resolveAgendaVote(dispatchResult.state, rules);
+        result = { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] };
+      } else if (state.pendingPriorityWindow?.kind === "elected_as_outcome") {
+        const continued = continueAgendaPhaseAfterElectionReaction(dispatchResult.state, rules, dispatchResult.events ?? []);
+        result = { ok: true, state: continued.state, events: continued.events };
+      } else if (state.pendingPriorityWindow?.kind === "outcome_would_be_resolved" && dispatchResult.state.pendingAgendaVote) {
+        const resolved = resolveAgendaVote(dispatchResult.state, rules);
+        result = { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] };
+      } else if (state.pendingPriorityWindow?.kind === "planet_control_gained") {
+        const continuation = dispatchResult.state.pendingPlanetControlGainedContinuation;
+        const stateWithoutMarker: GameState = { ...dispatchResult.state, pendingPlanetControlGainedContinuation: undefined };
+        const pendingTactical = stateWithoutMarker.pendingTacticalAction;
+        if (continuation === "check_ground_forces_committed" && pendingTactical) {
+          result = checkGroundForcesCommittedWindow(stateWithoutMarker, pendingTactical.playerId, pendingTactical.systemId, dispatchResult.events ?? []);
+        } else if (continuation === "ground_combat_wrap_up" && pendingTactical) {
+          const finished = finishGroundCombatWrapUp(stateWithoutMarker, pendingTactical, pendingTactical.systemId, dispatchResult.events ?? []);
+          result = { ok: true, state: finished.state, events: finished.events };
+        }
+      } else if (state.pendingPriorityWindow?.kind === "after_system_activated" && dispatchResult.state.pendingTacticalAction) {
+        // RR "Counterstroke"/"Forward Supply Base"/"Rally"/"Decoy Operation": once THIS activating player's own 2 system-activation windows are both done, everyone ELSE who has standing (a command token, units, or structures already there) gets their own chance to react to the activation itself.
+        const pendingTactical = dispatchResult.state.pendingTacticalAction;
+        const system = dispatchResult.state.systems[pendingTactical.systemId];
+        const others = system
+          ? (Object.keys(dispatchResult.state.players) as PlayerId[]).filter((id) => {
+              if (id === pendingTactical.playerId || dispatchResult.state.players[id]?.eliminated) return false;
+              const hasToken = dispatchResult.state.players[id].commandTokens.onBoard.includes(pendingTactical.systemId);
+              const hasShips = (system.spaceUnitsByPlayer[id] ?? []).some((s) => s.count > 0);
+              const hasGroundOrStructures = system.planets.some((p) => (p.unitsByPlayer[id] ?? []).some((s) => s.count > 0));
+              return hasToken || hasShips || hasGroundOrStructures;
+            })
+          : [];
+        const order = actionPhaseWindowOrder(dispatchResult.state, pendingTactical.playerId, others);
+        if (order.length > 0) {
+          result = {
+            ok: true,
+            state: { ...dispatchResult.state, pendingPriorityWindow: { kind: "after_another_player_activates_system", order, currentIndex: 0, consecutivePasses: 0 } },
+            events: dispatchResult.events ?? [],
+          };
+        }
+      } else if (state.pendingPriorityWindow?.kind === "space_combat_won" && dispatchResult.state.pendingTacticalAction?.step === "invasion") {
+        result = { ok: true, state: openInvasionStartWindowIfNeeded(dispatchResult.state), events: dispatchResult.events ?? [] };
+      }
+    }
 
     if (!result.ok || !result.state) return result;
 
@@ -997,6 +1259,8 @@ function isPlayersStrategyTurn(state: GameState, playerId: PlayerId): boolean {
   const cardsNeeded = getStrategyCardsPerPlayer(state);
   for (const candidateId of rotateFromSpeaker(state)) {
     const candidate = state.players[candidateId];
+    // RR "Political Stability": sat out this round's picks entirely.
+    if (candidate.skipsNextStrategyPick) continue;
     if (candidate.strategyCards.length < cardsNeeded) {
       return candidateId === playerId;
     }
