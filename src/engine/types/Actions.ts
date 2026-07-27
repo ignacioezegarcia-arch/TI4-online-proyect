@@ -248,7 +248,7 @@ export type GameAction =
   | { type: "PLAY_REPEAL_LAW"; playerId: PlayerId; agendaId: AgendaId }
   | { type: "PLAY_FRONTLINE_DEPLOYMENT"; playerId: PlayerId; planetId: PlanetId }
   | { type: "PLAY_RISE_OF_A_MESSIAH"; playerId: PlayerId }
-  | { type: "PLAY_WAR_EFFORT"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_WAR_EFFORT"; playerId: PlayerId; systemId: SystemId; relocateFromSystemId?: SystemId }
   | { type: "PLAY_GHOST_SHIP"; playerId: PlayerId; systemId: SystemId; relocateFromSystemId?: SystemId }
   | { type: "PLAY_FIGHTER_CONSCRIPTION"; playerId: PlayerId }
   | { type: "PLAY_REFIT_TROOPS"; playerId: PlayerId; planetIds: PlanetId[] }
@@ -318,7 +318,7 @@ export type GameAction =
   | { type: "PLAY_PLAGUE"; playerId: PlayerId; planetId: PlanetId; diceRolls: number[] }
   | { type: "PLAY_DISABLE"; playerId: PlayerId }
   | { type: "PLAY_INFILTRATE"; playerId: PlayerId; planetId: PlanetId }
-  | { type: "PLAY_REPARATIONS"; playerId: PlayerId; exhaustPlanetId: PlanetId; readyPlanetId: PlanetId }
+  | { type: "PLAY_REPARATIONS"; playerId: PlayerId; exhaustPlanetId?: PlanetId; readyPlanetId?: PlanetId }
   | { type: "PLAY_PARLEY"; playerId: PlayerId; targetPlanetId: PlanetId; committedPlayerId: PlayerId }
   | { type: "PLAY_GHOST_SQUAD"; playerId: PlayerId; moves: { fromPlanetId: PlanetId; toPlanetId: PlanetId; unitType: "infantry" | "mech"; count: number }[] }
   | { type: "PLAY_UPGRADE"; playerId: PlayerId; systemId: SystemId }

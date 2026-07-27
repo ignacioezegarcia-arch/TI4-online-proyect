@@ -592,6 +592,8 @@ export interface PendingTacticalAction {
   blitzPlayerId?: PlayerId;
   /** "Disable": this player's opponents' PDS units in the active system lose Planetary Shield (phases/invasion.ts's own bombard) and Space Cannon (rules/combat.ts's own buildSpaceCannonDefenseEntries) for the rest of the invasion. */
   disablePlayerId?: PlayerId;
+  /** RR "Parley": once this returns a player's committed units to space, "the returned ground forces cannot be committed to another planet during the same tactical action" — tracked here, checked by commitGroundForces. */
+  parleyBlockedPlayerIds?: PlayerId[];
   /** Set true the first time EITHER phases/invasion.ts's own bombard or commitGroundForces actually runs this invasion step (regardless of whether bombardment scored any hits — a miss leaves no other trace in this interface at all, so this can't be inferred from pendingHits/currentInvasionPlanetId being unset). Exists ONLY so PLAY_BUNKER/PLAY_BLITZ can enforce their own "at the start of an invasion" timing precisely instead of the fragile "nothing else happens to be pending right now" proxy this file used before — with multiple contested planets in 1 invasion step, that proxy could let either card be played after a DIFFERENT planet's bombardment already happened. */
   invasionStepStarted?: boolean;
   /**
