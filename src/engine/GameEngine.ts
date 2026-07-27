@@ -895,9 +895,10 @@ export const GameEngine = {
       } else if (state.pendingPriorityWindow?.kind === "elected_as_outcome") {
         const continued = continueAgendaPhaseAfterElectionReaction(dispatchResult.state, rules, dispatchResult.events ?? []);
         result = { ok: true, state: continued.state, events: continued.events };
-      } else if (state.pendingPriorityWindow?.kind === "outcome_would_be_resolved" && dispatchResult.state.pendingAgendaVote) {
-        const resolved = resolveAgendaVote(dispatchResult.state, rules);
-        result = { ok: true, state: resolved.state, events: [...(dispatchResult.events ?? []), ...resolved.events] };
+      } else if (state.pendingPriorityWindow?.kind === "outcome_would_be_resolved") {
+        // RR (yjmrobert.com/tirules/components/c_action_cards): this window now opens AFTER finalizeAgendaResolutionWithPredictions has already run (elected_as_outcome comes first) — pendingAgendaVote is null in BOTH the "everyone declined" and "Deadly Plot resolved it" cases now, so this always calls the SAME continuation uniformly (matching how planet_control_gained etc. are already handled) rather than trying to distinguish the two.
+        const continued = continueAgendaPhaseAfterElectionReaction(dispatchResult.state, rules, dispatchResult.events ?? []);
+        result = { ok: true, state: continued.state, events: continued.events };
       } else if (state.pendingPriorityWindow?.kind === "planet_control_gained") {
         const continuation = dispatchResult.state.pendingPlanetControlGainedContinuation;
         const stateWithoutMarker: GameState = { ...dispatchResult.state, pendingPlanetControlGainedContinuation: undefined };
