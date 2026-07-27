@@ -3,7 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, ActionCardId, AgendaId, TechId, UnitUpgradeId, PromissoryNoteId, StrategyCardId, asActionCardId } from "../types/ids";
 import { UnitType, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
-import { applyHitAssignments } from "../rules/combat";
+import { applyHitAssignments, getMoraleBoostHitOnBonus } from "../rules/combat";
 import { getLawOwner, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { researchTechnology } from "./technology";
 import { getAdjacentSystems, arePlayersNeighbors } from "../rules/adjacency";
@@ -349,26 +349,24 @@ export function playRiseOfAMessiah(state: GameState, action: { type: "PLAY_RISE_
 
   const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("rise_of_a_messiah") }];
   const systems: GameState["systems"] = { ...played.state.systems };
-  let placedAny = false;
 
   for (const [systemId, system] of Object.entries(played.state.systems)) {
     let changed = false;
     const planets = system.planets.map((p) => {
       if (p.controllerId !== action.playerId) return p;
       changed = true;
-      placedAny = true;
       events.push({ type: "UNITS_PRODUCED", playerId: action.playerId, systemId: systemId as SystemId, planetId: p.planetId, unitType: "infantry", count: 1, totalCost: 0 });
       return addPlanetUnits(p, action.playerId, "infantry", 1);
     });
     if (changed) systems[systemId as SystemId] = { ...system, planets };
   }
-  if (!placedAny) return { ok: false, error: "This player doesn't control any planets." };
+  // RR (yjmrobert.com/tirules): "A player that controls zero planets may play Rise of a Messiah" — confirmed legal even as a total no-op.
 
   return { ok: true, state: { ...played.state, systems }, events };
 }
 
 /** RR "War Effort": place 1 cruiser from reinforcements in a system that contains 1 or more of this player's ships. */
-export function playWarEffort(state: GameState, action: { type: "PLAY_WAR_EFFORT"; playerId: PlayerId; systemId: SystemId }): ActionResult {
+export function playWarEffort(state: GameState, action: { type: "PLAY_WAR_EFFORT"; playerId: PlayerId; systemId: SystemId; relocateFromSystemId?: SystemId }): ActionResult {
   const played = playCard(state, action.playerId, "war_effort");
   if (!played.ok) return played;
 
@@ -376,11 +374,29 @@ export function playWarEffort(state: GameState, action: { type: "PLAY_WAR_EFFORT
   if (!system) return { ok: false, error: `No system ${action.systemId}.` };
   const hasOwnShip = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0);
   if (!hasOwnShip) return { ok: false, error: "This player has no ships in that system." };
-  const reinforcementsCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "cruiser", count: 1 }]);
-  if (!reinforcementsCheck.ok) return reinforcementsCheck;
 
-  const updatedSystem = addSpaceUnits(system, action.playerId, "cruiser", 1);
-  const nextState: GameState = { ...played.state, systems: { ...played.state.systems, [action.systemId]: updatedSystem } };
+  let systems = played.state.systems;
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "If a player wishes to place a cruiser, but there are none left in their reinforcements, they may remove a cruiser from any system that does not contain one of their command tokens and place that instead. This cruiser will be placed undamaged." — same substitution Ghost Ship already has.
+  if (!checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "cruiser", count: 1 }]).ok) {
+    if (!action.relocateFromSystemId) {
+      return { ok: false, error: "No cruisers left in reinforcements — specify relocateFromSystemId to relocate an existing one instead." };
+    }
+    if (played.player.commandTokens.onBoard.includes(action.relocateFromSystemId)) {
+      return { ok: false, error: "Cannot relocate a cruiser from a system that contains one of this player's own command tokens." };
+    }
+    const sourceSystem = systems[action.relocateFromSystemId];
+    const sourceStacks = sourceSystem?.spaceUnitsByPlayer[action.playerId] ?? [];
+    const sourceStack = sourceStacks.find((s) => s.unitType === "cruiser" && s.count > 0);
+    if (!sourceSystem || !sourceStack) {
+      return { ok: false, error: `No cruiser belonging to this player in ${action.relocateFromSystemId}.` };
+    }
+    const updatedSourceStacks = sourceStacks.map((s) => (s === sourceStack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+    systems = { ...systems, [action.relocateFromSystemId]: { ...sourceSystem, spaceUnitsByPlayer: { ...sourceSystem.spaceUnitsByPlayer, [action.playerId]: updatedSourceStacks } } };
+  }
+
+  const updatedSystem = addSpaceUnits(systems[action.systemId], action.playerId, "cruiser", 1);
+  systems = { ...systems, [action.systemId]: updatedSystem };
+  const nextState: GameState = { ...played.state, systems };
   return {
     ok: true,
     state: nextState,
@@ -448,6 +464,7 @@ export function playGhostShip(
 export function playFighterConscription(state: GameState, action: { type: "PLAY_FIGHTER_CONSCRIPTION"; playerId: PlayerId }, rules: RuleData): ActionResult {
   const played = playCard(state, action.playerId, "fighter_conscription");
   if (!played.ok) return played;
+  // KNOWN GAP (yjmrobert.com/tirules/components/c_action_cards): "A player may place a fighter in a system that is at its capacity limit. If they do so, they must then remove a fighter or ground force from the space area of that system." This project doesn't yet re-check/enforce capacity after Fighter Conscription places fighters across every eligible system at once — a player could end up over capacity with no forced removal. Documented rather than half-fixed, since doing this properly needs a per-system pending-choice mechanism this card doesn't have yet.
 
   const player = played.player;
   const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("fighter_conscription") }];
@@ -486,6 +503,7 @@ export function playRefitTroops(state: GameState, action: { type: "PLAY_REFIT_TR
   }
   const reinforcementsCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "mech", count: action.planetIds.length }]);
   if (!reinforcementsCheck.ok) return reinforcementsCheck;
+  // KNOWN GAP (yjmrobert.com/tirules/components/c_action_cards): "If a player has no mechs left in their reinforcements, they may remove a mech from any system that does not contain one of their command tokens and place that instead. The mech will be placed undamaged." — Ghost Ship/Construction Rider/War Effort all already have this exact substitution pattern; this card doesn't yet (rejects outright above instead), given the added complexity of doing it per-planet for up to 2 mechs at once. Documented rather than half-fixed under time pressure.
 
   const counts = new Map<PlanetId, number>();
   for (const id of action.planetIds) counts.set(id, (counts.get(id) ?? 0) + 1);
@@ -582,6 +600,10 @@ export function playLuckyShot(
   state: GameState,
   action: { type: "PLAY_LUCKY_SHOT"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId; unitType: "dreadnought" | "cruiser" | "destroyer" },
 ): ActionResult {
+  // RR FAQ (twilight-imperium.fandom.com/wiki/Action_Cards): "Lucky Shot and other similar effects can only be used against ANOTHER player's units and planets" — never the caster's own.
+  if (action.targetPlayerId === action.playerId) {
+    return { ok: false, error: "Lucky Shot cannot target this player's own units." };
+  }
   const played = playCard(state, action.playerId, "lucky_shot");
   if (!played.ok) return played;
 
@@ -749,7 +771,8 @@ export function playUnstablePlanet(
   }
 
   const destroyCount = Math.min(3, Math.max(0, action.destroyCount ?? 0));
-  if (destroyCount > 0 && action.targetPlayerId) {
+  // RR FAQ: destroy effects only ever target ANOTHER player's units.
+  if (destroyCount > 0 && action.targetPlayerId && action.targetPlayerId !== action.playerId) {
     const stacks = updatedPlanet.unitsByPlayer[action.targetPlayerId] ?? [];
     const infantry = stacks.find((s) => s.unitType === "infantry");
     const n = Math.min(destroyCount, infantry?.count ?? 0);
@@ -1299,13 +1322,32 @@ export function applyAgendaPredictionRewards(
         break;
       }
       case "space_dock": {
-        // Re-checked here (not just at play time) since resolution can happen slightly later — silently skipped if this player no longer controls that planet OR has hit their 3-space-dock reinforcement cap, rather than failing the whole resolution over 1 rider's now-stale target.
+        // Re-checked here (not just at play time) since resolution can happen slightly later — silently skipped if this player no longer controls that planet, rather than failing the whole resolution over 1 rider's now-stale target.
         const found = findPlanet(nextState, reward.planetId);
-        if (found && found.planet.controllerId === prediction.playerId && checkReinforcementsAvailable(nextState, prediction.playerId, [{ unitType: "space_dock", count: 1 }]).ok) {
-          const updatedPlanet = addPlanetUnits(found.planet, prediction.playerId, "space_dock", 1);
-          const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === reward.planetId ? updatedPlanet : p)) };
-          nextState = { ...nextState, systems: { ...nextState.systems, [found.systemId]: updatedSystem } };
-          events.push({ type: "UNITS_PRODUCED", playerId: prediction.playerId, systemId: found.systemId, planetId: reward.planetId, unitType: "space_dock", count: 1, totalCost: 0 });
+        if (found && found.planet.controllerId === prediction.playerId) {
+          let systems = nextState.systems;
+          if (!checkReinforcementsAvailable(nextState, prediction.playerId, [{ unitType: "space_dock", count: 1 }]).ok) {
+            // RR (yjmrobert.com/tirules): "If a player wishes to place a space dock, but there are none left in their reinforcements, they may remove a space dock from any system that does not contain one of their command tokens and place that instead." No interactive choice is possible at this automatic reward-resolution point, so this picks the first eligible one — see this file's own header comment on that same tradeoff elsewhere (e.g. Diplomacy Rider's reward).
+            const player = nextState.players[prediction.playerId];
+            const source = Object.entries(systems)
+              .filter(([sid]) => !player.commandTokens.onBoard.includes(sid as SystemId))
+              .flatMap(([sid, sys]) => sys.planets.map((p) => ({ sid: sid as SystemId, planet: p })))
+              .find(({ planet }) => (planet.unitsByPlayer[prediction.playerId] ?? []).some((s) => s.unitType === "space_dock" && s.count > 0));
+            if (!source) break; // no reinforcements AND no eligible existing space dock to relocate — reward simply doesn't apply
+            const sourceStacks = source.planet.unitsByPlayer[prediction.playerId] ?? [];
+            const sourceStack = sourceStacks.find((s) => s.unitType === "space_dock" && s.count > 0)!;
+            const updatedSourceStacks = sourceStacks.map((s) => (s === sourceStack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+            const updatedSourcePlanet: PlanetState = { ...source.planet, unitsByPlayer: { ...source.planet.unitsByPlayer, [prediction.playerId]: updatedSourceStacks } };
+            systems = {
+              ...systems,
+              [source.sid]: { ...systems[source.sid], planets: systems[source.sid].planets.map((p) => (p.planetId === source.planet.planetId ? updatedSourcePlanet : p)) },
+            };
+          }
+          const refound = findPlanet({ ...nextState, systems }, reward.planetId)!;
+          const updatedPlanet = addPlanetUnits(refound.planet, prediction.playerId, "space_dock", 1);
+          const updatedSystem: SystemState = { ...refound.system, planets: refound.system.planets.map((p) => (p.planetId === reward.planetId ? updatedPlanet : p)) };
+          nextState = { ...nextState, systems: { ...systems, [refound.systemId]: updatedSystem } };
+          events.push({ type: "UNITS_PRODUCED", playerId: prediction.playerId, systemId: refound.systemId, planetId: reward.planetId, unitType: "space_dock", count: 1, totalCost: 0 });
         }
         break;
       }
@@ -1402,6 +1444,10 @@ function requireJustActivatedOwnSystem(state: GameState, playerId: PlayerId): { 
 export function playFlankSpeed(state: GameState, action: { type: "PLAY_FLANK_SPEED"; playerId: PlayerId }): ActionResult {
   const timing = requireJustActivatedOwnSystem(state, action.playerId);
   if (!timing.ok) return timing;
+  // RR FAQ (tirules2.com/C_action_cards): "A second Flank Speed cannot be played to give +2 to the move value of each ship." — blocked outright, not just a no-op stack.
+  if (timing.pending.flankSpeedPlayerId === action.playerId) {
+    return { ok: false, error: "This player has already played Flank Speed this tactical action." };
+  }
   const played = playCard(state, action.playerId, "flank_speed");
   if (!played.ok) return played;
 
@@ -1465,6 +1511,10 @@ export function playMoraleBoost(state: GameState, action: { type: "PLAY_MORALE_B
   if (!pending || !isPlayersTurnInWindow(state, "combat_round_start", action.playerId)) {
     return { ok: false, error: "RR 1.19/1.20: it isn't this player's turn in the current combat-round priority window." };
   }
+  // RR FAQ (tirules2.com/C_action_cards): "A second Morale Boost cannot be played during a combat round to give +2..." — blocked outright, not just a no-op stack.
+  if (pending.moraleBoost?.playerId === action.playerId && pending.moraleBoost.round === (pending.combatRound ?? 1)) {
+    return { ok: false, error: "This player has already played Morale Boost this combat round." };
+  }
   const played = playCard(state, action.playerId, "morale_boost");
   if (!played.ok) return played;
 
@@ -1494,6 +1544,10 @@ export function playSkilledRetreat(
     ([pid, stacks]) => pid !== action.playerId && (stacks ?? []).some((s) => s.count > 0),
   );
   if (hasEnemyShips) return { ok: false, error: `${action.toSystemId} contains another player's ships.` };
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "A player cannot use Skilled Retreat to move into a nebula."
+  if (state.systems[action.toSystemId]?.anomalies.includes("nebula")) {
+    return { ok: false, error: "Skilled Retreat cannot move into a nebula." };
+  }
 
   const played = playCard(state, action.playerId, "skilled_retreat");
   if (!played.ok) return played;
@@ -1774,7 +1828,9 @@ export function playAncientBurialSites(
 
 /** RR "Distinguished Councilor": after this player casts votes, cast 5 additional votes for that same outcome. */
 export function playDistinguishedCouncilor(state: GameState, action: { type: "PLAY_DISTINGUISHED_COUNCILOR"; playerId: PlayerId }): ActionResult {
-  if (!isPlayersTurnInWindow(state, "after_you_cast_votes", action.playerId)) {
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "The speaker may play Distinguished Councilor after another player plays Bribery" — for the speaker specifically (whose own vote IS "the speaker voting"), both windows sit at the same functional moment, so either order is legal. Any OTHER player's own Distinguished Councilor opportunity stays tied strictly to their own "after_you_cast_votes" window (ruling: "only after their normal vote, not... at another point").
+  const isSpeakerInSpeakerVotesWindow = state.players[action.playerId]?.isSpeaker && isPlayersTurnInWindow(state, "after_speaker_votes", action.playerId);
+  if (!isPlayersTurnInWindow(state, "after_you_cast_votes", action.playerId) && !isSpeakerInSpeakerVotesWindow) {
     return { ok: false, error: "It isn't this player's turn in the current after-you-cast-votes priority window." };
   }
   const pending = state.pendingAgendaVote;
@@ -1804,7 +1860,8 @@ export function playBribery(state: GameState, action: { type: "PLAY_BRIBERY"; pl
   if (!isPlayersTurnInWindow(state, "after_speaker_votes", action.playerId)) {
     return { ok: false, error: "It isn't this player's turn in the current after-the-speaker-votes priority window." };
   }
-  if (action.tradeGoodsToSpend <= 0) return { ok: false, error: "Bribery must spend at least 1 trade good." };
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "A player may spend zero trade goods when they play Bribery."
+  if (action.tradeGoodsToSpend < 0) return { ok: false, error: "Bribery cannot spend a negative number of trade goods." };
   const pending = state.pendingAgendaVote;
   if (!pending) return { ok: false, error: "No agenda is currently being voted on." };
   const ownVoteEntry = Object.entries(pending.votesByOutcome).find(([, votes]) => votes.some((v) => v.playerId === action.playerId));
@@ -1937,8 +1994,8 @@ export function playDeadlyPlot(state: GameState, action: { type: "PLAY_DEADLY_PL
     { type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("deadly_plot") },
     ...exhaustedPlanetIds.map((planetId): GameEvent => ({ type: "PLANET_EXHAUSTED", playerId: action.playerId, planetId })),
   ];
-  const continued = continueAgendaPhaseAfterElectionReaction(nextState, rules, events);
-  return { ok: true, state: continued.state, events: continued.events };
+  // Closes the window itself (pendingPriorityWindow: null above) rather than calling continueAgendaPhaseAfterElectionReaction inline — GameEngine.ts's own generic "outcome_would_be_resolved just closed" handling calls that continuation uniformly, whether the window closed via this card resolving it or via everyone declining.
+  return { ok: true, state: nextState, events };
 }
 
 /**
@@ -1959,7 +2016,9 @@ export function playCrippleDefenses(state: GameState, action: { type: "PLAY_CRIP
 
   const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("cripple_defenses") }];
   let updatedPlanet = found.planet;
+  // RR FAQ: "destroy" effects like this only ever target ANOTHER player's units, never the caster's own.
   for (const ownerId of Object.keys(found.planet.unitsByPlayer) as PlayerId[]) {
+    if (ownerId === action.playerId) continue;
     const stacks = updatedPlanet.unitsByPlayer[ownerId] ?? [];
     const pds = stacks.find((s) => s.unitType === "pds" && s.count > 0);
     if (!pds) continue;
@@ -2067,50 +2126,61 @@ export function playInfiltrate(state: GameState, action: { type: "PLAY_INFILTRAT
 /** RR "Reparations": after another player gains control of a planet this player controls, exhaust 1 planet that player controls and ready 1 planet this player controls. */
 export function playReparations(
   state: GameState,
-  action: { type: "PLAY_REPARATIONS"; playerId: PlayerId; exhaustPlanetId: PlanetId; readyPlanetId: PlanetId },
+  action: { type: "PLAY_REPARATIONS"; playerId: PlayerId; exhaustPlanetId?: PlanetId; readyPlanetId?: PlanetId },
 ): ActionResult {
   if (!isPlayersTurnInWindow(state, "planet_control_gained", action.playerId)) {
     return { ok: false, error: "It isn't this player's turn in the current planet-control-gained priority window." };
   }
-  const exhaustFound = findPlanet(state, action.exhaustPlanetId);
-  if (!exhaustFound || exhaustFound.planet.controllerId === action.playerId || !exhaustFound.planet.controllerId) {
-    return { ok: false, error: "exhaustPlanetId must be controlled by another player." };
+  // RR (yjmrobert.com/tirules): "Reparations may be played by a player with
+  // no exhausted planets, or when they lose control of a planet to a
+  // player with no readied planets" — either half can be a no-op.
+  // "Reparations cannot be played... when [BOTH conditions apply at once]"
+  // — only actually illegal if NEITHER half has a legal target at all.
+  let exhaustFound: ReturnType<typeof findPlanet> = null;
+  if (action.exhaustPlanetId) {
+    const found = findPlanet(state, action.exhaustPlanetId);
+    if (found && found.planet.controllerId && found.planet.controllerId !== action.playerId && !found.planet.exhausted) {
+      exhaustFound = found;
+    }
   }
-  if (exhaustFound.planet.exhausted) return { ok: false, error: "That planet is already exhausted." };
-  const readyFound = findPlanet(state, action.readyPlanetId);
-  if (!readyFound || readyFound.planet.controllerId !== action.playerId) {
-    return { ok: false, error: "readyPlanetId must be controlled by this player." };
+  let readyFound: ReturnType<typeof findPlanet> = null;
+  if (action.readyPlanetId) {
+    const found = findPlanet(state, action.readyPlanetId);
+    if (found && found.planet.controllerId === action.playerId && found.planet.exhausted) {
+      readyFound = found;
+    }
   }
-  if (!readyFound.planet.exhausted) return { ok: false, error: "That planet is already readied." };
+  if (!exhaustFound && !readyFound) {
+    return { ok: false, error: "Reparations needs at least 1 valid target — a readied planet of the other player's to exhaust, or an exhausted planet of this player's to ready." };
+  }
 
   const played = playCard(state, action.playerId, "reparations");
   if (!played.ok) return played;
 
   let systems = played.state.systems;
-  const exhaustRefound = findPlanet(played.state, action.exhaustPlanetId)!;
-  systems = {
-    ...systems,
-    [exhaustRefound.systemId]: {
-      ...exhaustRefound.system,
-      planets: exhaustRefound.system.planets.map((p) => (p.planetId === action.exhaustPlanetId ? { ...p, exhausted: true } : p)),
-    },
-  };
-  const readyRefound = findPlanet({ ...played.state, systems }, action.readyPlanetId)!;
-  systems = {
-    ...systems,
-    [readyRefound.systemId]: { ...readyRefound.system, planets: readyRefound.system.planets.map((p) => (p.planetId === action.readyPlanetId ? { ...p, exhausted: false } : p)) },
-  };
+  const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("reparations") }];
+  if (exhaustFound) {
+    const exhaustRefound = findPlanet({ ...played.state, systems }, exhaustFound.planet.planetId)!;
+    systems = {
+      ...systems,
+      [exhaustRefound.systemId]: {
+        ...exhaustRefound.system,
+        planets: exhaustRefound.system.planets.map((p) => (p.planetId === exhaustFound!.planet.planetId ? { ...p, exhausted: true } : p)),
+      },
+    };
+    events.push({ type: "PLANET_EXHAUSTED", playerId: exhaustFound.planet.controllerId!, planetId: exhaustFound.planet.planetId });
+  }
+  if (readyFound) {
+    const readyRefound = findPlanet({ ...played.state, systems }, readyFound.planet.planetId)!;
+    systems = {
+      ...systems,
+      [readyRefound.systemId]: { ...readyRefound.system, planets: readyRefound.system.planets.map((p) => (p.planetId === readyFound!.planet.planetId ? { ...p, exhausted: false } : p)) },
+    };
+    events.push({ type: "PLANET_READIED", playerId: action.playerId, planetId: readyFound.planet.planetId });
+  }
 
   const nextState = advancePriorityWindowAfterAction({ ...played.state, systems }, action.playerId);
-  return {
-    ok: true,
-    state: nextState,
-    events: [
-      { type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("reparations") },
-      { type: "PLANET_EXHAUSTED", playerId: exhaustFound.planet.controllerId, planetId: action.exhaustPlanetId },
-      { type: "PLANET_READIED", playerId: action.playerId, planetId: action.readyPlanetId },
-    ],
-  };
+  return { ok: true, state: nextState, events };
 }
 
 /** RR "Parley": after another player commits units to land on a planet this player controls, return those committed units to the system's space area — undoing the landing entirely. Only reachable while the units are still there to return (i.e. before ground combat/control has moved on), same as the "ground_forces_committed" window's own timing. */
@@ -2138,7 +2208,14 @@ export function playParley(state: GameState, action: { type: "PLAY_PARLEY"; play
     if (stack.count > 0) updatedSystem = addSpaceUnits(updatedSystem, action.committedPlayerId, stack.unitType, stack.count);
   }
 
-  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems: { ...played.state.systems, [refound.systemId]: updatedSystem } }, action.playerId);
+  const nextState = advancePriorityWindowAfterAction(
+    {
+      ...played.state,
+      systems: { ...played.state.systems, [refound.systemId]: updatedSystem },
+      pendingTacticalAction: { ...played.state.pendingTacticalAction!, parleyBlockedPlayerIds: [...(played.state.pendingTacticalAction!.parleyBlockedPlayerIds ?? []), action.committedPlayerId] },
+    },
+    action.playerId,
+  );
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("parley") }] };
 }
 
@@ -2150,7 +2227,7 @@ export function playGhostSquad(
   if (!isPlayersTurnInWindow(state, "ground_forces_committed", action.playerId)) {
     return { ok: false, error: "It isn't this player's turn in the current ground-forces-committed priority window." };
   }
-  if (action.moves.length === 0) return { ok: false, error: "Ghost Squad needs at least 1 move." };
+  // RR (yjmrobert.com/tirules): "A player may move zero ground forces with Ghost Squad" — confirmed legal (still consumes the card, just does nothing further).
 
   const played = playCard(state, action.playerId, "ghost_squad");
   if (!played.ok) return played;
@@ -2201,6 +2278,10 @@ export function playGhostSquad(
 export function playUpgrade(state: GameState, action: { type: "PLAY_UPGRADE"; playerId: PlayerId; systemId: SystemId }): ActionResult {
   if (!isPlayersTurnInWindow(state, "after_system_activated", action.playerId)) {
     return { ok: false, error: "It isn't this player's turn in the current after-system-activation priority window." };
+  }
+  // RR FAQ (twilight-imperium.fandom.com/wiki/FAQ): "the cruiser must already be in the activated system" — action.systemId must be the system just activated, not any other.
+  if (state.pendingTacticalAction?.systemId !== action.systemId) {
+    return { ok: false, error: "Upgrade's cruiser must be in the system that was just activated." };
   }
   const system = state.systems[action.systemId];
   const cruiserStack = (system?.spaceUnitsByPlayer[action.playerId] ?? []).find((s) => s.unitType === "cruiser" && s.count > 0);
@@ -2503,6 +2584,7 @@ export function playManeuveringJets(state: GameState, action: { type: "PLAY_MANE
   if (!pending || (pending.step !== "spaceCannonOffense" && pending.step !== "invasion") || hitsOwed <= 0) {
     return { ok: false, error: 'RR "Maneuvering Jets": only playable before assigning pending Space Cannon hits.' };
   }
+  // KNOWN GAP (yjmrobert.com/tirules/components/c_action_cards): "A player cannot play a second Maneuvering Jets to cancel a second hit produced by the SAME Space Cannon roll" — this project's pendingHits doesn't tag which specific roll produced a given hit count (same limitation Shields Holding's own doc comment already flags), so 2 copies played back-to-back against the same still-pending value aren't currently distinguished from 2 separate rolls. Documented rather than half-fixed.
 
   const played = playCard(state, action.playerId, "maneuvering_jets");
   if (!played.ok) return played;
@@ -2516,6 +2598,10 @@ export function playManeuveringJets(state: GameState, action: { type: "PLAY_MANE
 export function playWarMachine(state: GameState, action: { type: "PLAY_WAR_MACHINE"; playerId: PlayerId }): ActionResult {
   if (state.phase !== "action" || state.activePlayerId !== action.playerId) {
     return { ok: false, error: "War Machine can only be played on this player's own turn during the action phase." };
+  }
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "A second War Machine cannot be played during use of production to give +8..." — blocked outright while one is already banked and hasn't been consumed by a PRODUCE_UNITS yet.
+  if (state.players[action.playerId]?.warMachineActive) {
+    return { ok: false, error: "This player already has a War Machine bonus banked for their next production." };
   }
   const played = playCard(state, action.playerId, "war_machine");
   if (!played.ok) return played;
@@ -2736,6 +2822,19 @@ export function playExperimentalBattlestation(
   action: { type: "PLAY_EXPERIMENTAL_BATTLESTATION"; playerId: PlayerId; spaceDockSystemId: SystemId; targetSystemId: SystemId; opponentId: PlayerId; diceRolls: number[]; hitAssignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },
   rules: RuleData,
 ): ActionResult {
+  // RR FAQ (twilight-imperium.fandom.com/wiki/FAQ): "'Experimental Battlestation' operates in the SAME timing window as 'Space Cannon Offense'... can only be resolved if ships actually move into the active system" — so this must be the mover's own just-activated tactical action, checked at or before the point real combat dice would start (covers both "some players had real Space Cannon Offense eligibility" and "no one did, straight through to spaceCombat/invasion" cases, without remaining open for the rest of the whole tactical action the way a bare recentEvents check alone would).
+  const pending = state.pendingTacticalAction;
+  const stillInWindow =
+    pending &&
+    pending.systemId === action.targetSystemId &&
+    (pending.step === "spaceCannonOffense" || (pending.step === "spaceCombat" && pending.combatRound === undefined) || pending.step === "invasion");
+  if (!stillInWindow) {
+    return { ok: false, error: 'RR "Experimental Battlestation": only playable in the same timing window as Space Cannon Offense, right after ships move into the system.' };
+  }
+  // RR "Solar Flare" (yjmrobert.com/tirules/components/c_action_cards): "Another player cannot play Experimental Battlestation during this tactical action" — if the MOVER played Solar Flare this tactical action, no one else's Experimental Battlestation can target them.
+  if (pending.solarFlarePlayerId === action.opponentId && action.playerId !== action.opponentId) {
+    return { ok: false, error: 'RR "Solar Flare": this player is protected from Experimental Battlestation this tactical action.' };
+  }
   const recentlyMoved = (state.recentEvents ?? []).some((e) => e.type === "SHIPS_MOVED" && e.playerId === action.opponentId && e.toSystemId === action.targetSystemId);
   if (!recentlyMoved) return { ok: false, error: "That player hasn't just moved ships into that system." };
   if (action.spaceDockSystemId !== action.targetSystemId && !getAdjacentSystems(state, action.spaceDockSystemId, rules).includes(action.targetSystemId)) {
@@ -2798,7 +2897,9 @@ export function playFireTeam(
   const player = state.players[action.playerId];
   const stats = getUnitStats(rules, player.factionId, action.rerollUnitType, player.unitUpgrades);
   if (!stats || stats.combat == null) return { ok: false, error: "No combat value for that unit type." };
-  const newHits = action.newDiceRolls.filter((r) => r >= stats.combat!).length;
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "Any modifiers on the original combat roll will apply to the reroll" — Morale Boost's own bonus (the only ground-combat roll modifier this project currently has) carries over the same way.
+  const hitOn = stats.combat - getMoraleBoostHitOnBonus(state, action.playerId);
+  const newHits = action.newDiceRolls.filter((r) => r >= hitOn).length;
 
   const played = playCard(state, action.playerId, "fire_team");
   if (!played.ok) return played;

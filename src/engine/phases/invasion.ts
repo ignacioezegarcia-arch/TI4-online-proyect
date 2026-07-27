@@ -276,6 +276,10 @@ export function commitGroundForces(
   if (pending.invasionCommitsFinished) {
     return { ok: false, error: "RR 44.2: this player already finished committing ground forces this invasion step." };
   }
+  // RR "Parley" (yjmrobert.com/tirules/components/c_action_cards): "The returned ground forces cannot be committed to another planet during the same tactical action."
+  if (pending.parleyBlockedPlayerIds?.includes(action.playerId)) {
+    return { ok: false, error: 'RR "Parley": this player\'s Parley-returned ground forces cannot be recommitted this tactical action.' };
+  }
   if (pending.currentInvasionPlanetId || (pending.pendingHits && Object.keys(pending.pendingHits).length > 0)) {
     return { ok: false, error: "RR 44.2: resolve the current pending hits before committing more ground forces." };
   }

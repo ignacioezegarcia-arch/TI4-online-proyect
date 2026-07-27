@@ -281,27 +281,13 @@ export function resolveAgendaVote(state: GameState, rules: RuleData): { state: G
     }
   }
 
-  // RR "Deadly Plot": every player gets 1 chance, right as the winning
-  // outcome is ABOUT to be resolved (before finalizeAgendaResolutionWithPredictions
-  // runs at all), to discard the agenda entirely instead — the card's own
-  // function checks the "you voted for or predicted a DIFFERENT outcome"
-  // eligibility; this window itself opens for everyone regardless.
-  const stateWithPlayers: GameState = { ...state, players };
-  if (!stateWithPlayers.outcomeWouldBeResolvedWindowDone) {
-    if (!stateWithPlayers.pendingPriorityWindow) {
-      const order = agendaPhaseWindowOrder(stateWithPlayers).filter((id) => !stateWithPlayers.players[id]?.eliminated);
-      if (order.length > 0) {
-        return {
-          state: { ...stateWithPlayers, outcomeWouldBeResolvedWindowDone: true, pendingPriorityWindow: { kind: "outcome_would_be_resolved", order, currentIndex: 0, consecutivePasses: 0 } },
-          events: [],
-        };
-      }
-    } else if (stateWithPlayers.pendingPriorityWindow.kind === "outcome_would_be_resolved") {
-      return { state: stateWithPlayers, events: [] };
-    }
-  }
-
-  return finalizeAgendaResolutionWithPredictions({ ...stateWithPlayers, outcomeWouldBeResolvedWindowDone: undefined }, rules, players, pending, winner);
+  // RR (yjmrobert.com/tirules/components/c_action_cards): confirmed twice —
+  // "Deadly Plot is played after any effects that change the outcome of an
+  // agenda" and "Confusing/Confounding Legal Text is played before Deadly
+  // Plot is played" — so its own "outcome_would_be_resolved" window has to
+  // open AFTER "elected_as_outcome" has fully resolved, not before. See
+  // finalizeAgendaResolution's own doc comment for where it actually opens now.
+  return finalizeAgendaResolutionWithPredictions({ ...state, players }, rules, players, pending, winner);
 }
 
 /** Split out of resolveAgendaVote only so the "apply rider predictions" step has a clear place to sit between the vote tally (above) and RR 8.4/8.5's own outcome-application (finalizeAgendaResolution) — see phases/actionCardEffects.ts's own applyAgendaPredictionRewards for what the 8 rider cards actually do. */
@@ -536,6 +522,26 @@ export function finalizeAgendaResolution(
     nextState = { ...nextState, electedOutcomeWindowDone: true };
   }
 
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "Deadly Plot is
+  // played after any effects that change the outcome of an agenda" and
+  // "Confusing/Confounding Legal Text is played before Deadly Plot" —
+  // this window has to come AFTER the elected_as_outcome check above, not
+  // before (moved here from resolveAgendaVote, which used to open it too
+  // early). Still checked against the ORIGINAL winner/votes/predictions
+  // (`pending`, `winner` — this function's own params), since "any
+  // prediction... is incorrect" once Deadly Plot fires either way.
+  if (!nextState.outcomeWouldBeResolvedWindowDone) {
+    if (!nextState.pendingPriorityWindow) {
+      const order = agendaPhaseWindowOrder(nextState).filter((id) => !nextState.players[id]?.eliminated);
+      if (order.length > 0) {
+        return { state: { ...nextState, outcomeWouldBeResolvedWindowDone: true, pendingPriorityWindow: { kind: "outcome_would_be_resolved", order, currentIndex: 0, consecutivePasses: 0 } }, events };
+      }
+    } else if (nextState.pendingPriorityWindow.kind === "outcome_would_be_resolved") {
+      return { state: nextState, events };
+    }
+    nextState = { ...nextState, outcomeWouldBeResolvedWindowDone: true };
+  }
+
   return continueAgendaPhaseAfterElectionReaction(nextState, rules, events);
 }
 
@@ -551,7 +557,7 @@ export function finalizeAgendaResolution(
 export function continueAgendaPhaseAfterElectionReaction(state: GameState, rules: RuleData, events: GameEvent[]): { state: GameState; events: GameEvent[] } {
   let nextState = state;
   if ((nextState.agendaPhaseAgendasResolved ?? 0) < 2 && nextState.agendaDeck.deckIds.length > 0) {
-    nextState = { ...nextState, electedOutcomeWindowDone: undefined };
+    nextState = { ...nextState, electedOutcomeWindowDone: undefined, outcomeWouldBeResolvedWindowDone: undefined };
     const revealed = revealAgenda(nextState, rules);
     if (revealed.ok) return { state: revealed.state, events: [...events, ...revealed.events] };
     return { state: nextState, events };
