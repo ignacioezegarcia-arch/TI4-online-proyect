@@ -231,6 +231,8 @@ export interface GameState {
   unclaimedStrategyCards: { cardId: StrategyCardId; tradeGoods: number }[];
   /** RR "Public Disgrace": which card the most recent CHOOSE_STRATEGY_CARD pick actually resolved to — read by playPublicDisgrace to know what to undo. Only meaningful while a "strategy_card_chosen" priority window is open; never read otherwise. */
   lastStrategyCardChoice?: { playerId: PlayerId; cardId: StrategyCardId; tradeGoodsGained: number };
+  /** RR "Diplomatic Pressure" (yjmrobert.com/tirules/components/c_action_cards): "A player cannot play a second Diplomatic Pressure targeting the SAME player during the SAME agenda" — {casterId, targetPlayerId} pairs already used this agenda; reset every time a new agenda is revealed. */
+  diplomaticPressureUsedThisAgenda?: { casterId: PlayerId; targetPlayerId: PlayerId }[];
 
   objectives: ObjectiveState[];
   agendaDeck: AgendaDeckState;
@@ -771,6 +773,6 @@ export type AgendaPredictionReward =
   | { kind: "space_dock"; planetId: PlanetId } // RR "Construction Rider"
   | { kind: "command_token_to_others"; systemId: SystemId } // RR "Diplomacy Rider"
   | { kind: "action_cards_and_speaker" } // RR "Politics Rider": draw 3 + gain speaker token
-  | { kind: "technology"; techId: TechId } // RR "Technology Rider"
+  | { kind: "technology"; techId: TechId; exhaustPlanetIdsForTechSpecialty?: PlanetId[] } // RR "Technology Rider"
   | { kind: "dreadnought"; systemId: SystemId } // RR "Warfare Rider"
   | { kind: "sanction" }; // RR "Sanction": no reward for the predictor themselves — see its own doc comment in actionCardEffects.ts

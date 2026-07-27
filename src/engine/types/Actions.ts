@@ -259,7 +259,7 @@ export type GameAction =
   | { type: "PLAY_SIGNAL_JAMMING"; playerId: PlayerId; systemId: SystemId; targetPlayerId: PlayerId }
   | { type: "PLAY_SPY"; playerId: PlayerId; targetPlayerId: PlayerId }
   | { type: "PLAY_TACTICAL_BOMBARDMENT"; playerId: PlayerId; systemId: SystemId }
-  | { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId; destroyCount?: number }
+  | { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId }
   | { type: "PLAY_PLAGIARIZE"; playerId: PlayerId; targetPlayerId: PlayerId; techId: TechId; exhaustPlanetIds: PlanetId[] }
   | { type: "PLAY_ARCHAEOLOGICAL_EXPEDITION"; playerId: PlayerId; planetId: PlanetId }
   | {
@@ -289,7 +289,7 @@ export type GameAction =
   | { type: "PLAY_CONSTRUCTION_RIDER"; playerId: PlayerId; predictedOutcome: string; planetId: PlanetId }
   | { type: "PLAY_DIPLOMACY_RIDER"; playerId: PlayerId; predictedOutcome: string; systemId: SystemId }
   | { type: "PLAY_POLITICS_RIDER"; playerId: PlayerId; predictedOutcome: string }
-  | { type: "PLAY_TECHNOLOGY_RIDER"; playerId: PlayerId; predictedOutcome: string; techId: TechId }
+  | { type: "PLAY_TECHNOLOGY_RIDER"; playerId: PlayerId; predictedOutcome: string; techId: TechId; exhaustPlanetIdsForTechSpecialty?: PlanetId[] }
   | { type: "PLAY_WARFARE_RIDER"; playerId: PlayerId; predictedOutcome: string; systemId: SystemId }
   | { type: "PLAY_SANCTION"; playerId: PlayerId; predictedOutcome: string }
   | { type: "PLAY_FLANK_SPEED"; playerId: PlayerId }
@@ -317,7 +317,7 @@ export type GameAction =
   | { type: "PLAY_CRIPPLE_DEFENSES"; playerId: PlayerId; planetId: PlanetId }
   | { type: "PLAY_PLAGUE"; playerId: PlayerId; planetId: PlanetId; diceRolls: number[] }
   | { type: "PLAY_DISABLE"; playerId: PlayerId }
-  | { type: "PLAY_INFILTRATE"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLAY_INFILTRATE"; playerId: PlayerId; planetId: PlanetId; relocateFrom?: { unitType: "pds" | "space_dock"; systemId: SystemId }[] }
   | { type: "PLAY_REPARATIONS"; playerId: PlayerId; exhaustPlanetId?: PlanetId; readyPlanetId?: PlanetId }
   | { type: "PLAY_PARLEY"; playerId: PlayerId; targetPlanetId: PlanetId; committedPlayerId: PlayerId }
   | { type: "PLAY_GHOST_SQUAD"; playerId: PlayerId; moves: { fromPlanetId: PlanetId; toPlanetId: PlanetId; unitType: "infantry" | "mech"; count: number }[] }
