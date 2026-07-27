@@ -107,6 +107,10 @@ export function commandTokensAvailableInReinforcements(player: Pick<Player, "com
  * pools simultaneously empty.
  */
 export function placeCommandTokenFromReinforcements(player: Player, systemId: SystemId): { ok: true; player: Player } | { ok: false; error: string } {
+  // RR (yjmrobert.com/tirules/components/c_action_cards, confirmed via Skilled Retreat): "If the destination system already contains a player's command token, no command token is placed" — a player can only ever have 1 of their own tokens in a given system.
+  if (player.commandTokens.onBoard.includes(systemId)) {
+    return { ok: true, player };
+  }
   const onBoard = [...player.commandTokens.onBoard, systemId];
   if (commandTokensAvailableInReinforcements(player) > 0) {
     return { ok: true, player: { ...player, commandTokens: { ...player.commandTokens, onBoard } } };

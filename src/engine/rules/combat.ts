@@ -132,7 +132,7 @@ export function resolveCombatRound(entries: CombatUnitEntry[], diceRolls: number
  *    reworking resolveCombatRound itself.
  */
 /** "Morale Boost": +1 to the result of this player's combat rolls THIS round only — expressed as -1 to hitOn (same convention as every other die modifier here). Self-expiring: only true while `combatRound` still matches the round it was played in. */
-function getMoraleBoostHitOnBonus(state: GameState, playerId: PlayerId): number {
+export function getMoraleBoostHitOnBonus(state: GameState, playerId: PlayerId): number {
   const moraleBoost = state.pendingTacticalAction?.moraleBoost;
   if (!moraleBoost || moraleBoost.playerId !== playerId) return 0;
   return moraleBoost.round === (state.pendingTacticalAction?.combatRound ?? 1) ? 1 : 0;
@@ -560,8 +560,8 @@ export function buildAntiFighterBarrageEntries(
   }
 
   if (diceCount === 0 || hitOn === null) return [];
-  // "Morale Boost": now legal to have been played for round 1 BEFORE Anti-Fighter Barrage (RR: "start of combat" == "start of combat round 1", which is itself before AFB) — same -1-to-hitOn convention as buildSpaceCombatEntries' own getMoraleBoostHitOnBonus.
-  return [{ playerId: firingPlayerId, diceCount, hitOn: hitOn - getMoraleBoostHitOnBonus(state, firingPlayerId) }];
+  // RR FAQ (tirules2.com/C_action_cards): "Morale Boost has no effect on anti-fighter barrage rolls" — despite being playable at the very same "start of combat"/"start of combat round 1" window that precedes AFB (see this project's own reasoning trail on that point, now corrected here), the bonus itself only applies to the round's own NORMAL combat rolls, not to AFB specifically. Earlier version of this file wrongly extended it to AFB; reverted per this more specific ruling.
+  return [{ playerId: firingPlayerId, diceCount, hitOn }];
 }
 
 // ---------------------------------------------------------------------
