@@ -700,6 +700,7 @@ export function playSignalJamming(
 }
 
 /** RR "Spy": take 1 random action card from another player's hand. `rng` defaults to Math.random, same override hook phases/exploration.ts's own drawExplorationCard uses (so callers/tests can inject a seeded rng). The stolen card's id is deliberately NOT named in any emitted event — hidden information, same precedent as Impersonation's secret-objective draw. */
+/** RR "Spy": steal a random action card from another player's hand. KNOWN SIMPLIFICATION (yjmrobert.com/tirules/components/c_action_cards): if the target holds Reverse Engineer, the precise ruling has them decide whether to react with it only AFTER this random selection is revealed to them — this project's generic Reverse Engineer (already covering "spy" in its own COMPONENT_ACTION_CARD_IDS set, since Spy is an "As an Action:" card) still lets the target take Spy back from the discard pile afterward, just without that exact reveal-then-decide sequencing modeled. */
 export function playSpy(state: GameState, action: { type: "PLAY_SPY"; playerId: PlayerId; targetPlayerId: PlayerId }, rng: () => number = Math.random): ActionResult {
   const played = playCard(state, action.playerId, "spy");
   if (!played.ok) return played;
@@ -752,7 +753,7 @@ export function playTacticalBombardment(state: GameState, action: { type: "PLAY_
 /** RR "Unstable Planet": exhaust 1 hazardous planet and destroy up to 3 infantry on it. `targetPlayerId`/`destroyCount` are optional (exhaust-only is a legal, if weak, play). This is an "Action:" timing card — played as this player's whole action-phase turn, never mid-combat/invasion — so RR 44's "both attacker's just-landed and defender's original forces present at once" case never applies here; at most 1 player has ground forces on the planet at the time this is played. */
 export function playUnstablePlanet(
   state: GameState,
-  action: { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId; destroyCount?: number },
+  action: { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId },
   rules: RuleData,
 ): ActionResult {
   const played = playCard(state, action.playerId, "unstable_planet");
@@ -770,12 +771,12 @@ export function playUnstablePlanet(
     events.push({ type: "PLANET_EXHAUSTED", playerId: found.planet.controllerId, planetId: action.planetId });
   }
 
-  const destroyCount = Math.min(3, Math.max(0, action.destroyCount ?? 0));
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "If the selected planet has three or fewer infantry on it, all infantry will be destroyed. Otherwise, three infantry will be destroyed." — automatic, not a player-chosen lower amount; "may select a planet with fewer than three infantry (including zero)" confirms zero is a legal (no-op) target too.
   // RR FAQ: destroy effects only ever target ANOTHER player's units.
-  if (destroyCount > 0 && action.targetPlayerId && action.targetPlayerId !== action.playerId) {
+  if (action.targetPlayerId && action.targetPlayerId !== action.playerId) {
     const stacks = updatedPlanet.unitsByPlayer[action.targetPlayerId] ?? [];
     const infantry = stacks.find((s) => s.unitType === "infantry");
-    const n = Math.min(destroyCount, infantry?.count ?? 0);
+    const n = Math.min(3, infantry?.count ?? 0);
     if (n > 0 && infantry) {
       const updatedStacks = stacks.map((s) => (s === infantry ? { ...s, count: s.count - n } : s)).filter((s) => s.count > 0);
       updatedPlanet = { ...updatedPlanet, unitsByPlayer: { ...updatedPlanet.unitsByPlayer, [action.targetPlayerId]: updatedStacks } };
@@ -1080,6 +1081,26 @@ export function playAssassinateRepresentative(state: GameState, action: { type: 
 }
 
 /** RR "Veto": discard the just-revealed agenda and reveal the next one instead — reuses agendaPhase.ts's own revealAgenda for the actual reveal (including all of ITS OWN reveal-time checks, e.g. Classified Document Leaks/Committee Formation) rather than duplicating any of that. */
+/**
+ * RR "Veto": discard the revealed agenda and reveal a replacement.
+ *
+ * KNOWN ARCHITECTURAL SIMPLIFICATION (yjmrobert.com/tirules/components/
+ * c_action_cards): "Veto, the Xxcha Quash faction ability, the Xxcha
+ * Political Favor promissory note, and the Political Secret promissory
+ * note are all played in the SAME timing window, BEFORE the rider
+ * timing window" — i.e. the real RR 1.20 structure has 2 sequential
+ * sub-windows within "after an agenda is revealed" (agenda-cancelling
+ * effects first, THEN riders), not 1 shared window covering all 14
+ * reveal-reaction cards the way this project's own "agenda_revealed"
+ * kind currently does. In practice this project's own single-window
+ * model still reaches a similar outcome (a rider "played" before a
+ * later Veto just becomes moot once its own agenda is discarded, rather
+ * than never being offered the chance at all) — but it's not the exact
+ * same sequencing, and a rider CAN currently be played before a Veto in
+ * the same reveal, which shouldn't be possible per this ruling.
+ * Splitting agenda_revealed into 2 real sequential windows would fix
+ * this properly; flagged rather than attempted here.
+ */
 export function playVeto(state: GameState, action: { type: "PLAY_VETO"; playerId: PlayerId }, rules: RuleData): ActionResult {
   if (!isPlayersTurnInWindow(state, "agenda_revealed", action.playerId)) {
     return { ok: false, error: "RR 1.20: it isn't this player's turn in the current reveal-reaction priority window." };
@@ -1154,6 +1175,10 @@ export function playDiplomaticPressure(
   const played = playCard(state, action.playerId, "diplomatic_pressure");
   if (!played.ok) return played;
   if (action.targetPlayerId === action.playerId) return { ok: false, error: "Diplomatic Pressure must target another player." };
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "A player cannot play a second Diplomatic Pressure targeting the same player during the same agenda" — a different target, or a different (later) agenda, is fine.
+  if (played.state.diplomaticPressureUsedThisAgenda?.some((u) => u.casterId === action.playerId && u.targetPlayerId === action.targetPlayerId)) {
+    return { ok: false, error: "This player already used Diplomatic Pressure against that player this agenda." };
+  }
   const target = played.state.players[action.targetPlayerId];
   if (!target?.promissoryNotesInHand.includes(action.promissoryNoteId)) {
     return { ok: false, error: "That player doesn't have that promissory note." };
@@ -1165,6 +1190,7 @@ export function playDiplomaticPressure(
     {
       ...played.state,
       players: { ...played.state.players, [action.targetPlayerId]: updatedTarget, [action.playerId]: updatedActingPlayer },
+      diplomaticPressureUsedThisAgenda: [...(played.state.diplomaticPressureUsedThisAgenda ?? []), { casterId: action.playerId, targetPlayerId: action.targetPlayerId }],
     },
     action.playerId,
   );
@@ -1231,11 +1257,18 @@ export function playPoliticsRider(state: GameState, action: { type: "PLAY_POLITI
 }
 
 /** RR "Technology Rider": if correct, research 1 technology (free — cost 0 — but RR 90.7 prerequisites still apply, same as phases/technology.ts's own researchTechnology always enforces regardless of cost). */
-export function playTechnologyRider(state: GameState, action: { type: "PLAY_TECHNOLOGY_RIDER"; playerId: PlayerId; predictedOutcome: string; techId: TechId }): ActionResult {
+export function playTechnologyRider(
+  state: GameState,
+  action: { type: "PLAY_TECHNOLOGY_RIDER"; playerId: PlayerId; predictedOutcome: string; techId: TechId; exhaustPlanetIdsForTechSpecialty?: PlanetId[] },
+): ActionResult {
   if (state.players[action.playerId]?.technologies.includes(action.techId)) {
     return { ok: false, error: "This player already owns that technology." };
   }
-  return playRiderCard(state, action.playerId, "technology_rider", action.predictedOutcome, { kind: "technology", techId: action.techId });
+  return playRiderCard(state, action.playerId, "technology_rider", action.predictedOutcome, {
+    kind: "technology",
+    techId: action.techId,
+    exhaustPlanetIdsForTechSpecialty: action.exhaustPlanetIdsForTechSpecialty,
+  });
 }
 
 /** RR "Warfare Rider": if correct, place 1 dreadnought from reinforcements in a system (chosen now) containing this player's ships. */
@@ -1385,7 +1418,8 @@ export function applyAgendaPredictionRewards(
         break;
       }
       case "technology": {
-        const researched = researchTechnology(nextState, prediction.playerId, reward.techId, 0, [], rules);
+        // RR "Technology Rider" (yjmrobert.com/tirules/components/c_action_cards): "A player may exhaust a planet with a technology specialty to ignore a prerequisite... This planet will ready at the end of the agenda phase" — researchTechnology's own exhaustPlanetIdsForTechSpecialty param already implements the bypass itself (readying at end of agenda phase is that same mechanism's own standing behavior, not something unique to this reward). KNOWN GAP: the ruling's OTHER bypass — "exhaust AI Development Algorithm to ignore a prerequisite on a UNIT UPGRADE technology" — lives on a separate researchUnitUpgrade function this reward doesn't call (it always calls researchTechnology, for a regular tech); Technology Rider predicting a unit-upgrade outcome with that specific bypass isn't wired through yet.
+        const researched = researchTechnology(nextState, prediction.playerId, reward.techId, 0, [], rules, undefined, reward.exhaustPlanetIdsForTechSpecialty);
         if (researched.ok) {
           nextState = researched.state;
           events.push(...researched.events);
@@ -1774,8 +1808,13 @@ export function playCoupDetat(state: GameState, action: { type: "PLAY_COUP_DETAT
   const played = playCard(state, action.playerId, "coup_detat");
   if (!played.ok) return played;
 
+  // RR (yjmrobert.com/tirules/components/c_action_cards, under Master Plan): "If a player's turn is ended by a game effect, they cannot use Master Plan to perform an additional action" — clear any banked bonus for the player whose turn Coup d'Etat is ending, so it can't linger and grant a bonus action on some later turn instead.
+  const endedPlayer = played.state.players[announced.playerId];
+  const playersWithClearedBonus = endedPlayer?.masterPlanBonusAvailable ? { ...played.state.players, [announced.playerId]: { ...endedPlayer, masterPlanBonusAvailable: false } } : played.state.players;
+
   const nextState: GameState = advanceActivePlayer({
     ...played.state,
+    players: playersWithClearedBonus,
     pendingStrategicActionAnnouncement: undefined,
     pendingPriorityWindow: played.state.stashedPriorityWindow ?? null,
     stashedPriorityWindow: undefined,
@@ -2094,7 +2133,10 @@ export function playDisable(state: GameState, action: { type: "PLAY_DISABLE"; pl
  */
 
 /** RR "Infiltrate": when this player gains control of a planet, replace each PDS/space dock already there with a matching unit from their own reinforcements (i.e. it's now THIS player's unit, not the previous controller's — RR 49.5b already destroys the previous controller's structures on control change, so this specifically re-creates them under the new controller instead of leaving the planet empty). Reinforcement-capped like everything else (rules/reinforcements.ts) — skips whichever structure type this player doesn't have room for, rather than failing the whole card. */
-export function playInfiltrate(state: GameState, action: { type: "PLAY_INFILTRATE"; playerId: PlayerId; planetId: PlanetId }): ActionResult {
+export function playInfiltrate(
+  state: GameState,
+  action: { type: "PLAY_INFILTRATE"; playerId: PlayerId; planetId: PlanetId; relocateFrom?: { unitType: "pds" | "space_dock"; systemId: SystemId }[] },
+): ActionResult {
   if (!isPlayersTurnInWindow(state, "planet_control_gained", action.playerId)) {
     return { ok: false, error: "It isn't this player's turn in the current planet-control-gained priority window." };
   }
@@ -2109,17 +2151,39 @@ export function playInfiltrate(state: GameState, action: { type: "PLAY_INFILTRAT
   const refound = findPlanet(played.state, action.planetId)!;
   const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("infiltrate") }];
   let updatedPlanet = refound.planet;
+  let systems = played.state.systems;
   for (const unitType of ["pds", "space_dock"] as const) {
     // RR 49.5b already destroyed any OTHER player's copy on control change — this only ever finds this player's own pre-existing stack (if they already had one there) or none at all; "replace" only actually adds a fresh one when there wasn't one under this player already.
     const alreadyHasOwn = (updatedPlanet.unitsByPlayer[action.playerId] ?? []).some((s) => s.unitType === unitType && s.count > 0);
     if (alreadyHasOwn) continue;
-    if (!checkReinforcementsAvailable(played.state, action.playerId, [{ unitType, count: 1 }]).ok) continue;
+    if (!checkReinforcementsAvailable(played.state, action.playerId, [{ unitType, count: 1 }]).ok) {
+      // RR (yjmrobert.com/tirules/components/c_action_cards): "If a player wishes to place a structure, but there are none of that type left in their reinforcements, they may remove a structure of that type from any system that does not contain one of their command tokens and place that instead. That player may make the choice for each structure." — same substitution Ghost Ship/Construction Rider/War Effort already have, here per-structure-type.
+      const relocation = action.relocateFrom?.find((r) => r.unitType === unitType);
+      if (!relocation) continue; // no reinforcements AND no relocation specified for this structure type — skipped, not a hard failure (matches this project's own "silently skipped" convention for stale/unaffordable rider-style rewards elsewhere)
+      if (played.player.commandTokens.onBoard.includes(relocation.systemId)) {
+        return { ok: false, error: `Cannot relocate a ${unitType} from a system that contains this player's own command token.` };
+      }
+      const sourceSystem = systems[relocation.systemId];
+      const sourcePlanet = sourceSystem?.planets.find((p) => (p.unitsByPlayer[action.playerId] ?? []).some((s) => s.unitType === unitType && s.count > 0));
+      if (!sourceSystem || !sourcePlanet) {
+        return { ok: false, error: `No ${unitType} belonging to this player in ${relocation.systemId}.` };
+      }
+      const sourceStacks = sourcePlanet.unitsByPlayer[action.playerId] ?? [];
+      const sourceStack = sourceStacks.find((s) => s.unitType === unitType && s.count > 0)!;
+      const updatedSourceStacks = sourceStacks.map((s) => (s === sourceStack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+      const updatedSourcePlanet: PlanetState = { ...sourcePlanet, unitsByPlayer: { ...sourcePlanet.unitsByPlayer, [action.playerId]: updatedSourceStacks } };
+      systems = {
+        ...systems,
+        [relocation.systemId]: { ...sourceSystem, planets: sourceSystem.planets.map((p) => (p.planetId === sourcePlanet.planetId ? updatedSourcePlanet : p)) },
+      };
+    }
     updatedPlanet = addPlanetUnits(updatedPlanet, action.playerId, unitType, 1);
     events.push({ type: "UNITS_PRODUCED", playerId: action.playerId, systemId: refound.systemId, planetId: action.planetId, unitType, count: 1, totalCost: 0 });
   }
 
-  const updatedSystem: SystemState = { ...refound.system, planets: refound.system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
-  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems: { ...played.state.systems, [refound.systemId]: updatedSystem } }, action.playerId);
+  const destinationSystem = systems[refound.systemId] ?? refound.system;
+  const updatedSystem: SystemState = { ...destinationSystem, planets: destinationSystem.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems: { ...systems, [refound.systemId]: updatedSystem } }, action.playerId);
   return { ok: true, state: nextState, events };
 }
 
@@ -2500,9 +2564,11 @@ export function playFighterPrototype(state: GameState, action: { type: "PLAY_FIG
 /** RR "Emergency Repairs": at the start (or end) of a combat round, repair (clear damagedCount on) all of this player's Sustain-Damage-capable units in the active system. Simplification, flagged: only reachable via the "combat_round_start" window (round 1's own start, or round N+1's start — functionally the same instant as round N's own end for every round except the very last one before combat fully concludes, which this doesn't separately cover). */
 export function playEmergencyRepairs(state: GameState, action: { type: "PLAY_EMERGENCY_REPAIRS"; playerId: PlayerId }): ActionResult {
   const pending = state.pendingTacticalAction;
-  const inCombat = pending && (pending.step === "spaceCombat" || (pending.step === "invasion" && pending.currentInvasionPlanetId));
-  if (!pending || !inCombat || !isPlayersTurnInWindow(state, "combat_round_start", action.playerId)) {
-    return { ok: false, error: 'RR "Emergency Repairs": only playable at the start of a combat round.' };
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "A player may play Emergency Repairs at the start of the first round of combat to repair ships damaged in a previous combat, OR during the Space Cannon Offense step of the current action." — the Space Cannon Offense case has no priority-window gate of its own (that step's own responder order already governs whose turn it is), so it's just gated on the step itself.
+  const duringSpaceCannonOffense = pending?.step === "spaceCannonOffense";
+  const atCombatRoundStart = pending && (pending.step === "spaceCombat" || (pending.step === "invasion" && pending.currentInvasionPlanetId)) && isPlayersTurnInWindow(state, "combat_round_start", action.playerId);
+  if (!pending || (!duringSpaceCannonOffense && !atCombatRoundStart)) {
+    return { ok: false, error: 'RR "Emergency Repairs": only playable at the start of a combat round, or during the Space Cannon Offense step.' };
   }
   const played = playCard(state, action.playerId, "emergency_repairs");
   if (!played.ok) return played;
@@ -2782,6 +2848,23 @@ export function playDirectHit(state: GameState, action: { type: "PLAY_DIRECT_HIT
 }
 
 /** RR "Reflective Shielding": when one of this player's ships uses Sustain Damage during combat, produce 2 hits against the opponent's ships in the active system. */
+/**
+ * RR "Reflective Shielding": when one of this player's ships uses Sustain
+ * Damage during combat, produce 2 hits against the opponent's ships in
+ * the active system.
+ *
+ * KNOWN SIMPLIFICATION (yjmrobert.com/tirules/components/c_action_cards):
+ * the precise ruling is that these 2 hits get MERGED into the SAME
+ * pending hit-assignment pool as whatever roll triggered the Sustain
+ * Damage in the first place (so a unit that already used Sustain Damage
+ * once this round, even if since repaired, still can't use it again for
+ * these specific hits) — this project instead resolves them as an
+ * immediate, separate applyHitAssignments call, since merging into an
+ * already-in-progress ASSIGN_HITS action would need a deeper
+ * restructure (pausing that action, injecting hits, re-prompting) this
+ * project doesn't have yet. Functionally similar outcome, not the exact
+ * same sequencing.
+ */
 export function playReflectiveShielding(
   state: GameState,
   action: { type: "PLAY_REFLECTIVE_SHIELDING"; playerId: PlayerId; unitType: UnitType; hitAssignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },

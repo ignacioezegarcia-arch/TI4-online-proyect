@@ -129,6 +129,7 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
       agendaDeck: { ...state.agendaDeck, deckIds: rest },
       pendingAgendaVote,
       pendingPriorityWindow: priorityOrder.length > 0 ? { kind: "agenda_revealed", order: priorityOrder, currentIndex: 0, consecutivePasses: 0 } : null,
+      diplomaticPressureUsedThisAgenda: undefined,
     },
     events: [{ type: "AGENDA_REVEALED", agendaId }],
   };
@@ -493,6 +494,7 @@ export function finalizeAgendaResolution(
         ...nextState,
         agendaPhaseAgendasResolved: Math.max(0, (nextState.agendaPhaseAgendasResolved ?? 0) - 1),
         pendingAgendaVote: { agendaId: electedLawId, votingOrder, nextVoterIndex: 0, votesByOutcome: {} },
+        diplomaticPressureUsedThisAgenda: undefined,
       };
       return { state: nextState, events: [...events, { type: "AGENDA_REVEALED", agendaId: electedLawId }] };
     }

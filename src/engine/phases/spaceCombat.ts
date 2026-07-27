@@ -676,6 +676,8 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
       combatRound: (pending.combatRound ?? 1) + 1,
       pendingHits: {},
       retreating: [],
+      // RR "Intercept" (yjmrobert.com/tirules/components/c_action_cards): "During the NEXT round of combat, the targeted player may declare another retreat" — the block is scoped to the round it was played in, not the rest of combat.
+      interceptedPlayerId: undefined,
     },
   };
   return { state: openCombatRoundStartWindowIfNeeded(nextState), events };
