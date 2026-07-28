@@ -150,6 +150,8 @@ export type GameAction =
       diceRolls: number[];
       /** RR "Plasma Scoring": which of this player's Bombardment-capable unit types gets the +1 die — the player's own choice, only relevant if they own the tech and have 2+ qualifying types with different hitOn values. Ignored otherwise. */
       plasmaScoringUnitType?: UnitType;
+      /** TE COEXIST: which defender this roll targets, required when the target planet has more than 1 defending player (a coexisting pair) — each gets bombarded with their own separate roll. Optional/ignored when there's exactly 1 defender. */
+      targetPlayerId?: PlayerId;
     }
   | {
       type: "ASSIGN_BOMBARDMENT_HITS";
@@ -163,7 +165,49 @@ export type GameAction =
       playerId: PlayerId;
       targetPlanetId: PlanetId;
       units: { unitType: UnitType; count: number }[];
+      /** TE COEXIST: if this player has an ability granting the choice (see rules/abilities.ts's own hasAbility) and their own units on this planet aren't already coexisting, they may choose this instead of triggering ground combat. */
+      coexist?: boolean;
+      /** TE DUAL PLANET TRAITS: required if this planet has never been controlled and has 2 traits — see phases/invasion.ts's own commitGroundForces for exactly when this is checked/banked. */
+      chosenTrait?: "cultural" | "industrial" | "hazardous";
     } // RR 44.2: moves ground forces from the active system's space area onto a planet there.
+  | {
+      type: "INITIATE_COEXIST_COMBAT";
+      playerId: PlayerId;
+      planetId: PlanetId;
+      /** TE COEXIST: which coexisting party to attack — only required when the CONTROLLER is attacking and there's more than 1 coexisting party present. See phases/invasion.ts's own initiateCoexistCombat. */
+      targetPlayerId?: PlayerId;
+    }
+  | {
+      type: "CLAIM_EXPEDITION_SLICE";
+      playerId: PlayerId;
+      slice: import("./enums").ThunderEdgeExpeditionSliceCost;
+      exhaustPlanetIds?: PlanetId[];
+      discardActionCardIds?: string[];
+      discardSecretObjectiveId?: string;
+      exhaustTechSpecialtyPlanetId?: PlanetId;
+      fractureDieRoll?: number;
+    } // TE Thunder's Edge Expedition — see phases/expedition.ts's own claimExpeditionSlice.
+  | {
+      type: "COMPLETE_THUNDER_EDGE_EXPEDITION";
+      playerId: PlayerId;
+      targetSystemId: SystemId;
+      infantryPlacingPlayerId?: PlayerId;
+    } // TE Thunder's Edge Expedition completion — see phases/expedition.ts's own completeThunderEdgeExpedition.
+  | {
+      type: "PLACE_INGRESS_TOKENS";
+      playerId: PlayerId;
+      systemIds: SystemId[];
+    } // TE The Fracture — see phases/theFracture.ts's own placeIngressTokens.
+  | {
+      type: "CONVERT_COMMODITIES_VIA_SPACE_STATION";
+      playerId: PlayerId;
+      spaceStationPlanetId: PlanetId;
+    } // TE SPACE STATIONS — see rules/spaceStations.ts's own convertCommoditiesViaSpaceStation.
+  | {
+      type: "GAIN_FACTION_TECH_VIA_ENTROPIC_SCAR";
+      playerId: PlayerId;
+      techId: TechId;
+    } // TE ENTROPIC SCAR — see phases/entropicScar.ts's own gainFactionTechViaEntropicScar.
   | {
       type: "USE_REMOVE_CUSTODIANS_TOKEN";
       playerId: PlayerId;
@@ -261,7 +305,7 @@ export type GameAction =
   | { type: "PLAY_TACTICAL_BOMBARDMENT"; playerId: PlayerId; systemId: SystemId }
   | { type: "PLAY_UNSTABLE_PLANET"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId }
   | { type: "PLAY_PLAGIARIZE"; playerId: PlayerId; targetPlayerId: PlayerId; techId: TechId; exhaustPlanetIds: PlanetId[] }
-  | { type: "PLAY_ARCHAEOLOGICAL_EXPEDITION"; playerId: PlayerId; planetId: PlanetId }
+  | { type: "PLAY_ARCHAEOLOGICAL_EXPEDITION"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" }
   | {
       type: "PLAY_DIVERT_FUNDING";
       playerId: PlayerId;
@@ -380,7 +424,6 @@ export type GameAction =
       /** RR 90.13-90.15: see RESEARCH_TECHNOLOGY's own note on this same field. */
       exhaustPlanetIdsForTechSpecialty?: PlanetId[];
     } // RR 90/86
-  | { type: "EXPLORE_PLANET"; playerId: PlayerId; planetId: PlanetId } // RR 35 — PoK only (rejected in Base-only games)
   | { type: "EXPLORE_FRONTIER"; playerId: PlayerId; systemId: SystemId } // RR 35 — PoK only
   | {
       type: "PURGE_RELIC_FRAGMENTS";
@@ -404,7 +447,7 @@ export type GameAction =
       unitType: UnitType;
       count: number;
     } // component action (uses this player's whole turn); exhausts the tech; produce 1 ship in any system with this player's own space dock, paying its normal cost against that dock's Production limit
-  | { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId } // not exhaustable; explores a planet in the just-activated system that has this player's own units on it
+  | { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" } // not exhaustable; explores a planet in the just-activated system that has this player's own units on it
   | {
       type: "USE_BIO_STIMS";
       playerId: PlayerId;
@@ -441,9 +484,9 @@ export type GameAction =
       type: "PROPOSE_TRANSACTION";
       playerId: PlayerId;
       withPlayerId: PlayerId;
-      offer: { tradeGoods: number; commodities: number; promissoryNoteId?: PromissoryNoteId };
-      request: { tradeGoods: number; commodities: number; promissoryNoteId?: PromissoryNoteId };
-    } // TODO — binding immediately since both sides confirm client-side before submitting
+      offer: { tradeGoods?: number; commodities?: number; promissoryNoteId?: PromissoryNoteId; relicFragments?: Partial<Record<"cultural" | "industrial" | "hazardous" | "unknown", number>> };
+      request: { tradeGoods?: number; commodities?: number; promissoryNoteId?: PromissoryNoteId; relicFragments?: Partial<Record<"cultural" | "industrial" | "hazardous" | "unknown", number>> };
+    } // RR (yjmrobert.com/tirules/rules/r_transactions) — binding immediately since both sides confirm client-side before submitting; see rules/transactions.ts's own resolveTransaction.
 
   // --- Status phase (RR 70) — mostly automatic, but objective scoring is a player choice ---
   | {
@@ -587,7 +630,17 @@ export type GameEvent =
   | { type: "UNIT_REPAIRED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number }
   | { type: "SPACE_COMBAT_ENDED"; systemId: SystemId; survivingPlayerId: PlayerId | null }
   | { type: "GROUND_FORCES_COMMITTED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId }
-  | { type: "BOMBARDMENT_RESOLVED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number }
+  | { type: "COEXISTENCE_STARTED"; systemId: SystemId; planetId: PlanetId; coexistingPlayerId: PlayerId }
+  | { type: "COEXISTENCE_ENDED_BY_ATTACK"; systemId: SystemId; planetId: PlanetId; attackingPlayerId: PlayerId; targetPlayerId: PlayerId }
+  | { type: "BREAKTHROUGH_GAINED"; playerId: PlayerId }
+  | { type: "FRACTURE_ENTERED_PLAY"; triggeredByPlayerId: PlayerId }
+  | { type: "FRACTURE_NEUTRAL_UNITS_PLACED" }
+  | { type: "INGRESS_TOKENS_PLACED"; playerId: PlayerId; systemIds: SystemId[] }
+  | { type: "COMMODITIES_CONVERTED_VIA_SPACE_STATION"; playerId: PlayerId; amount: number }
+  | { type: "TRANSACTION_RESOLVED"; playerId: PlayerId; otherPlayerId: PlayerId }
+  | { type: "EXPEDITION_SLICE_CLAIMED"; playerId: PlayerId; slice: import("./enums").ThunderEdgeExpeditionSliceCost }
+  | { type: "THUNDER_EDGE_EXPEDITION_COMPLETED"; systemId: SystemId; infantryPlacingPlayerId: PlayerId; infantryCount: number }
+  | { type: "BOMBARDMENT_RESOLVED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number; targetPlayerId?: PlayerId }
   | { type: "GROUND_COMBAT_ENDED"; systemId: SystemId; planetId: PlanetId; survivingPlayerId: PlayerId | null }
   | { type: "PLANET_CONTROL_ESTABLISHED"; systemId: SystemId; planetId: PlanetId; playerId: PlayerId }
   | { type: "UNITS_PRODUCED"; playerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitType: UnitType; count: number; totalCost: number }

@@ -53,6 +53,8 @@ export interface PlanetStaticData {
   isMecatolRex: boolean;
   /** RR PoK "Wormhole Nexus": true only for Mallice, the Nexus's own planet. Needed to trigger the Nexus's active-flip on control gain (see rules/adjacency.ts's maybeActivateWormholeNexus). */
   isMallice: boolean;
+  /** RR 73/75: "when a player gains a planet card... that has a relic icon... they draw the top card of the relic deck." Every Fracture planet (Cocytus, Lethe, Plegethon, Styx) has this. */
+  hasRelicIcon: boolean;
   /** Which faction's home system this planet sits in, if any (data/tiles.json's tile-level homeFaction). */
   homeFactionId: FactionId | null;
 }
@@ -70,6 +72,8 @@ export interface ObjectiveStaticData {
 
 export interface RuleData {
   factionUnits: Record<FactionId, FactionUnitStats>;
+  /** TE The Fracture: neutral guardian unit counts per Fracture system (data/tiles.json's own tile-level neutralGuardians, keyed by the same SystemId/tile-id string as boardAdjacency) — read once by rules/theFracture.ts's own placeFractureNeutralUnits when the Fracture actually comes into play. */
+  fractureNeutralGuardians: Record<string, Partial<Record<string, number>>>;
   unitUpgrades: Record<UnitUpgradeId, UnitUpgradeStats>;
   /** Static resources/influence per planet (data/tiles.json), keyed by the same lowercase-underscore id as PlanetId (e.g. "jord", "mecatol_rex"). */
   planets: Record<PlanetId, PlanetStaticData>;
@@ -80,11 +84,13 @@ export interface RuleData {
   /** RR 90: only the color + prerequisites (data/technologies.json) — not the effect text. Prerequisites is a list of colors, one entry per required tech of that color (e.g. ["red","red"] = need 2 red techs already owned). */
   technologies: Record<TechId, { color: string | null; prerequisites: string[] }>;
   /** RR 34/TE breakthrough: commodities max, plus the pair of colors (if any) whose techs can substitute for each other when satisfying prerequisites — never both at once for the same requirement. */
-  factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }>;
+  factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null; startsWithBreakthroughUnlocked: boolean }>;
   /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned, and is still an unresolved gap per this project's own notes); this is just enough to validate RR 90.7 prerequisites before letting a player research one. Every unit upgrade (generic or faction-specific) uses this SAME color-count model — confirmed, no TI4 tech/unit-upgrade is ever gated behind owning one specific named tech instead. */
   unitUpgradeTechData: Record<UnitUpgradeId, { color: string | null; prerequisites: string[] }>;
   /** Every tech id that's a FACTION technology (data/factions/*.json's factionTechnologies) for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. */
   factionTechIds: Set<string>;
+  /** Same underlying data as factionTechIds above, but broken out per faction — needed for TE ENTROPIC SCAR's own "gain one of THEIR faction-specific technologies" status-phase action, which needs to know specifically which techs belong to the CURRENT player's own faction, not just whether a tech is "some faction's" in general. */
+  factionTechIdsByFaction: Record<FactionId, TechId[]>;
   /** RR 35: exploration card mechanics (data/explorationCards.json) — attach bonuses are structured (see that file's own note), but a plain one-time `effect` isn't applied, same deferred-content pattern as action/agenda cards. */
   explorationCards: Record<
     string,

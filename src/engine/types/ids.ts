@@ -35,6 +35,8 @@ const brand =
     value as Brand<T, B>;
 
 export const asPlayerId = brand<"PlayerId">();
+/** TE NEUTRAL UNITS: the one special pseudo-player id used for Fracture guardians — see GameState.ts's own Player.isNeutral doc comment for why this shares the real PlayerId type instead of a separate concept. */
+export const NEUTRAL_PLAYER_ID = asPlayerId("neutral");
 export const asFactionId = brand<"FactionId">();
 export const asSystemId = brand<"SystemId">();
 export const asPlanetId = brand<"PlanetId">();

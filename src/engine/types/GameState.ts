@@ -15,7 +15,7 @@ import {
   TechId,
   UnitUpgradeId,
 } from "./ids";
-import { AnomalyType, CommandPool, GameMode, ObjectiveKind, Phase, TacticalStep, UnitType, WormholeType } from "./enums";
+import { AnomalyType, CommandPool, GameMode, ObjectiveKind, Phase, TacticalStep, UnitType, WormholeType, ThunderEdgeExpeditionSliceCost } from "./enums";
 
 /**
  * A stack of same-type units belonging to one player in one location
@@ -58,8 +58,8 @@ export interface PlanetState {
    * them apart.
    */
   unitsByPlayer: Partial<Record<PlayerId, UnitStack[]>>;
-  /** TE p.11 COEXIST: a second player whose units coexist here without triggering combat. Null outside Thunder's Edge. */
-  coexistingPlayerId?: PlayerId | null;
+  /** TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): every OTHER player currently coexisting with this planet's own controller — confirmed to genuinely support more than 1 simultaneously (rule 10's own "start an additional ground combat against another coexisting player, if present"), so this is an array, not a single value. Empty/undefined outside a coexisting state. */
+  coexistingPlayerIds?: PlayerId[];
   /** TE space stations (p.10) act like planets but can't hold ground forces/structures; flag so invasion logic can reject commits here. */
   isSpaceStation?: boolean;
 }
@@ -78,6 +78,24 @@ export interface SystemState {
   egressToken?: boolean;
   /** Frontier token per PoK setup (RR "Frontier Tokens"); consumed on exploration. */
   frontierToken?: boolean;
+  /** TE The Fracture (rulebook p.9): true for the 3 off-map Fracture system tiles themselves — set once from tiles.json's own isFracture flag at game creation, never changes afterward. Also used by phases/expedition.ts's own completion check ("Thunder's Edge cannot be placed in The Fracture"). */
+  isFracture?: boolean;
+  /**
+   * TE INCURSION (Crimson Rebellion faction ability): "inactive" or
+   * "active" once a breach token has ever been placed here; undefined =
+   * no breach token at all. Systems that are both "active" are mutually
+   * adjacent to EACH OTHER (rules/adjacency.ts's own getAdjacentSystems
+   * reads this dynamically, same pattern as wormholes) — this applies
+   * for every player, not just the Rebellion, matching the ability's own
+   * unqualified wording ("systems that contain active breaches are
+   * adjacent"). Flipping active<->inactive and initial placement are
+   * both Crimson-Rebellion-specific triggers (INCURSION itself, and
+   * their own Resonance Generator breakthrough) — see
+   * phases/breaches.ts. Removal at the end of the status phase is
+   * available to ANY player with ships in an active-breach system, not
+   * Rebellion-specific.
+   */
+  breachState?: "inactive" | "active";
 }
 
 /** RR 19 / RR 18: a player's command token pools + tokens currently sitting on the board. */
@@ -151,6 +169,33 @@ export interface Player {
   /** Faction- or breakthrough-granted ability ids this player currently has, e.g. "genesis", "versatile", "red_yellow_synergy".
    *  This is the hook point for `player.hasAbility(id)` referenced throughout faction JSON. */
   abilityIds: AbilityId[];
+  /**
+   * TE Breakthroughs (yjmrobert.com/tirules/rules/r_breakthroughs, TE
+   * rulebook p.8): true once this player has actually gained their
+   * faction's breakthrough — most factions earn this mid-game (claiming
+   * a Thunder's Edge expedition slice, or a faction-specific trigger),
+   * NOT automatically from turn 1. rules/breakthroughs.ts's own
+   * grantBreakthrough is the one place this should ever flip to true.
+   * Gates whether RuleData.factions[factionId].breakthroughSynergy is
+   * actually applied anywhere (technology.ts's own checkTechPrerequisites,
+   * tech-color objective checks) — the data itself is always present per
+   * faction, but shouldn't count until earned.
+   */
+  hasBreakthrough?: boolean;
+  /**
+   * TE NEUTRAL UNITS (rulebook p.10): true only for the single, special
+   * "neutral" pseudo-player entry (see ids.ts's own NEUTRAL_PLAYER_ID)
+   * used to hold Fracture guardian units — never a real seat, never in
+   * seatOrder/turn rotation, never eliminated, never scores. Existing
+   * combat/reinforcement code can keep treating unitsByPlayer/
+   * spaceUnitsByPlayer entries under this id as "another player's units"
+   * without special-casing every call site (matches the rulebook's own
+   * "neutral units count as other players' units for the purpose of
+   * resolving players' abilities and other game effects" — there is,
+   * however, no real neutral PLAYER making decisions; the speaker
+   * decides for them, per phases/neutralUnits.ts's own rollForNeutralUnits).
+   */
+  isNeutral?: boolean;
   /**
    * RR "Capture": non-fighter ships and mechs this player has captured from
    * another player (e.g. via Vuil'Raith's own DEVOUR faction ability),
@@ -226,9 +271,35 @@ export interface GameState {
    */
   boardAdjacency: Record<SystemId, SystemId[]>;
   mecatolCustodiansRemoved: boolean; // RR 26: gates whether the agenda phase runs this round (RR 8.1)
+  /** TE Breakthroughs (rulebook p.8): once ANY player's breakthrough-gain triggers a die roll of 1 or 10, The Fracture comes into play — a shared, one-time, whole-game flag (not per-player), checked by rules/breakthroughs.ts's own grantBreakthrough before it bothers rolling again. */
+  fractureInPlay?: boolean;
+  /** RR (yjmrobert.com/tirules/rules/r_transactions): canonical pair keys ("playerA|playerB", sorted) of players who've already transacted this ACTION-PHASE turn — reset whenever activePlayerId changes (see actionPhase.ts's own advanceActivePlayer/maybeAdvanceActivePlayer). Not used during the agenda phase, which tracks its own separate allowance below. */
+  transactionsThisTurn?: string[];
+  /** RR (yjmrobert.com/tirules/rules/r_transactions): "while resolving each agenda... a player may perform one transaction with each other player" without needing to be neighbors — canonical pair keys, reset whenever a new agenda is revealed (including a discarded-and-replaced one, per the confirmed note that grants a fresh allowance then). */
+  transactionsThisAgenda?: string[];
+  /** TE The Fracture: set by phases/theFracture.ts's own setUpFractureOnEntry right when the Fracture comes into play, cleared once placeIngressTokens resolves the triggering player's own choice. synergyColors mirrors whatever that player's breakthrough synergy was AT THAT MOMENT (null if they have none), since that's what determines whether the 3-per-color or the 4-different-specialties path applies. */
+  pendingFractureIngressChoice?: { playerId: PlayerId; synergyColors: [string, string] | null };
 
   /** Which strategy card ids are still unclaimed in the common play area this round, and trade goods sitting on them (RR 73.2). */
   unclaimedStrategyCards: { cardId: StrategyCardId; tradeGoods: number }[];
+  /**
+   * TE Thunder's Edge Expedition (rulebook p.9): the planet itself begins
+   * the game off-board, on its own "expedition side" divided into 6
+   * slices, each with a distinct cost. Any player, at the end of their
+   * own turn, may claim ONE unclaimed slice by paying its cost — a
+   * player can claim several across a game, but never the same slice
+   * twice, and never re-claim one already taken by someone else. Their
+   * FIRST ever claim grants their faction's breakthrough (see
+   * rules/breakthroughs.ts's own grantBreakthrough). Once all 6 are
+   * claimed, the expedition is complete, and phases/expedition.ts's own
+   * completion logic takes over (flip to planet side, place it,
+   * determine how much infantry goes on it).
+   */
+  thunderEdgeExpedition: {
+    slicesClaimedBy: Partial<Record<ThunderEdgeExpeditionSliceCost, PlayerId>>;
+    /** Set once the 6th slice is claimed and the completion logic (flip + place + infantry) has fully resolved — after which no further claims are possible (there's nothing left to claim). */
+    completed: boolean;
+  };
   /** RR "Public Disgrace": which card the most recent CHOOSE_STRATEGY_CARD pick actually resolved to — read by playPublicDisgrace to know what to undo. Only meaningful while a "strategy_card_chosen" priority window is open; never read otherwise. */
   lastStrategyCardChoice?: { playerId: PlayerId; cardId: StrategyCardId; tradeGoodsGained: number };
   /** RR "Diplomatic Pressure" (yjmrobert.com/tirules/components/c_action_cards): "A player cannot play a second Diplomatic Pressure targeting the SAME player during the SAME agenda" — {casterId, targetPlayerId} pairs already used this agenda; reset every time a new agenda is revealed. */
@@ -552,6 +623,21 @@ export interface PendingTacticalAction {
    * time, independent of the order they were committed in.
    */
   remainingInvasionPlanetIds?: PlanetId[];
+  /** TE DUAL PLANET TRAITS (rulebook p.11): banks the committing player's own chosenTrait from COMMIT_GROUND_FORCES for a CONTESTED planet — control (and RR 25.1c's own automatic exploration) isn't actually established until combat concludes, potentially several rounds later, but the player already specified which trait they want right when they first committed, so there's no need to ask again at combat's end. Keyed by planetId since a player could be contesting more than one planet across the same invasion step. */
+  dualTraitChoices?: Partial<Record<PlanetId, "cultural" | "industrial" | "hazardous">>;
+  /**
+   * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
+   * players actively fighting the CURRENT ground combat on
+   * currentInvasionPlanetId — distinct from "everyone with ground forces
+   * on that planet" (playersWithGroundForces), since a 3rd (or more)
+   * coexisting party can be present on the SAME planet without being
+   * part of THIS specific fight. Set whenever a ground combat actually
+   * starts (startGroundCombat, initiateCoexistCombat); every combat-
+   * resolution function (buildGroundCombatEntries, wrapUpGroundCombat,
+   * the sole-survivor check) reads this pair instead of re-deriving
+   * combatants from scratch, so bystanders are never pulled in.
+   */
+  groundCombatParticipantIds?: [PlayerId, PlayerId];
   /** RR 44.2: true once the active player has signaled they're done committing ground forces this invasion step (FINISH_INVASION_COMMITS) — after that, no more COMMIT_GROUND_FORCES, and START_GROUND_COMBAT becomes available. */
   invasionCommitsFinished?: boolean;
   /**

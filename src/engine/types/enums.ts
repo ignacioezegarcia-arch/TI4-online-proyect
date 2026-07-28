@@ -122,3 +122,6 @@ export type ObjectiveKind = "publicI" | "publicII" | "secret" | "convertedFromSe
 
 /** RR 52.3: when an objective can be scored. */
 export type ObjectiveTiming = "actionPhase" | "statusPhase" | "agendaPhase";
+
+/** TE Thunder's Edge Expedition (rulebook p.9): the 6 distinct costs a player can pay to claim 1 of the expedition's 6 slices — each is its own separate slice, claimable by at most 1 player total across the whole game. */
+export type ThunderEdgeExpeditionSliceCost = "resources" | "action_cards" | "influence" | "secret_objective" | "tech_specialty_planet" | "trade_goods";
