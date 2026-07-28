@@ -15,6 +15,45 @@
         "name": "Mirage Flight Academy",
         "text": "Podés agotar esta carta al final de tu turno para colocar hasta 2 fighters de tus reservas en cualquier sistema que contenga 1 o más de tus naves."
       }
+    },
+    {
+      "id": "thunders_edge",
+      "name": "Thunder's Edge",
+      "resources": 0,
+      "influence": 0,
+      "traits": [],
+      "tech": [],
+      "isLegendary": false,
+      "source": "thundersEdgeExpedition",
+      "set": "thundersEdge",
+      "_note": "No es un planeta legendario ni tiene tile propio en el tablero — empieza la partida fuera del tablero, del lado 'expedición' (6 slices reclamables). Una vez reclamadas las 6, el jugador que reclamó la última la da vuelta al lado 'planeta' y la coloca en un sistema de su elección (sin planeta previo, sin supernova, sin wormhole impreso, y no dentro de La Fractura). Ver phases/expedition.ts. No tiene recursos/influencia propios impresos en el reglamento (0/0) ni ability card asociada — su valor viene de la infantería que se coloca ahí, no de recursos/influencia.",
+      "expedition": {
+        "slices": [
+          { "cost": "resources", "amount": 5 },
+          { "cost": "action_cards", "amount": 2 },
+          { "cost": "influence", "amount": 5 },
+          { "cost": "secret_objective", "amount": 1 },
+          { "cost": "tech_specialty_planet", "amount": 1 },
+          { "cost": "trade_goods", "amount": 3 }
+        ]
+      }
+    },
+    {
+      "id": "custodia_vigilia",
+      "name": "Custodia Vigilia",
+      "traits": [],
+      "tech": [],
+      "isLegendary": true,
+      "source": "keleresFactionTechOrBreakthrough",
+      "set": "codex3",
+      "_note": "No está en el tablero — no tiene sistema ni tile. Se gana agotada, vía la tecnología de facción I.I.H.Q. Modernization (Codex III) o el breakthrough del mismo nombre (Thunder's Edge). Sus stats de recursos/influencia difieren entre versiones — ver data/factions/keleres.json's own factionSpecificPlanets entry, que ya tiene el detalle completo (2/3 en Codex III, 2/2 en Thunder's Edge) y las 3 aclaraciones de FAQ. Esta entrada central solo referencia la existencia del planeta para que specialPlanets.json quede como el índice completo de 'planetas sin tile propio'; el detalle canónico sigue viviendo en el archivo de la facción.",
+      "resources": 2,
+      "influence": 3,
+      "legendaryAbility": {
+        "name": "Custodia Vigilia (ability card)",
+        "text": "Mientras controlás Mecatol Rex, gana SPACE CANNON 5 y Production 3. Ganás 2 command tokens cuando otro jugador gana un punto de victoria usando la segunda cláusula de \"Imperial\" (controlar Mecatol Rex) — no por anotar objetivos públicos con Imperial en juego."
+      }
     }
   ]
 }
+

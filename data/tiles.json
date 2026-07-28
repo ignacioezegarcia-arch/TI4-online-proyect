@@ -1186,13 +1186,15 @@
           "tech": []
         }
       ],
-      "anomalies": ["nebula"],
+      "anomalies": [
+        "nebula"
+      ],
       "wormholes": [],
       "isHomeSystem": true,
       "homeFaction": "empyrean"
     },
     {
-       "id": 57,
+      "id": 57,
       "name": "Naaz-rokha",
       "set": "pok",
       "tileColor": "green",
@@ -1218,7 +1220,7 @@
       "homeFaction": "naazrokha"
     },
     {
-       "id": 58,
+      "id": 58,
       "name": "Argent-Flight",
       "set": "pok",
       "tileColor": "green",
@@ -1755,7 +1757,9 @@
       "anomalies": [
         "asteroidField"
       ],
-      "wormholes": [ "alpha" ]
+      "wormholes": [
+        "alpha"
+      ]
     },
     {
       "id": 80,
@@ -1974,7 +1978,7 @@
       "isHomeSystem": true,
       "homeFaction": "ralnel"
     },
-     {
+    {
       "id": 94,
       "name": "The Sorrow / Crimson rebellion gate system",
       "set": "thundersEdge",
@@ -2011,46 +2015,44 @@
       "set": "thundersEdge",
       "tileColor": "green",
       "tileType": "dualHomeSystem",
-
       "currentSides": "firmament",
-
       "side": {
         "firmament": {
           "planets": [
-        {
-          "name": "Cronos",
-          "resources": 2,
-          "influence": 1,
-          "traits": [],
-          "tech": []
+            {
+              "name": "Cronos",
+              "resources": 2,
+              "influence": 1,
+              "traits": [],
+              "tech": []
+            },
+            {
+              "name": "Tallin",
+              "resources": 1,
+              "influence": 2,
+              "traits": [],
+              "tech": []
+            }
+          ]
         },
-        {
-          "name": "Tallin",
-          "resources": 1,
-          "influence": 2,
-          "traits": [],
-          "tech": []
-        }
-      ]
-      },
         "obsidian": {
           "planets": [
-        {
-          "name": "Cronos Hollow",
-          "resources": 3,
-          "influence": 0,
-          "traits": [],
-          "tech": []
-        },
-        {
-          "name": "Tallin Hollow",
-          "resources": 3,
-          "influence": 0,
-          "traits": [],
-          "tech": []
+            {
+              "name": "Cronos Hollow",
+              "resources": 3,
+              "influence": 0,
+              "traits": [],
+              "tech": []
+            },
+            {
+              "name": "Tallin Hollow",
+              "resources": 3,
+              "influence": 0,
+              "traits": [],
+              "tech": []
+            }
+          ]
         }
-      ]
-      }
       },
       "anomalies": [],
       "wormholes": [],
@@ -2203,7 +2205,7 @@
         "alpha"
       ]
     },
-     {
+    {
       "id": 103,
       "name": "Vira-Pics III",
       "set": "thundersEdge",
@@ -2602,24 +2604,23 @@
       "set": "thundersEdge",
       "tileColor": "fracture",
       "tileType": "multiHex",
-
       "hexes": [
         {
           "index": 1,
           "planets": [
-        {
-          "name": "Cocytus",
-          "resources": 3,
-          "influence": 0,
-          "traits": [],
-          "tech": [],
-          "specialRules": [
-            "When you gain control of this planet, gain 1 relic."
-          ]
-        }
+            {
+              "name": "Cocytus",
+              "resources": 3,
+              "influence": 0,
+              "traits": [],
+              "tech": [],
+              "specialRules": [
+                "When you gain control of this planet, gain 1 relic."
+              ]
+            }
           ],
-      "anomalies": [],
-      "wormholes": []
+          "anomalies": [],
+          "wormholes": []
         },
         {
           "index": 2,
@@ -2629,7 +2630,6 @@
           "egress": true
         }
       ],
-      
       "isOffMap": true,
       "isFracture": true,
       "neutralGuardians": {
@@ -2644,7 +2644,6 @@
       "set": "thundersEdge",
       "tileColor": "fracture",
       "tileType": "multiHex",
-
       "hexes": [
         {
           "index": 1,
@@ -2656,32 +2655,31 @@
         {
           "index": 2,
           "planets": [
-        {
-          "name": "Lethe",
-          "resources": 0,
-          "influence": 2,
-          "traits": [],
-          "tech": [],
-          "specialRules": [
-            "When you gain control of this planet, gain 1 relic."
-          ]
-        },
             {
-          "name": "Plegethon",
-          "resources": 1,
-          "influence": 2,
-          "traits": [],
-          "tech": [],
-          "specialRules": [
-            "When you gain control of this planet, gain 1 relic."
-          ]
-        }
+              "name": "Lethe",
+              "resources": 0,
+              "influence": 2,
+              "traits": [],
+              "tech": [],
+              "specialRules": [
+                "When you gain control of this planet, gain 1 relic."
+              ]
+            },
+            {
+              "name": "Plegethon",
+              "resources": 1,
+              "influence": 2,
+              "traits": [],
+              "tech": [],
+              "specialRules": [
+                "When you gain control of this planet, gain 1 relic."
+              ]
+            }
           ],
-      "anomalies": [],
-      "wormholes": []
+          "anomalies": [],
+          "wormholes": []
         }
       ],
-      
       "isOffMap": true,
       "isFracture": true,
       "neutralGuardians": {
@@ -2697,35 +2695,35 @@
       "set": "thundersEdge",
       "tileColor": "fracture",
       "tileType": "multiHex",
-
       "hexes": [
         {
           "index": 1,
           "planets": [],
           "anomalies": [],
-          "wormholes": []
+          "wormholes": [],
+          "egress": false
         },
         {
           "index": 2,
           "planets": [
-        {
-          "name": "Styx",
-          "resources": 4,
-          "influence": 0,
-          "traits": [],
-          "tech": [],
-          "isLegendary": true,
-          "legendaryAbility": {
-            "name": "A Song Like Marrow",
-            "effect": "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point."
-          },
-          "specialRules": [
-            "When you gain control of this planet, gain 1 relic."
-          ]
-        }
+            {
+              "name": "Styx",
+              "resources": 4,
+              "influence": 0,
+              "traits": [],
+              "tech": [],
+              "isLegendary": true,
+              "legendaryAbility": {
+                "name": "A Song Like Marrow",
+                "effect": "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point."
+              },
+              "specialRules": [
+                "When you gain control of this planet, gain 1 relic."
+              ]
+            }
           ],
-      "anomalies": [],
-      "wormholes": []
+          "anomalies": [],
+          "wormholes": []
         },
         {
           "index": 3,
