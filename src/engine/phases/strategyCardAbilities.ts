@@ -9,6 +9,7 @@ import { scoreObjectiveCore } from "./actionPhase";
 import { maybeApplyMinisterOfCommerce, getLawOwner, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
 import { checkReinforcementsAvailable, COMMAND_TOKEN_TOTAL_SUPPLY } from "../rules/reinforcements";
+import { effectiveCommoditiesMax } from "../rules/spaceStations";
 
 /**
  * RR 20-ish, one section per strategy card (data/strategyCards.json has the
@@ -209,7 +210,7 @@ function resolveStrategyPrimaryEffect(
     case "trade": {
       const chosenIds = (p.chosenPlayerIds as PlayerId[]) ?? [];
       const factionId = player.factionId;
-      const max = rules.factions[factionId]?.commoditiesMax ?? 0;
+      const max = effectiveCommoditiesMax(state, action.playerId, rules.factions[factionId]?.commoditiesMax ?? 0);
       let next: GameState = {
         ...state,
         players: {
@@ -221,7 +222,7 @@ function resolveStrategyPrimaryEffect(
       for (const otherId of chosenIds) {
         const other = next.players[otherId];
         if (!other || other.eliminated) continue;
-        const otherMax = rules.factions[other.factionId]?.commoditiesMax ?? 0;
+        const otherMax = effectiveCommoditiesMax(next, otherId, rules.factions[other.factionId]?.commoditiesMax ?? 0);
         next = { ...next, players: { ...next.players, [otherId]: { ...other, commodities: otherMax } } };
         next = maybeApplyMinisterOfCommerce(next, rules, otherId);
         // RR 92.4b: a player chosen this way can only use the secondary
@@ -411,7 +412,7 @@ function resolveStrategySecondaryEffect(
       return placeStructuresFree(withToken, action.playerId, [placement], rules);
     }
     case "trade": {
-      const max = rules.factions[charged.factionId]?.commoditiesMax ?? 0;
+      const max = effectiveCommoditiesMax(working, action.playerId, rules.factions[charged.factionId]?.commoditiesMax ?? 0);
       const next: GameState = { ...working, players: { ...working.players, [action.playerId]: { ...charged, commodities: max } } };
       return { ok: true, state: maybeApplyMinisterOfCommerce(next, rules, action.playerId), events: [] };
     }
@@ -493,6 +494,8 @@ function placeStructuresFree(
     const [systemId, system] = entry;
     const planet = system.planets.find((p) => p.planetId === planetId)!;
     if (planet.controllerId !== playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    // TE SPACE STATIONS (rulebook p.10): "structures and ground forces cannot be placed on or committed to space stations."
+    if (planet.isSpaceStation) return { ok: false, error: "TE SPACE STATIONS: no structures can be placed on a space station." };
 
     // RR 85.4/85.5: at most 1 space dock and 2 PDS per planet, counting
     // ALL players' units there together — same limit (and the same RR

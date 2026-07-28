@@ -1,21 +1,23 @@
 import { GameState, PendingTacticalAction, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId, asTechId } from "../types/ids";
+import { PlayerId, SystemId, asTechId, NEUTRAL_PLAYER_ID } from "../types/ids";
 import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { isAdjacent, maybeActivateWormholeNexus } from "../rules/adjacency";
-import { canShipEnterTile } from "../rules/anomalies";
+import { canShipEnterTile, hasEntropicScar } from "../rules/anomalies";
 import { getEffectiveUnitAbilities, maybeApplyShardOfTheThroneOnCombatWin, maybeQueueCrownOfThalnosReroll } from "./agendaEffects";
 import {
   playersWithShipsInSystem,
   buildSpaceCombatEntries,
   resolveCombatRound,
   applyHitAssignments,
+  computeNeutralHitAssignments,
   applySelfAssemblyRoutinesMechBonus,
   getAntiFighterBarrageParticipants,
   buildAntiFighterBarrageEntries,
 } from "../rules/combat";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
+import { resolveSpaceStationControl } from "../rules/spaceStations";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 
 /** Called at every point in this file where pendingTacticalAction might have JUST landed on a genuine "a combat round begins now" state (round 1 after Assault Cannon/AFB have both already resolved or never triggered at all, OR round N+1 right after the previous round wrapped up) — opens the RR 1.19 "combat_round_start" priority window (see rules/priorityWindow.ts) for the (exactly 2, per this project's own combat-participant limitation) combatants, active-player-first. A safe no-op if we're not actually at a fresh round start yet (still mid-AFB/Assault-Cannon, or combat already ended and moved to "invasion"), or if a window is somehow already open. */
@@ -266,7 +268,10 @@ export function assignAntiFighterBarrageHits(
   const player = state.players[action.playerId];
   const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  // TE NEUTRAL UNITS: same fixed-priority-order reasoning as everywhere else this project computes hit assignments for the neutral pseudo-player.
+  const afbAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
+
+  const result = applyHitAssignments(state, stacks, afbAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
   if (!result.ok) return { ok: false, error: `RR 67.1: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -318,6 +323,7 @@ function beginCombatRoundsAfterAFB(state: GameState, rules: RuleData): { state: 
     const winnerId = survivors[0] ?? null;
     let nextState = state;
     if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
+    nextState = resolveSpaceStationControl(nextState, systemId);
     nextState = { ...nextState, pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" } };
     nextState = winnerId ? openSpaceCombatWonWindowIfNeeded(nextState, winnerId) : openInvasionStartWindowIfNeeded(nextState);
     return { state: nextState, events: [{ type: "SPACE_COMBAT_ENDED", systemId, survivingPlayerId: winnerId }] };
@@ -496,7 +502,10 @@ export function assignHits(
   const player = state.players[action.playerId];
   const stacks = (system.spaceUnitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  // TE NEUTRAL UNITS: see phases/invasion.ts's own assignGroundCombatHits for the identical fixed-priority-order reasoning — same mechanic, space combat side.
+  const spaceAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
+
+  const result = applyHitAssignments(state, stacks, spaceAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
   if (!result.ok) return { ok: false, error: `RR 67.6: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -650,6 +659,7 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
   if (survivors.length <= 1) {
     const winnerId = survivors[0] ?? null;
     if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
+    nextState = resolveSpaceStationControl(nextState, systemId);
 
     // RR 16.3/78.10a: the winner's own surviving ships might have less
     // combined capacity now than before this combat (some destroyed),
@@ -758,6 +768,12 @@ export function moveAllShips(state: GameState, fromSystemId: SystemId, toSystemI
       players: { ...nextState.players, [playerId]: { ...player, commandTokens: { ...player.commandTokens, onBoard: [...player.commandTokens.onBoard, toSystemId] } } },
     };
   }
+
+  // TE SPACE STATIONS: same sole-ship-owner control check as normal
+  // movement — this function is used for retreats and Ghost-Ship-style
+  // effects, which can just as easily leave a system down to 1 owner.
+  nextState = resolveSpaceStationControl(nextState, fromSystemId);
+  nextState = resolveSpaceStationControl(nextState, toSystemId);
 
   return { state: nextState, events };
 }

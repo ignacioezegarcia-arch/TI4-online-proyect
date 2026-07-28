@@ -61,7 +61,8 @@ export function advanceActivePlayer(state: GameState): GameState {
   for (let i = 1; i <= order.length; i++) {
     const candidate = order[(currentIndex + i) % order.length];
     if (!state.players[candidate].hasPassed) {
-      return { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0 };
+      // RR (yjmrobert.com/tirules/rules/r_transactions): the "1 per neighbor" transaction allowance is scoped to "the active player's turn" — a fresh turn starting (a new active player) resets it.
+      return { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0, transactionsThisTurn: undefined };
     }
   }
   return { ...state, activePlayerId: null };

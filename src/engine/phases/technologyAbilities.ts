@@ -481,7 +481,7 @@ export function useTransitDiodes(
 /** RR "Scanlink Drone Network": when activating a system, explore 1 planet there that has this player's own units on it — independent of RR 35's normal "just gained control" trigger, and independent of whether it's already been explored. Not exhaustable — repeatable every tactical action. */
 export function useScanlinkDroneNetwork(
   state: GameState,
-  action: { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId },
+  action: { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" },
   rules: RuleData,
 ): ActionResult {
   if (!hasPoKContent(state.mode)) {
@@ -503,7 +503,17 @@ export function useScanlinkDroneNetwork(
   if (!hasUnitsHere) return { ok: false, error: "This player has no units on that planet." };
 
   const planetData = rules.planets[action.planetId];
-  const trait = planetData?.traits[0] as "cultural" | "industrial" | "hazardous" | undefined;
+  const traits = (planetData?.traits ?? []) as ("cultural" | "industrial" | "hazardous")[];
+  // TE DUAL PLANET TRAITS (rulebook p.11): same "choose which trait" requirement as phases/exploration.ts's own explorePlanet.
+  let trait: "cultural" | "industrial" | "hazardous" | undefined;
+  if (traits.length === 1) {
+    trait = traits[0];
+  } else if (traits.length > 1) {
+    if (!action.chosenTrait || !traits.includes(action.chosenTrait)) {
+      return { ok: false, error: `TE DUAL PLANET TRAITS: ${action.planetId} has multiple traits (${traits.join("/")}) — chosenTrait must specify which one.` };
+    }
+    trait = action.chosenTrait;
+  }
   if (!trait) return { ok: false, error: `RR 35: ${action.planetId} has no trait and can't be explored.` };
 
   const deck = state.explorationDecks?.[trait] ?? [];

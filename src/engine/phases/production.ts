@@ -5,6 +5,7 @@ import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
+import { hasEntropicScar } from "../rules/anomalies";
 import { getEffectiveProducesQuantity, isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
@@ -86,6 +87,14 @@ export function executeProduction(
   }
   if (isDemilitarizedZone(planet)) {
     return { ok: false, error: 'RR "Demilitarized Zone": units cannot be produced on this planet.' };
+  }
+  // TE SPACE STATIONS (rulebook p.10): "structures and ground forces cannot be placed on or committed to space stations."
+  if (planet.isSpaceStation && units.some(({ count }) => count > 0)) {
+    return { ok: false, error: "TE SPACE STATIONS: no units of any kind can be placed on a space station." };
+  }
+  // TE ENTROPIC SCAR (rulebook p.11): Production "cannot be used by or against units inside of an entropic scar."
+  if (hasEntropicScar(system.anomalies) && units.some(({ count }) => count > 0)) {
+    return { ok: false, error: "TE ENTROPIC SCAR: Production cannot be used inside an entropic scar." };
   }
 
   // RR 14 "Blockaded": a Production-capable unit is blockaded if it's in a

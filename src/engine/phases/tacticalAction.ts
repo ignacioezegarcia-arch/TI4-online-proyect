@@ -5,6 +5,7 @@ import { STRUCTURE_TYPES, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums"
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
+import { resolveSpaceStationControl } from "../rules/spaceStations";
 import { usesCodex4Version } from "../rules/gameMode";
 import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
 import { maybeReturnCapturedUnitsOnBlockade } from "../rules/capture";
@@ -323,6 +324,17 @@ export function moveShips(
           : { ...pending, step: "invasion" },
   };
   workingState = openInvasionStartWindowIfNeeded(openCombatRoundStartWindowIfNeeded(workingState));
+
+  // TE SPACE STATIONS: check every system this move touched — the
+  // destination (where a player could newly become the sole ship-owner)
+  // and every origin (where departing ships could leave exactly 1 other
+  // owner behind) — for a fresh sole-owner control gain. A no-op
+  // wherever there's no space station planet, or no exactly-1-owner
+  // situation.
+  const touchedSystemIds = new Set([activeSystemId, ...action.moves.map((m) => m.fromSystemId)]);
+  for (const touchedSystemId of touchedSystemIds) {
+    workingState = resolveSpaceStationControl(workingState, touchedSystemId);
+  }
 
   return {
     ok: true,

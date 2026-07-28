@@ -24,12 +24,22 @@ import { fisherYatesShuffle } from "../setup/mapGeneration";
  * stay with the player/planet instead, same as the physical cards would.
  *
  * NOT implemented, flagged rather than silently wrong:
- *  - RR 35's exact timing (must explore immediately on gaining control,
- *    choose order if multiple at once) isn't enforced — EXPLORE_PLANET is
- *    legal any time the planet is controlled and unexplored.
+ *  - RR 35's own "choose order if multiple explorations happen at once" isn't enforced.
  *  - Frontier tokens' OTHER trigger condition (moving a ship into a system
  *    with a frontier token and no other players' ships) isn't validated —
  *    EXPLORE_FRONTIER just checks the token is there.
+ *
+ * RR 25.1c automatic exploration (the ONLY way a planet is explored per
+ * the actual rules — "when a player takes control of a planet that is
+ * not already controlled by another player, they explore that planet")
+ * lives in phases/invasion.ts's own setPlanetController, not here. There
+ * is no standalone "explore an already-controlled-but-unexplored
+ * planet" action — that scenario doesn't exist in the rules; a
+ * controlled planet is always either already explored (control gained
+ * from another player, or re-explored via a specific ability like
+ * Scanlink Drone Network below) or gets explored automatically the
+ * instant control is first established. An EXPLORE_PLANET action used
+ * to exist here representing that non-existent scenario; removed.
  */
 
 /** RR 35.7a: pop the top card of this exploration deck, reshuffling its own discard pile into a fresh deck first if it's empty — same shared shape as phases/actionCards.ts's drawActionCard. Exported so phases/technologyAbilities.ts's Scanlink Drone Network can reuse the exact same reshuffle-aware draw. */
@@ -43,56 +53,6 @@ export function drawExplorationCard(deck: ExplorationCardId[], discardPile: Expl
   if (workingDeck.length === 0) return { deck: workingDeck, discardPile: workingDiscard, drawn: null };
   const [drawn, ...rest] = workingDeck;
   return { deck: rest, discardPile: workingDiscard, drawn };
-}
-
-export function explorePlanet(
-  state: GameState,
-  action: { type: "EXPLORE_PLANET"; playerId: PlayerId; planetId: PlanetId },
-  rules: RuleData,
-): ActionResult {
-  if (!hasPoKContent(state.mode)) {
-    return { ok: false, error: "RR 35: Exploration is a Prophecy of Kings mechanic, not available without Prophecy of Kings + Codex content (base-only or Thunder's-Edge-only games)." };
-  }
-  const entry = Object.entries(state.systems).find(([, s]) => s.planets.some((p) => p.planetId === action.planetId));
-  if (!entry) return { ok: false, error: `No planet ${action.planetId} on the board.` };
-  const [systemId, system] = entry;
-  const planet = system.planets.find((p) => p.planetId === action.planetId)!;
-
-  if (planet.controllerId !== action.playerId) {
-    return { ok: false, error: `RR 35: this player doesn't control ${action.planetId}.` };
-  }
-  if (planet.explored) {
-    return { ok: false, error: `RR 35: ${action.planetId} has already been explored.` };
-  }
-
-  const planetData = rules.planets[action.planetId];
-  const trait = planetData?.traits[0] as "cultural" | "industrial" | "hazardous" | undefined;
-  if (!trait) {
-    return { ok: false, error: `RR 35: ${action.planetId} has no trait and can't be explored.` };
-  }
-
-  const deck = state.explorationDecks?.[trait] ?? [];
-  const discardPile = state.explorationDiscardPiles?.[trait] ?? [];
-  let nextState: GameState = state;
-  const events: GameEvent[] = [];
-
-  const drawResult = drawExplorationCard(deck, discardPile);
-  if (drawResult.drawn) {
-    const cardId = drawResult.drawn;
-    const result = applyExplorationCard(state, action.playerId, systemId as SystemId, action.planetId, cardId, rules);
-    nextState = result.state;
-    events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: trait });
-    const card = rules.explorationCards[cardId];
-    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea;
-    nextState = {
-      ...nextState,
-      explorationDecks: { ...nextState.explorationDecks!, [trait]: drawResult.deck },
-      explorationDiscardPiles: { ...nextState.explorationDiscardPiles, [trait]: goesToDiscard ? [...drawResult.discardPile, cardId] : drawResult.discardPile } as GameState["explorationDiscardPiles"],
-    };
-  }
-
-  nextState = setExplored(nextState, systemId as SystemId, action.planetId);
-  return { ok: true, state: nextState, events };
 }
 
 export function exploreFrontier(

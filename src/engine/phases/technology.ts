@@ -51,7 +51,7 @@ export function researchTechnology(
     const specialtyResult = exhaustTechSpecialtyPlanet(workingState, playerId, planetId, rules);
     if (!specialtyResult.ok) return specialtyResult;
     workingState = specialtyResult.state;
-    ignoreColors.push(specialtyResult.color);
+    ignoreColors.push(...specialtyResult.colors);
   }
 
   const prereqCheck = checkTechPrerequisites(workingState, playerId, techId, rules, ignoreColors);
@@ -68,13 +68,24 @@ export function researchTechnology(
   return { ok: true, state: nextState, events: [] };
 }
 
-/** RR 90.13-90.15: validates + exhausts a controlled planet with a technology specialty (the planet's own normal exhausted state — NOT a separate attachment-style one, per RR 90.15's own "if the planet card is already exhausted, it cannot be used" wording), returning which color's prerequisite it ignores. If a planet has more than one specialty, the caller's own choice isn't offered separately here — the first specialty found is used (flagged simplification; no current planet in this project's data has more than one). */
+/**
+ * RR 90.13-90.15: validates + exhausts a controlled planet with a
+ * technology specialty (the planet's own normal exhausted state — NOT a
+ * separate attachment-style one, per RR 90.15's own "if the planet card
+ * is already exhausted, it cannot be used" wording), returning EVERY
+ * color specialty it has (usually just 1). TE DUAL SPECIALTIES
+ * (rulebook p.11): "these planets can be exhausted... to satisfy either
+ * or both prerequisites simultaneously" — so a dual-specialty planet
+ * contributes BOTH of its colors' worth of ignore-a-prerequisite at
+ * once, from this single exhaust. Previously only the first-found
+ * specialty was used at all; fixed.
+ */
 function exhaustTechSpecialtyPlanet(
   state: GameState,
   playerId: PlayerId,
   planetId: PlanetId,
   rules: RuleData,
-): { ok: true; state: GameState; color: string } | { ok: false; error: string } {
+): { ok: true; state: GameState; colors: string[] } | { ok: false; error: string } {
   const entry = Object.entries(state.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
   const planet = entry?.[1].planets.find((p) => p.planetId === planetId);
   if (!planet) return { ok: false, error: `No planet ${planetId}.` };
@@ -89,7 +100,7 @@ function exhaustTechSpecialtyPlanet(
     ...state,
     systems: { ...state.systems, [systemId]: { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } },
   };
-  return { ok: true, state: nextState, color: specialties[0] };
+  return { ok: true, state: nextState, colors: specialties };
 }
 
 /** RR "Research Team" (any color): validates + exhausts the given planet's own attachment card, returning which color's prerequisite it ignores. Shared by researchTechnology/researchUnitUpgrade below. */
@@ -131,7 +142,11 @@ export function checkTechPrerequisites(
 ): { met: boolean; reason?: string } {
   const techData = rules.technologies[techId];
   if (!techData) return { met: false, reason: `No rule data for ${techId}.` };
-  const synergy = rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null;
+  // TE Breakthroughs: the synergy pair is always present in RuleData for
+  // any faction that has one, but doesn't actually apply until this
+  // specific player has earned their breakthrough (rules/breakthroughs.ts's
+  // own grantBreakthrough) — a fresh game shouldn't get synergy for free.
+  const synergy = state.players[playerId]?.hasBreakthrough ? (rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null) : null;
   return checkPrerequisitesAgainst(techData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreColors);
 }
 
@@ -176,7 +191,7 @@ export function researchUnitUpgrade(
     const specialtyResult = exhaustTechSpecialtyPlanet(workingState, playerId, planetId, rules);
     if (!specialtyResult.ok) return specialtyResult;
     workingState = specialtyResult.state;
-    ignoreColors.push(specialtyResult.color);
+    ignoreColors.push(...specialtyResult.colors);
   }
 
   const prereqCheck = checkUnitUpgradePrerequisites(workingState, playerId, upgradeId, rules, ignoreColors);
@@ -220,7 +235,7 @@ export function checkUnitUpgradePrerequisites(
     if (anyoneOwnsWarSun) return { met: true };
   }
 
-  const synergy = rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null;
+  const synergy = state.players[playerId]?.hasBreakthrough ? (rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null) : null;
   return checkPrerequisitesAgainst(upgradeData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreColors);
 }
 

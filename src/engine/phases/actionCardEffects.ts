@@ -15,6 +15,7 @@ import { checkReinforcementsAvailable, commandTokensAvailableInReinforcements, p
 import { moveAllShips, announceRetreat } from "./spaceCombat";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { isPlayersTurnInWindow, advancePriorityWindowAfterAction, actionPhaseWindowOrder } from "../rules/priorityWindow";
+import { effectiveCommoditiesMax } from "../rules/spaceStations";
 
 /**
  * RR 2 ACTION CARDS — individual card effects.
@@ -878,7 +879,7 @@ export function playSeizeArtifact(
 /** RR "Archaeological Expedition": reveal the top 3 cards of the exploration deck matching a trait this player controls a planet of; gain any relic fragments among them (same key-mapping as phases/exploration.ts's own applyExplorationCard), discard the rest. Deliberately does NOT call applyExplorationCard for the whole draw — the printed card only ever grants fragments or discards, it never resolves an "attach"/"keep in play area" card's own effect the way a normal RR 35 explore would. */
 export function playArchaeologicalExpedition(
   state: GameState,
-  action: { type: "PLAY_ARCHAEOLOGICAL_EXPEDITION"; playerId: PlayerId; planetId: PlanetId },
+  action: { type: "PLAY_ARCHAEOLOGICAL_EXPEDITION"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" },
   rules: RuleData,
 ): ActionResult {
   const played = playCard(state, action.playerId, "archaeological_expedition");
@@ -887,7 +888,17 @@ export function playArchaeologicalExpedition(
   const found = findPlanet(played.state, action.planetId);
   if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
   if (found.planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
-  const trait = rules.planets[action.planetId]?.traits[0] as "cultural" | "industrial" | "hazardous" | undefined;
+  // TE DUAL PLANET TRAITS (rulebook p.11): same "choose which trait" requirement as a normal RR 35 explore — see phases/exploration.ts's own explorePlanet for the identical logic.
+  const traits = (rules.planets[action.planetId]?.traits ?? []) as ("cultural" | "industrial" | "hazardous")[];
+  let trait: "cultural" | "industrial" | "hazardous" | undefined;
+  if (traits.length === 1) {
+    trait = traits[0];
+  } else if (traits.length > 1) {
+    if (!action.chosenTrait || !traits.includes(action.chosenTrait)) {
+      return { ok: false, error: `TE DUAL PLANET TRAITS: ${action.planetId} has multiple traits (${traits.join("/")}) — chosenTrait must specify which one.` };
+    }
+    trait = action.chosenTrait;
+  }
   if (!trait) return { ok: false, error: `${action.planetId} has no trait; no matching exploration deck.` };
 
   let deck = played.state.explorationDecks?.[trait] ?? [];
@@ -2391,7 +2402,7 @@ export function playHarnessEnergy(
   const played = playCard(state, action.playerId, "harness_energy");
   if (!played.ok) return played;
 
-  const commodityMax = rules.factions[played.player.factionId]?.commoditiesMax ?? 0;
+  const commodityMax = effectiveCommoditiesMax(played.state, action.playerId, rules.factions[played.player.factionId]?.commoditiesMax ?? 0);
   const updatedPlayer: Player = { ...played.player, commodities: commodityMax };
   const nextState = advancePriorityWindowAfterAction({ ...played.state, players: { ...played.state.players, [action.playerId]: updatedPlayer } }, action.playerId);
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("harness_energy") }] };

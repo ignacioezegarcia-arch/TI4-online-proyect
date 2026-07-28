@@ -130,6 +130,7 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
       pendingAgendaVote,
       pendingPriorityWindow: priorityOrder.length > 0 ? { kind: "agenda_revealed", order: priorityOrder, currentIndex: 0, consecutivePasses: 0 } : null,
       diplomaticPressureUsedThisAgenda: undefined,
+      transactionsThisAgenda: undefined,
     },
     events: [{ type: "AGENDA_REVEALED", agendaId }],
   };
@@ -200,6 +201,8 @@ export function castVotes(
       return { ok: false, error: `This player doesn't control ${planetId}.` };
     }
     if (planet.exhausted) return { ok: false, error: `${planetId} is already exhausted.` };
+    // TE SPACE STATIONS (rulebook p.10): "they do not count as planets for the purpose of voting" — their influence value can't be spent to cast votes, even though it's spendable for other purposes (Trade, Harness Energy, etc.).
+    if (planet.isSpaceStation) return { ok: false, error: "TE SPACE STATIONS: a space station's influence cannot be used to cast votes." };
     const planetData = rules.planets[planetId];
     if (!planetData) return { ok: false, error: `No static influence data for ${planetId}.` };
     votes += planetData.influence;
@@ -495,6 +498,7 @@ export function finalizeAgendaResolution(
         agendaPhaseAgendasResolved: Math.max(0, (nextState.agendaPhaseAgendasResolved ?? 0) - 1),
         pendingAgendaVote: { agendaId: electedLawId, votingOrder, nextVoterIndex: 0, votesByOutcome: {} },
         diplomaticPressureUsedThisAgenda: undefined,
+      transactionsThisAgenda: undefined,
       };
       return { state: nextState, events: [...events, { type: "AGENDA_REVEALED", agendaId: electedLawId }] };
     }

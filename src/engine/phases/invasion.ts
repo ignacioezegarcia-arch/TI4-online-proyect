@@ -1,6 +1,6 @@
 import { GameState, Player, PlanetState, SystemState, UnitStack } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId, PlanetId, AgendaId, asTechId } from "../types/ids";
+import { PlayerId, SystemId, PlanetId, AgendaId, asTechId, asAbilityId, NEUTRAL_PLAYER_ID } from "../types/ids";
 import { UnitType, STRUCTURE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { usesCodex4Version, hasPoKContent } from "../rules/gameMode";
@@ -13,11 +13,14 @@ import {
   buildSpaceCannonDefenseEntries,
   resolveCombatRound,
   applyHitAssignments,
+  computeNeutralHitAssignments,
   applySelfAssemblyRoutinesMechBonus,
   planetHasShield,
 } from "../rules/combat";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
+import { hasEntropicScar } from "../rules/anomalies";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
+import { hasAbility } from "../rules/abilities";
 
 /**
  * RR 78 STEP 4 — INVASION (RR 44).
@@ -64,6 +67,17 @@ export function bombard(
     diceRolls: number[];
     /** RR "Plasma Scoring": which Bombardment-capable unit type gets the +1 die, if the player owns the tech and this matters (2+ qualifying types with different hitOn values) — see buildBombardmentEntries' own note. Ignored otherwise. */
     plasmaScoringUnitType?: import("../types/enums").UnitType;
+    /**
+     * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): when the
+     * target planet has more than 1 defender (a coexisting pair), the
+     * attacker chooses — independently, PER bombarding unit TYPE, in this
+     * SAME roll — which defender's forces that unit type's hits are
+     * assigned against. Unused/surplus hits from a unit type's own choice
+     * are NOT transferable to a different defender. Required whenever
+     * there's more than 1 defender; ignored (single implicit target)
+     * otherwise.
+     */
+    targetPlayerIdByUnitType?: Partial<Record<import("../types/enums").UnitType, PlayerId>>;
   },
   rules: RuleData,
 ): ActionResult {
@@ -86,22 +100,28 @@ export function bombard(
   const planet = system.planets.find((p) => p.planetId === action.targetPlanetId);
   if (!planet) return { ok: false, error: `No planet ${action.targetPlanetId} in ${systemId}.` };
 
+  // TE ENTROPIC SCAR (rulebook p.11): Bombardment "cannot be used by or against units inside of an entropic scar."
+  if (hasEntropicScar(system.anomalies)) {
+    return { ok: false, error: "TE ENTROPIC SCAR: Bombardment cannot be used inside an entropic scar." };
+  }
+
   const defenders = playersWithGroundForces(planet).filter((p) => p !== action.playerId);
   if (defenders.length === 0) {
     return { ok: false, error: "RR 44.1: no other player's ground forces on this planet to bombard." };
   }
-  if (defenders.length > 1) {
-    return { ok: false, error: "RR 44.1: multiple defending players on one planet isn't supported yet." };
-  }
-  const defenderId = defenders[0];
-  const defenderPlayer = state.players[defenderId];
+  // For the Planetary Shield / Conventions of War checks below (both are
+  // per-PLANET, not per-defender) any 1 defender works to look up the
+  // planet's controller-adjacent state — those checks don't vary by which
+  // coexisting defender is chosen.
+  const primaryDefenderId = defenders[0];
+  const defenderPlayer = state.players[primaryDefenderId];
 
   // RR 65.3: if the bombarding player has a war sun in this system, Planetary Shield is ignored entirely — see planetHasShield's own note.
   const attackerHasWarSunInSystem = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.unitType === "war_sun" && s.count > 0);
   // "Disable": this attacker's opponents' PDS units lose Planetary Shield (and Space Cannon, checked separately in Space Cannon Defense) for the rest of this invasion.
   const disableActive = pending.disablePlayerId === action.playerId;
 
-  if (!disableActive && planetHasShield(planet, defenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules, attackerHasWarSunInSystem)) {
+  if (!disableActive && planetHasShield(planet, primaryDefenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules, attackerHasWarSunInSystem)) {
     return { ok: false, error: `RR 15/44.1: ${action.targetPlanetId} has Planetary Shield — Bombardment can't target it.` };
   }
   // RR "Conventions of War" ("for"): Bombardment can't target units on a cultural planet while this law is active.
@@ -113,20 +133,55 @@ export function bombard(
   if (entries.length === 0) {
     return { ok: false, error: "RR 44.1: this player has no Bombardment-capable units in this system." };
   }
+  if (entries.reduce((sum, e) => sum + e.diceCount, 0) !== action.diceRolls.length) {
+    return { ok: false, error: "RR 44.1: diceRolls length must match this player's total Bombardment dice count." };
+  }
+
+  // TE COEXIST: resolve each entry's OWN target (same roll, no repeated
+  // bombarding) — single-defender case needs no per-unit-type choice at
+  // all; the coexisting case requires one, entry by entry.
+  const entryTargets: PlayerId[] = [];
+  if (defenders.length === 1) {
+    for (const _e of entries) entryTargets.push(defenders[0]);
+  } else {
+    for (const e of entries) {
+      const target = e.unitType ? action.targetPlayerIdByUnitType?.[e.unitType] : undefined;
+      if (!target || !defenders.includes(target)) {
+        return { ok: false, error: `TE COEXIST: multiple defenders here (coexisting) — targetPlayerIdByUnitType must specify a valid defender for ${e.unitType ?? "this unit type"}.` };
+      }
+      entryTargets.push(target);
+    }
+  }
+
+  // Slice the flat diceRolls per entry (same "iterate stacks in order" convention this project's own BOMBARD action doc comment already establishes), then group by chosen target so each coexisting defender's own hits are resolved independently — a unit type's own unused/surplus hits never carry over to a different defender, since each target's own resolveCombatRound call only ever sees the entries actually aimed at it.
+  const hitsByTarget: Record<string, number> = {};
+  for (const target of new Set(entryTargets)) {
+    const targetEntries: typeof entries = [];
+    const targetDice: number[] = [];
+    let offset = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const entryDice = action.diceRolls.slice(offset, offset + entries[i].diceCount);
+      if (entryTargets[i] === target) {
+        targetEntries.push(entries[i]);
+        targetDice.push(...entryDice);
+      }
+      offset += entries[i].diceCount;
+    }
+    let result;
+    try {
+      result = resolveCombatRound(targetEntries, targetDice);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    hitsByTarget[target] = result.hitsScoredByPlayer[action.playerId] ?? 0;
+  }
+
   // "Bunker"/"Blitz" timing: this invasion step has now definitively started, whether or not this roll scores a hit.
   const state1: GameState = { ...state, pendingTacticalAction: { ...pending, invasionStepStarted: true } };
 
-  let result;
-  try {
-    result = resolveCombatRound(entries, action.diceRolls);
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-
-  const hits = result.hitsScoredByPlayer[action.playerId] ?? 0;
-  const events: GameEvent[] = [
-    { type: "BOMBARDMENT_RESOLVED", playerId: action.playerId, systemId, planetId: action.targetPlanetId, hits },
-  ];
+  const events: GameEvent[] = Object.entries(hitsByTarget).map(
+    ([defenderId, hits]): GameEvent => ({ type: "BOMBARDMENT_RESOLVED", playerId: action.playerId, systemId, planetId: action.targetPlanetId, hits, targetPlayerId: defenderId as PlayerId }),
+  );
 
   // RR "X-89 Bacterial Weapon" ΩΩ (Codex 4): "exhaust each planet you use
   // Bombardment against" — ALWAYS, on every bombardment roll, whether or
@@ -136,8 +191,14 @@ export function bombard(
     usesCodex4Version(state.mode) && state.players[action.playerId]?.technologies.includes(asTechId("x89_bacterial_weapon"));
   const stateWithPlanetExhaust = shouldExhaustTargetPlanet && !planet.exhausted ? setPlanetExhausted(state1, systemId, action.targetPlanetId) : state1;
 
-  if (hits === 0) {
+  const totalHits = Object.values(hitsByTarget).reduce((sum, h) => sum + h, 0);
+  if (totalHits === 0) {
     return { ok: true, state: stateWithPlanetExhaust, events };
+  }
+
+  const pendingHitsUpdate: Record<string, number> = {};
+  for (const [defId, hits] of Object.entries(hitsByTarget)) {
+    if (hits > 0) pendingHitsUpdate[defId] = hits;
   }
 
   const nextState: GameState = {
@@ -146,7 +207,7 @@ export function bombard(
       ...pending,
       invasionStepStarted: true,
       currentInvasionPlanetId: action.targetPlanetId,
-      pendingHits: { [defenderId]: hits },
+      pendingHits: pendingHitsUpdate,
     },
   };
   return { ok: true, state: nextState, events };
@@ -178,7 +239,10 @@ export function assignBombardmentHits(
   const player = state.players[action.playerId];
   const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  // TE NEUTRAL UNITS: same fixed-priority-order reasoning as everywhere else this project computes hit assignments for the neutral pseudo-player.
+  const bombardAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
+
+  const result = applyHitAssignments(state, stacks, bombardAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
   if (!result.ok) return { ok: false, error: `RR 44.1: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -263,7 +327,7 @@ function openGroundCombatRoundStartWindowIfNeeded(state: GameState): GameState {
 
 export function commitGroundForces(
   state: GameState,
-  action: { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; units: { unitType: UnitType; count: number }[] },
+  action: { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; units: { unitType: UnitType; count: number }[]; coexist?: boolean; chosenTrait?: "cultural" | "industrial" | "hazardous" },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -301,6 +365,10 @@ export function commitGroundForces(
   if (isDemilitarizedZone(planet)) {
     return { ok: false, error: 'RR "Demilitarized Zone": units cannot land on this planet.' };
   }
+  // TE SPACE STATIONS (rulebook p.10): "structures and ground forces cannot be placed on or committed to space stations."
+  if (planet.isSpaceStation) {
+    return { ok: false, error: "TE SPACE STATIONS: ground forces cannot be committed to a space station." };
+  }
 
   const spaceStacks = system.spaceUnitsByPlayer[action.playerId] ?? [];
   let updatedSpaceStacks = spaceStacks.map((s) => ({ ...s }));
@@ -336,19 +404,68 @@ export function commitGroundForces(
     pending.currentInvasionPlanetId === action.targetPlanetId ||
     (pending.remainingInvasionPlanetIds ?? []).includes(action.targetPlanetId);
 
+  // TE COEXIST: offered only when this specific commit would otherwise
+  // start a NEW contest for THIS player (i.e. planet.controllerId is some
+  // other player and this player's units weren't already coexisting there
+  // before this commit) — once already coexisting, further commits by the
+  // SAME player just join their own existing coexistence automatically
+  // below, there's no repeated "choose to coexist" moment for them.
+  const alreadyCoexistingHere = (updatedPlanet.coexistingPlayerIds ?? []).includes(action.playerId);
+  if (alreadyCoexistingHere) {
+    // Further commits by the SAME already-coexisting player just settle in peacefully — no re-choice needed, no combat queued.
+    return { ok: true, state: nextState, events };
+  }
+  if (action.coexist && contested) {
+    if (!hasAbility(nextState.players[action.playerId], asAbilityId("can_choose_coexist"))) {
+      return { ok: false, error: "TE COEXIST: this player has no ability granting the choice to coexist here." };
+    }
+    const priorControllerId = planet.controllerId;
+    let coexistedPlanet: PlanetState = { ...updatedPlanet, coexistingPlayerIds: [...(updatedPlanet.coexistingPlayerIds ?? []), action.playerId] };
+    // "The player whose units triggered coexistence does not gain or
+    // retain control; if they already controlled it, the player they are
+    // now coexisting with gains control instead, exhausted." The common
+    // case (committing onto ANOTHER player's still-controlled planet)
+    // needs no change at all — control simply never moves to the
+    // committing player in the first place. If there are multiple OTHER
+    // parties already present (a 3+-way coexistence), the rule doesn't
+    // specify which one becomes the new controller in this edge case —
+    // picking the first found is a reasonable, deterministic choice.
+    if (priorControllerId === action.playerId) {
+      const otherPartyId = (Object.keys(updatedPlanet.unitsByPlayer) as PlayerId[]).find((id) => id !== action.playerId && (updatedPlanet.unitsByPlayer[id] ?? []).some((s) => s.count > 0));
+      if (otherPartyId) {
+        coexistedPlanet = { ...coexistedPlanet, controllerId: otherPartyId, exhausted: true, coexistingPlayerIds: (coexistedPlanet.coexistingPlayerIds ?? []).filter((id) => id !== otherPartyId) };
+      }
+    }
+    const systemWithCoexist: SystemState = { ...nextState.systems[systemId], planets: nextState.systems[systemId].planets.map((p) => (p.planetId === action.targetPlanetId ? coexistedPlanet : p)) };
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: systemWithCoexist } };
+    events.push({ type: "COEXISTENCE_STARTED", systemId, planetId: action.targetPlanetId, coexistingPlayerId: action.playerId });
+    return { ok: true, state: nextState, events };
+  }
+
   if (contested) {
+    // TE DUAL PLANET TRAITS: same validation as the uncontested branch below — banked now (dualTraitChoices) since control won't actually be established until combat concludes, possibly several rounds from now.
+    const traitsHereContested = (rules.planets[action.targetPlanetId]?.traits ?? []) as ("cultural" | "industrial" | "hazardous")[];
+    if (planet.controllerId === null && traitsHereContested.length > 1 && (!action.chosenTrait || !traitsHereContested.includes(action.chosenTrait))) {
+      return { ok: false, error: `TE DUAL PLANET TRAITS: ${action.targetPlanetId} has multiple traits (${traitsHereContested.join("/")}) — chosenTrait must specify which one to explore with.` };
+    }
     if (!alreadyPending) {
       nextState = {
         ...nextState,
         pendingTacticalAction: {
           ...nextState.pendingTacticalAction!,
           remainingInvasionPlanetIds: [...(pending.remainingInvasionPlanetIds ?? []), action.targetPlanetId],
+          ...(action.chosenTrait ? { dualTraitChoices: { ...pending.dualTraitChoices, [action.targetPlanetId]: action.chosenTrait } } : {}),
         },
       };
     }
   } else {
     // Uncontested landing — establish control immediately (RR 44.5), no combat needed.
-    const controlResult = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules);
+    // TE DUAL PLANET TRAITS: if this would be this planet's very first-ever control (triggering RR 25.1c's own automatic exploration) and it has 2 traits, the committing player must specify which one right here — they already know which planet is at stake when submitting this same action.
+    const traitsHere = (rules.planets[action.targetPlanetId]?.traits ?? []) as ("cultural" | "industrial" | "hazardous")[];
+    if (planet.controllerId === null && traitsHere.length > 1 && (!action.chosenTrait || !traitsHere.includes(action.chosenTrait))) {
+      return { ok: false, error: `TE DUAL PLANET TRAITS: ${action.targetPlanetId} has multiple traits (${traitsHere.join("/")}) — chosenTrait must specify which one to explore with.` };
+    }
+    const controlResult = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules, action.chosenTrait);
     const previousControllerId = planet.controllerId;
     nextState = controlResult.state;
     events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId: action.targetPlanetId, playerId: action.playerId });
@@ -506,7 +623,14 @@ export function startGroundCombat(
   // ground combat otherwise.
   const system = state.systems[pending.systemId];
   const planet = system.planets.find((p) => p.planetId === action.targetPlanetId)!;
-  const defenderId = playersWithGroundForces(planet).find((id) => id !== action.playerId);
+  // TE COEXIST: a fresh ground combat is always attacker-vs-CONTROLLER
+  // specifically (rule 9: "must start a ground combat against the player
+  // that controls that planet") — never against some other coexisting
+  // bystander, even if one happens to also be present on this planet.
+  // Falls back to the old "any other party present" behavior only in the
+  // (should-be-impossible outside Thunder's Edge) case of a contested
+  // planet with no controller at all.
+  const defenderId = planet.controllerId ?? playersWithGroundForces(planet).find((id) => id !== action.playerId);
   const defenderQualifies = defenderId ? buildSpaceCannonDefenseEntries(state, rules, defenderId, planet, action.playerId).length > 0 : false;
 
   // RR "Magen Defense Grid": only checked if Space Cannon Defense didn't
@@ -515,6 +639,8 @@ export function startGroundCombat(
   const magenDefenseGridEligibility =
     defenderQualifies || !defenderId ? null : checkMagenDefenseGridEligibility(state, rules, defenderId, planet, action.playerId, pending.systemId);
 
+  const participantIds: [PlayerId, PlayerId] | undefined = defenderId ? [action.playerId, defenderId] : undefined;
+
   const resultState: GameState = {
     ...state,
     pendingTacticalAction: defenderQualifies
@@ -522,6 +648,7 @@ export function startGroundCombat(
           ...pending,
           currentInvasionPlanetId: action.targetPlanetId,
           remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+          groundCombatParticipantIds: participantIds,
           spaceCannonDefensePending: true,
           pendingHits: {},
         }
@@ -530,6 +657,7 @@ export function startGroundCombat(
             ...pending,
             currentInvasionPlanetId: action.targetPlanetId,
             remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+            groundCombatParticipantIds: participantIds,
             magenDefenseGridPending: true,
             pendingHits: {},
           }
@@ -538,6 +666,7 @@ export function startGroundCombat(
               ...pending,
               currentInvasionPlanetId: action.targetPlanetId,
               remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+              groundCombatParticipantIds: participantIds,
               magenDefenseGridAutoHitPending: true,
               pendingHits: {},
             }
@@ -545,6 +674,7 @@ export function startGroundCombat(
               ...pending,
               currentInvasionPlanetId: action.targetPlanetId,
               remainingInvasionPlanetIds: queue.filter((id) => id !== action.targetPlanetId),
+              groundCombatParticipantIds: participantIds,
               combatRound: 1,
               pendingHits: {},
             },
@@ -751,7 +881,10 @@ export function assignSpaceCannonDefenseHits(
   const player = state.players[action.playerId];
   const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  // TE NEUTRAL UNITS: same fixed-priority-order reasoning as everywhere else this project computes hit assignments for the neutral pseudo-player.
+  const scdAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
+
+  const result = applyHitAssignments(state, stacks, scdAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
   if (!result.ok) return { ok: false, error: `RR 44: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -803,14 +936,14 @@ export function resolveGroundCombatRound(
   const system = state.systems[systemId];
   const planet = system.planets.find((p) => p.planetId === planetId)!;
 
-  const combatants = playersWithGroundForces(planet);
+  const combatants = pending.groundCombatParticipantIds ?? playersWithGroundForces(planet);
   if (!combatants.includes(action.playerId)) {
     return { ok: false, error: "RR 38.1: only a player with ground forces in this combat can submit its dice roll." };
   }
 
   let entries;
   try {
-    entries = buildGroundCombatEntries(state, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined);
+    entries = buildGroundCombatEntries(state, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined, pending.groundCombatParticipantIds);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -841,6 +974,112 @@ export function resolveGroundCombatRound(
   return { ok: true, state: nextState, events };
 }
 
+/** TE COEXIST: "If a player's coexisting units become the only units on a planet, that player gains control of the planet." Checked after anything that could reduce one of the 2 coexisting parties' units to zero (bombardment hit assignment, ground combat, etc.) — a no-op if this planet isn't actually in a coexisting state, or if both parties still have units present. */
+function resolveSoleCoexistSurvivorControl(planet: PlanetState): PlanetState {
+  const coexistingPlayerIds = planet.coexistingPlayerIds ?? [];
+  if (coexistingPlayerIds.length === 0 || !planet.controllerId) return planet;
+  const hasUnits = (playerId: PlayerId) => (planet.unitsByPlayer[playerId] ?? []).some((s) => s.count > 0);
+  const allParties = [planet.controllerId, ...coexistingPlayerIds];
+  const survivors = allParties.filter(hasUnits);
+  if (survivors.length !== 1) return planet; // 2+ parties (still coexisting) or 0 (nobody left to hold it) — either way, no control change here
+  const survivorId = survivors[0];
+  return { ...planet, controllerId: survivorId, coexistingPlayerIds: undefined };
+}
+
+/**
+ * TE COEXIST: "A coexisting player may choose to end their coexistence by
+ * activating the coexisting unit's system and committing the coexisting
+ * units against the planet they are coexisting on. If they win the
+ * ground combat, they cease coexisting and gain control of the planet
+ * as normal." Unlike a normal COMMIT_GROUND_FORCES, these units are
+ * already ON the planet (as coexisting forces), not in the space area —
+ * so this is its own action rather than reusing that one, and just
+ * queues the SAME ground-combat machinery every other contested planet
+ * already goes through (resolveGroundCombatRound, assignGroundCombatHits,
+ * wrapUpGroundCombat), starting from this player's own tactical action
+ * once it's reached the invasion step normally (their units don't need
+ * to physically move, but the rest of that step's own gating — priority
+ * windows, Mecatol custodians, etc. — still applies the same as always).
+ */
+/**
+ * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence, rules 7 & 8):
+ * either side of a coexistence can choose to start a REAL ground combat
+ * instead of leaving things as they are — the controller against a
+ * coexisting player, or a coexisting player against the controller. Both
+ * directions reuse this SAME action/function; which one applies is
+ * determined by whether the caller is the controller or one of the
+ * coexisting players. `targetPlayerId` is only required when the
+ * CONTROLLER is the one attacking and there's more than 1 coexisting
+ * party to choose from (a coexisting player attacking always has exactly
+ * 1 possible target: the controller).
+ *
+ * KNOWN SIMPLIFICATION: if a 3rd (or 4th...) party is ALSO coexisting on
+ * this same planet but isn't part of THIS specific combat, this
+ * project's existing ground-combat machinery (playersWithGroundForces,
+ * which just looks at who has units present) doesn't yet exclude them
+ * from getting pulled into the fight the way the rule's own pairwise
+ * "start A ground combat" framing implies. Rule 10's own "start an
+ * ADDITIONAL ground combat against ANOTHER coexisting player" after
+ * winning is supported at the state-transition level (nothing blocks
+ * calling this again once the current one resolves, targeting a
+ * different remaining party) — but isolating simultaneous bystanders
+ * from a 2-party fight would need a deeper change to the shared combat
+ * pipeline than this pass makes; flagged rather than silently assumed.
+ */
+export function initiateCoexistCombat(state: GameState, action: { type: "INITIATE_COEXIST_COMBAT"; playerId: PlayerId; planetId: PlanetId; targetPlayerId?: PlayerId }): ActionResult {
+  const pending = state.pendingTacticalAction;
+  if (!pending || pending.playerId !== action.playerId || pending.step !== "invasion") {
+    return { ok: false, error: "RR 44.2/TE COEXIST: no invasion step in progress for this player." };
+  }
+  if (pending.currentInvasionPlanetId || (pending.pendingHits && Object.keys(pending.pendingHits).length > 0)) {
+    return { ok: false, error: "RR 44.2: resolve the current pending hits before starting another ground combat." };
+  }
+  const system = state.systems[pending.systemId];
+  const planet = system?.planets.find((p) => p.planetId === action.planetId);
+  if (!planet) return { ok: false, error: `No planet ${action.planetId}.` };
+
+  const coexistingIds = planet.coexistingPlayerIds ?? [];
+  const isCoexistingAttacker = coexistingIds.includes(action.playerId);
+  const isControllerAttacker = planet.controllerId === action.playerId;
+  if (!isCoexistingAttacker && !isControllerAttacker) {
+    return { ok: false, error: "TE COEXIST: this player is neither the controller nor a coexisting player on that planet." };
+  }
+
+  let targetId: PlayerId;
+  if (isCoexistingAttacker) {
+    // Rule 8: a coexisting player attacking always targets the controller — there's no other option.
+    if (!planet.controllerId) return { ok: false, error: "That planet has no controller to attack." };
+    targetId = planet.controllerId;
+  } else {
+    // Rule 7: the controller attacking must choose WHICH coexisting party, if there's more than 1.
+    if (coexistingIds.length === 0) return { ok: false, error: "No coexisting player on that planet to attack." };
+    if (coexistingIds.length === 1) {
+      targetId = coexistingIds[0];
+    } else {
+      if (!action.targetPlayerId || !coexistingIds.includes(action.targetPlayerId)) {
+        return { ok: false, error: "TE COEXIST: multiple coexisting players present — targetPlayerId must specify which one to attack." };
+      }
+      targetId = action.targetPlayerId;
+    }
+  }
+
+  const nextState: GameState = {
+    ...state,
+    pendingTacticalAction: {
+      ...pending,
+      invasionStepStarted: true,
+      currentInvasionPlanetId: action.planetId,
+      groundCombatParticipantIds: [action.playerId, targetId],
+      pendingHits: {},
+    },
+  };
+  return {
+    ok: true,
+    state: nextState,
+    events: [{ type: "COEXISTENCE_ENDED_BY_ATTACK", systemId: pending.systemId, planetId: action.planetId, attackingPlayerId: action.playerId, targetPlayerId: targetId }],
+  };
+}
+
 export function assignGroundCombatHits(
   state: GameState,
   action: { type: "ASSIGN_HITS"; playerId: PlayerId; assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },
@@ -862,7 +1101,15 @@ export function assignGroundCombatHits(
   const player = state.players[action.playerId];
   const stacks = (planet.unitsByPlayer[action.playerId] ?? []) as UnitStack[];
 
-  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  // TE NEUTRAL UNITS: no real neutral player exists to submit this action
+  // or make the normal free choice of which units absorb hits — the
+  // fixed reference-card priority order (computeNeutralHitAssignments) is
+  // used instead, regardless of whatever assignments the actual caller
+  // (necessarily some OTHER real player, since neutral units can't submit
+  // actions themselves) may have passed in.
+  const groundAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
+
+  const result = applyHitAssignments(state, stacks, groundAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
   if (!result.ok) return { ok: false, error: `RR 38.2: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -875,9 +1122,13 @@ export function assignGroundCombatHits(
   ];
 
   const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: result.stacks } };
+  // TE COEXIST: if this hit assignment just wiped out one of the 2
+  // coexisting parties entirely, the survivor gains sole control of the
+  // planet — coexistence itself is over (only 1 party's units remain).
+  const coexistResolvedPlanet = resolveSoleCoexistSurvivorControl(updatedPlanet);
   const updatedSystem: SystemState = {
     ...system,
-    planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
+    planets: system.planets.map((p) => (p.planetId === planetId ? coexistResolvedPlanet : p)),
   };
 
   const remainingPendingHits = { ...pending.pendingHits };
@@ -943,13 +1194,18 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
   const system = state.systems[systemId];
   const planet = system.planets.find((p) => p.planetId === planetId)!;
 
-  // Object.keys here (not playersWithGroundForces) on purpose — a
-  // combatant wiped out to 0 units this round still has their (now empty)
-  // stacks entry in unitsByPlayer, so this is the only reliable way to
-  // recover "who was actually fighting here" for RR "Shard of the
-  // Throne"'s own check below, once one side has been fully eliminated.
-  const combatantsBeforeEnd = Object.keys(planet.unitsByPlayer) as PlayerId[];
-  const survivors = playersWithGroundForces(planet);
+  // TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): a 3rd (or
+  // more) coexisting party can be present on this SAME planet without
+  // being part of THIS combat — playersWithGroundForces would count them
+  // too, wrongly reading "both sides still standing" forever whenever a
+  // bystander happens to have units here. groundCombatParticipantIds (set
+  // by whichever of startGroundCombat/initiateCoexistCombat began this
+  // specific fight) is the reliable source for "who was actually
+  // fighting", both for Shard of the Throne's own check and for deciding
+  // whether this fight itself has ended.
+  const participantIds = pending.groundCombatParticipantIds ?? (Object.keys(planet.unitsByPlayer) as PlayerId[]);
+  const combatantsBeforeEnd = participantIds;
+  const survivors = participantIds.filter((id) => (planet.unitsByPlayer[id] ?? []).some((s) => s.count > 0));
   const events: GameEvent[] = [];
   let nextState = state;
 
@@ -957,10 +1213,27 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
     const winner = survivors[0] ?? null;
     const previousControllerId = planet.controllerId;
     if (winner) {
-      const controlResult = setPlanetController(nextState, systemId, planetId, winner, rules);
+      const controlResult = setPlanetController(nextState, systemId, planetId, winner, rules, pending.dualTraitChoices?.[planetId]);
       nextState = controlResult.state;
       nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winner, combatantsBeforeEnd);
       events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
+      // TE COEXIST: this fight's own loser is out, and if the winner was
+      // previously one of the coexisting parties (not the controller),
+      // they're now the controller instead — remove BOTH from
+      // coexistingPlayerIds so the list only ever reflects genuine
+      // bystanders untouched by this fight, never the fight's own 2
+      // participants under their new roles.
+      const updatedPlanetForBystanders = system.planets.find((p) => p.planetId === planetId)!;
+      const loserId = participantIds.find((id) => id !== winner);
+      const staleIds = [loserId, winner].filter((id): id is PlayerId => id !== null && id !== undefined);
+      if ((updatedPlanetForBystanders.coexistingPlayerIds ?? []).some((id) => staleIds.includes(id))) {
+        const clearedBystanderPlanet: PlanetState = {
+          ...updatedPlanetForBystanders,
+          coexistingPlayerIds: (updatedPlanetForBystanders.coexistingPlayerIds ?? []).filter((id) => !staleIds.includes(id)),
+        };
+        const clearedSystem: SystemState = { ...nextState.systems[systemId], planets: nextState.systems[systemId].planets.map((p) => (p.planetId === planetId ? clearedBystanderPlanet : p)) };
+        nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: clearedSystem } };
+      }
     }
     events.push({ type: "GROUND_COMBAT_ENDED", systemId, planetId, survivingPlayerId: winner });
 
@@ -1007,7 +1280,15 @@ export function finishGroundCombatWrapUp(state: GameState, pending: NonNullable<
 }
 
 /** RR 25.1: gaining control of a planet ALWAYS exhausts its planet card — no exceptions, regardless of how control was gained (invasion win, uncontested landing, anything else). RR 53.2: a legendary planet's separate ability card only readies if this is the FIRST time it's ever been controlled (i.e. it's coming "from the deck"); if it's being taken FROM another player, it keeps whatever exhausted/readied state it already had — untouched here, on purpose. RR 25.1c: if the planet wasn't already controlled by ANOTHER player (i.e. this is genuinely the first time anyone's controlled it), the new controller explores it automatically — this used to only happen via the separate, player-initiated EXPLORE_PLANET action, which incorrectly made exploring a planet an optional extra step rather than an automatic consequence of gaining control. */
-function setPlanetController(state: GameState, systemId: SystemId, planetId: PlanetId, controllerId: PlayerId, rules: RuleData): { state: GameState; events: GameEvent[] } {
+function setPlanetController(
+  state: GameState,
+  systemId: SystemId,
+  planetId: PlanetId,
+  controllerId: PlayerId,
+  rules: RuleData,
+  /** TE DUAL PLANET TRAITS (rulebook p.11): the controlling player's own choice of which trait to explore with, if this planet has 2 — supplied by whichever action actually triggers this control gain (COMMIT_GROUND_FORCES for an uncontested landing, ASSIGN_HITS for a combat win), since that player already knows which planet is at stake when they submit it. Optional/ignored for single-trait (or traitless) planets. */
+  chosenTrait?: "cultural" | "industrial" | "hazardous",
+): { state: GameState; events: GameEvent[] } {
   const system = state.systems[systemId];
   const planet = system.planets.find((p) => p.planetId === planetId);
   if (!planet || planet.controllerId === controllerId) return { state, events: [] };
@@ -1038,13 +1319,43 @@ function setPlanetController(state: GameState, systemId: SystemId, planetId: Pla
   let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
   const events: GameEvent[] = [];
 
+  // RR 73/75: "When a player gains a planet card FROM THE PLANET DECK
+  // that has a relic icon... they draw the top card of the relic deck."
+  // "From the planet deck" specifically means this is the planet's
+  // very first-ever control (RR 25.1a: only the FIRST controller ever
+  // takes the card from the deck — every later control change takes it
+  // from whichever player controlled it before instead) — so this is
+  // gated on wasUncontrolled, same condition as RR 25.1c's own
+  // exploration trigger below, not fired on every control change.
+  // "If there are no cards in the relic deck, they do not gain a relic"
+  // (RR 73.2a) — a no-op, not an error, if the deck's empty.
+  if (wasUncontrolled && rules.planets[planetId]?.hasRelicIcon) {
+    const relicDeck = nextState.relicDeck ?? [];
+    if (relicDeck.length > 0) {
+      const [relicId, ...restRelicDeck] = relicDeck;
+      const gainingPlayer = nextState.players[controllerId];
+      nextState = {
+        ...nextState,
+        relicDeck: restRelicDeck,
+        players: { ...nextState.players, [controllerId]: { ...gainingPlayer, relics: [...gainingPlayer.relics, relicId] } },
+      };
+      events.push({ type: "RELIC_GAINED", playerId: controllerId, relicId });
+    }
+  }
+
   // RR 25.1c: automatic exploration — only for a planet no one has EVER
   // controlled before (wasUncontrolled), only with PoK content, and only
   // if the planet actually has a trait to explore with (Mecatol Rex and
   // home-system planets have none, and can't be explored — same check
   // EXPLORE_PLANET itself already makes).
   if (wasUncontrolled && hasPoKContent(state.mode) && !updatedPlanet.explored) {
-    const trait = rules.planets[planetId]?.traits[0] as "cultural" | "industrial" | "hazardous" | undefined;
+    // TE DUAL PLANET TRAITS: the controlling player already knows, at the
+    // moment they submit the action that gains this control, which
+    // planet is at stake — so their own chosenTrait (passed in above)
+    // decides which of the 2 traits to explore with, same choice
+    // explorePlanet/playArchaeologicalExpedition already require.
+    const traits = (rules.planets[planetId]?.traits ?? []) as ("cultural" | "industrial" | "hazardous")[];
+    const trait = traits.length === 1 ? traits[0] : traits.length > 1 && chosenTrait && traits.includes(chosenTrait) ? chosenTrait : undefined;
     if (trait) {
       const deck = nextState.explorationDecks?.[trait] ?? [];
       if (deck.length > 0) {
