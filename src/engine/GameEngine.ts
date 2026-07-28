@@ -9,6 +9,7 @@ import {
   bombard,
   assignBombardmentHits,
   commitGroundForces,
+  initiateCoexistCombat,
   useRemoveCustodiansToken,
   finishInvasionCommits,
   startGroundCombat,
@@ -21,6 +22,11 @@ import {
   skipMagenDefenseGrid,
   assignMagenDefenseGridHit,
 } from "./phases/invasion";
+import { claimExpeditionSlice, completeThunderEdgeExpedition } from "./phases/expedition";
+import { placeIngressTokens } from "./phases/theFracture";
+import { convertCommoditiesViaSpaceStation } from "./rules/spaceStations";
+import { resolveTransaction } from "./rules/transactions";
+import { gainFactionTechViaEntropicScar } from "./phases/entropicScar";
 import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring, placeGainedCommandTokensAction } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
 import { playActionCard, discardActionCard } from "./phases/actionCards";
@@ -124,7 +130,7 @@ import { revealAgenda, castVotes, resolveAgendaVote, continueAgendaPhaseAfterEle
 import { checkGroundForcesCommittedWindow, finishGroundCombatWrapUp, openInvasionStartWindowIfNeeded } from "./phases/invasion";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
-import { explorePlanet, exploreFrontier, purgeRelicFragments } from "./phases/exploration";
+import { exploreFrontier, purgeRelicFragments } from "./phases/exploration";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
   useSelfAssemblyRoutines,
@@ -306,6 +312,24 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       case "COMMIT_GROUND_FORCES":
         result = commitGroundForces(state, action, rules);
         break;
+      case "INITIATE_COEXIST_COMBAT":
+        result = initiateCoexistCombat(state, action);
+        break;
+      case "CLAIM_EXPEDITION_SLICE":
+        result = claimExpeditionSlice(state, action, rules);
+        break;
+      case "COMPLETE_THUNDER_EDGE_EXPEDITION":
+        result = completeThunderEdgeExpedition(state, action, rules);
+        break;
+      case "PLACE_INGRESS_TOKENS":
+        result = placeIngressTokens(state, action, rules);
+        break;
+      case "CONVERT_COMMODITIES_VIA_SPACE_STATION":
+        result = convertCommoditiesViaSpaceStation(state, action);
+        break;
+      case "GAIN_FACTION_TECH_VIA_ENTROPIC_SCAR":
+        result = gainFactionTechViaEntropicScar(state, action, rules);
+        break;
       case "USE_REMOVE_CUSTODIANS_TOKEN":
         result = useRemoveCustodiansToken(state, action, rules);
         break;
@@ -357,9 +381,6 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
           action.useResearchTeamAttachmentPlanetId,
           action.exhaustPlanetIdsForTechSpecialty,
         );
-        break;
-      case "EXPLORE_PLANET":
-        result = explorePlanet(state, action, rules);
         break;
       case "EXPLORE_FRONTIER":
         result = exploreFrontier(state, action, rules);
@@ -814,6 +835,8 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       // --- Not yet implemented. Each of these follows the exact same shape
       // as the cases above — see phases/README.md for the recipe.
       case "PROPOSE_TRANSACTION":
+        result = resolveTransaction(state, action, rules);
+        break;
       case "END_TURN_TIMEOUT":
         return { ok: false, error: `${action.type} is not implemented yet.` };
 
