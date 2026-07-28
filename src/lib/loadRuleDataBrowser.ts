@@ -15,6 +15,8 @@ import {
   buildFactionUnitUpgradesFromVersions,
   RawUnitEntry,
   buildPlanetsLookup,
+  buildFractureNeutralGuardiansLookup,
+  buildFactionTechIdsByFaction,
   RawTilesFile,
   buildAgendasLookup,
   buildObjectivesLookup,
@@ -53,7 +55,7 @@ const factionFiles = import.meta.glob("../../data/factions/*.json", { eager: tru
     default: {
       id: string;
       commodities?: number;
-      breakthrough?: { synergy?: { colors?: [string, string] } };
+      breakthrough?: { synergy?: { colors?: [string, string] }; startsWithBreakthroughUnlocked?: boolean };
       factionTechnologies?: { id: string }[];
       promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
       promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
@@ -81,11 +83,11 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
   );
 
   const factionUnits: Record<FactionId, FactionUnitStats> = {};
-  const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
+  const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null; startsWithBreakthroughUnlocked: boolean }> = {};
   const usedFactionFiles: (Parameters<typeof buildFactionPromissoryNotesLookup>[0][number] &
     Parameters<typeof buildStartingDataLookup>[0][number] &
     Parameters<typeof buildFactionLeadersLookup>[0][number] &
-    Parameters<typeof buildFactionUnitUpgradesFromVersions>[0][number] & { factionTechnologies?: { id: string }[] })[] = [];
+    Parameters<typeof buildFactionUnitUpgradesFromVersions>[0][number] & { id: string; factionTechnologies?: { id: string }[] })[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile = findFactionFile(rawFactionId);
@@ -94,6 +96,7 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     factions[asFactionId(rawFactionId)] = {
       commoditiesMax: factionFile.commodities ?? 0,
       breakthroughSynergy: synergyColors ? [synergyColors[0], synergyColors[1]] : null,
+      startsWithBreakthroughUnlocked: Boolean(factionFile.breakthrough?.startsWithBreakthroughUnlocked),
     };
 
     const baseUnits: Record<string, ReturnType<typeof unitEntryToStats> | undefined> = {};
@@ -142,6 +145,7 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     factionUnits,
     unitUpgrades,
     planets: buildPlanetsLookup(tilesFile as RawTilesFile),
+    fractureNeutralGuardians: buildFractureNeutralGuardiansLookup(tilesFile as RawTilesFile),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
     objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
     technologies: {
@@ -160,6 +164,7 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
     // of that faction's technologies too, alongside its own
     // factionTechnologies entries (e.g. Bioplasmosis).
     factionTechIds: new Set([...buildFactionTechIds(usedFactionFiles), ...Object.keys(factionUnitUpgrades.unitUpgrades)]),
+    factionTechIdsByFaction: buildFactionTechIdsByFaction(usedFactionFiles) as Record<import("../engine/types/ids").FactionId, import("../engine/types/ids").TechId[]>,
     explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
     genericPromissoryNoteTemplates: buildGenericPromissoryNotesLookup(
       promissoryNotesFile as Parameters<typeof buildGenericPromissoryNotesLookup>[0],
