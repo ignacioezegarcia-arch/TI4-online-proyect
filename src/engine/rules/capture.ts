@@ -36,6 +36,9 @@ import { UnitType } from "../types/enums";
 export function isBlockaded(state: GameState, playerId: PlayerId, systemId: SystemId): boolean {
   const system = state.systems[systemId];
   if (!system) return false;
+  // TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): "A coexisting structure is always blockaded, regardless of what ships, if any, are in the system." Checked per-system here (this function's own existing scope) — if this player is coexisting (not the sole controller) on ANY planet in this system, their structures there count as blockaded even when the normal ship-presence check below wouldn't otherwise say so.
+  const coexistingHere = system.planets.some((p) => (p.coexistingPlayerIds ?? []).includes(playerId));
+  if (coexistingHere) return true;
   const ownShipsHere = (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.count > 0);
   if (ownShipsHere) return false;
   return Object.entries(system.spaceUnitsByPlayer).some(([otherId, stacks]) => otherId !== playerId && (stacks ?? []).some((s) => s.count > 0));

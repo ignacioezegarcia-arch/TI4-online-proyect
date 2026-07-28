@@ -28,49 +28,87 @@ import { isLawActiveWithOutcome } from "../phases/agendaEffects";
  */
 export function getAdjacentSystems(state: GameState, systemId: SystemId, rules?: RuleData): SystemId[] {
   const physical = state.boardAdjacency[systemId] ?? [];
-  const bySystemWormholes = state.systems[systemId]?.wormholes ?? [];
-  if (bySystemWormholes.length === 0) return physical;
+  const thisSystem = state.systems[systemId];
+  const bySystemWormholes = thisSystem?.wormholes ?? [];
 
-  // RR "Enforced Travel Ban" ("for"): alpha and beta wormholes have no
-  // effect during movement while this law is active — filtered out
-  // entirely before the matching-type check below even runs.
-  const enforcedTravelBan = isLawActiveWithOutcome(state, "enforced_travel_ban" as AgendaId, "for");
-  // RR "Nexus Sovereignty" ("for"): same idea, but scoped to JUST the
-  // Wormhole Nexus's own alpha/beta wormholes (its gamma wormhole, and
-  // every other system's own alpha/beta wormholes, are unaffected).
-  const nexusSovereignty = isLawActiveWithOutcome(state, "nexus_sovereignty" as AgendaId, "for");
-  const isNexusSystem = rules?.wormholeNexusSystemId === systemId;
+  let wormholeLinked: SystemId[] = [];
+  if (bySystemWormholes.length > 0) {
+    // RR "Enforced Travel Ban" ("for"): alpha and beta wormholes have no
+    // effect during movement while this law is active — filtered out
+    // entirely before the matching-type check below even runs.
+    const enforcedTravelBan = isLawActiveWithOutcome(state, "enforced_travel_ban" as AgendaId, "for");
+    // RR "Nexus Sovereignty" ("for"): same idea, but scoped to JUST the
+    // Wormhole Nexus's own alpha/beta wormholes (its gamma wormhole, and
+    // every other system's own alpha/beta wormholes, are unaffected).
+    const nexusSovereignty = isLawActiveWithOutcome(state, "nexus_sovereignty" as AgendaId, "for");
+    const isNexusSystem = rules?.wormholeNexusSystemId === systemId;
 
-  const effectiveWormholes = bySystemWormholes.filter((w) => {
-    if (w !== "alpha" && w !== "beta") return true;
-    if (enforcedTravelBan) return false;
-    if (nexusSovereignty && isNexusSystem) return false;
-    return true;
-  });
-  if (effectiveWormholes.length === 0) return physical;
+    const effectiveWormholes = bySystemWormholes.filter((w) => {
+      if (w !== "alpha" && w !== "beta") return true;
+      if (enforcedTravelBan) return false;
+      if (nexusSovereignty && isNexusSystem) return false;
+      return true;
+    });
 
-  // RR "Wormhole Reconstruction" ("for") / "Lost Star Chart" (this player's
-  // own action card, this tactical action only): confirmed, ALL systems
-  // that contain EITHER an alpha or a beta wormhole become mutually
-  // adjacent to EACH OTHER — a looser UNION than the normal matching-type
-  // rule (alpha only links to alpha, beta only to beta); only applies when
-  // this system's own qualifying wormhole is itself alpha or beta. Both
-  // sources share the exact same mechanic, just a permanent law vs. a
-  // 1-tactical-action card — no need to distinguish them past this line.
-  const wormholeReconstruction =
-    isLawActiveWithOutcome(state, "wormhole_reconstruction" as AgendaId, "for") || Boolean(state.pendingTacticalAction?.lostStarChartActive);
-  const hasAlphaOrBeta = effectiveWormholes.some((w) => w === "alpha" || w === "beta");
+    if (effectiveWormholes.length > 0) {
+      // RR "Wormhole Reconstruction" ("for") / "Lost Star Chart" (this
+      // player's own action card, this tactical action only): confirmed,
+      // ALL systems that contain EITHER an alpha or a beta wormhole become
+      // mutually adjacent to EACH OTHER — a looser UNION than the normal
+      // matching-type rule (alpha only links to alpha, beta only to
+      // beta); only applies when this system's own qualifying wormhole is
+      // itself alpha or beta. Both sources share the exact same
+      // mechanic, just a permanent law vs. a 1-tactical-action card — no
+      // need to distinguish them past this line.
+      const wormholeReconstruction =
+        isLawActiveWithOutcome(state, "wormhole_reconstruction" as AgendaId, "for") || Boolean(state.pendingTacticalAction?.lostStarChartActive);
+      const hasAlphaOrBeta = effectiveWormholes.some((w) => w === "alpha" || w === "beta");
 
-  const wormholeLinked = Object.values(state.systems)
-    .filter((sys) => sys.systemId !== systemId)
-    .filter((sys) =>
-      wormholeReconstruction && hasAlphaOrBeta
-        ? sys.wormholes.some((w) => w === "alpha" || w === "beta")
-        : sys.wormholes.some((w) => effectiveWormholes.includes(w)),
-    )
-    .map((sys) => sys.systemId);
+      wormholeLinked = Object.values(state.systems)
+        .filter((sys) => sys.systemId !== systemId)
+        .filter((sys) =>
+          wormholeReconstruction && hasAlphaOrBeta
+            ? sys.wormholes.some((w) => w === "alpha" || w === "beta")
+            : sys.wormholes.some((w) => effectiveWormholes.includes(w)),
+        )
+        .map((sys) => sys.systemId);
+    }
+  }
 
-  return Array.from(new Set([...physical, ...wormholeLinked]));
+  // TE INCURSION (Crimson Rebellion): "systems that contain active
+  // breaches are adjacent" — a looser mutual-adjacency rule (every active
+  // breach system links to every OTHER active breach system), same shape
+  // as Wormhole Reconstruction's own alpha/beta union above, just keyed
+  // off breachState instead of wormhole type. Applies for every player,
+  // not just the Rebellion — the ability text itself isn't scoped to them.
+  const breachLinked: SystemId[] =
+    thisSystem?.breachState === "active"
+      ? Object.values(state.systems)
+          .filter((sys) => sys.systemId !== systemId && sys.breachState === "active")
+          .map((sys) => sys.systemId)
+      : [];
+
+  // TE The Fracture: ingress<->egress is a ONE-WAY-LABELED but
+  // effectively mutual cross-connection — an ingress system is adjacent
+  // to every Fracture system with an egress token, and (checked from the
+  // other side, when getAdjacentSystems is called ON that Fracture
+  // system instead) every egress Fracture system is adjacent to every
+  // ingress system. Deliberately NOT ingress<->ingress or egress<->egress
+  // (confirmed: "ingress systems are not adjacent to other ingress
+  // systems, and egress systems are not adjacent to other egress
+  // systems") — each side only ever links to the OTHER kind.
+  let fractureLinked: SystemId[] = [];
+  if (thisSystem?.ingressToken) {
+    fractureLinked = Object.values(state.systems)
+      .filter((sys) => sys.isFracture && sys.egressToken)
+      .map((sys) => sys.systemId);
+  } else if (thisSystem?.isFracture && thisSystem?.egressToken) {
+    fractureLinked = Object.values(state.systems)
+      .filter((sys) => sys.ingressToken)
+      .map((sys) => sys.systemId);
+  }
+
+  return Array.from(new Set([...physical, ...wormholeLinked, ...breachLinked, ...fractureLinked]));
 }
 
 export function isAdjacent(state: GameState, a: SystemId, b: SystemId, rules?: RuleData): boolean {
@@ -78,10 +116,23 @@ export function isAdjacent(state: GameState, a: SystemId, b: SystemId, rules?: R
 }
 
 /** RR 60 NEIGHBORS: two players are neighbors if either has a controlled planet in a system that's the same as, or adjacent to, a system where the other has a controlled planet. Shared by objectiveChecks.ts's own inline version of this same check and RR "Minister of Commerce". */
+/**
+ * RR "Neighbors": "Two players are neighbors if they both have a unit or
+ * control a planet in the same system. They are also neighbors if they
+ * both have a unit or control a planet in systems that are adjacent to
+ * each other." Previously this only checked planet control — fixed to
+ * also count ship/ground-force presence, which matters e.g. for
+ * Transactions during combat ("neighbors only in the active system" via
+ * their ships being there, not necessarily controlling any planet there).
+ */
 export function arePlayersNeighbors(state: GameState, playerIdA: import("../types/ids").PlayerId, playerIdB: import("../types/ids").PlayerId, rules?: RuleData): boolean {
   if (playerIdA === playerIdB) return false;
-  const aSystems = Object.entries(state.systems).filter(([, s]) => s.planets.some((p) => p.controllerId === playerIdA));
-  const bSystemIds = new Set(Object.entries(state.systems).filter(([, s]) => s.planets.some((p) => p.controllerId === playerIdB)).map(([id]) => id));
+  const hasPresence = (system: import("../types/GameState").SystemState, playerId: import("../types/ids").PlayerId) =>
+    system.planets.some((p) => p.controllerId === playerId) ||
+    (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.count > 0) ||
+    system.planets.some((p) => (p.unitsByPlayer[playerId] ?? []).some((s) => s.count > 0));
+  const aSystems = Object.entries(state.systems).filter(([, s]) => hasPresence(s, playerIdA));
+  const bSystemIds = new Set(Object.entries(state.systems).filter(([, s]) => hasPresence(s, playerIdB)).map(([id]) => id));
   return aSystems.some(([sysId]) => [sysId, ...getAdjacentSystems(state, sysId as SystemId, rules)].some((id) => bSystemIds.has(id)));
 }
 

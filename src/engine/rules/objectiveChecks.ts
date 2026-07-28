@@ -31,11 +31,14 @@ export type ObjectiveCheckFn = (ctx: ObjectiveCheckContext, params: Record<strin
 
 // --- shared helpers ---------------------------------------------------------
 
+/** TE COEXIST: "When scoring objectives, a coexisting player counts as controlling the planet they are coexisting on; they do not count as controlling the planet for any other game ability or effect." This file (objectiveChecks.ts) is exactly the one place that distinction matters — everywhere else in this project, planet control still means controllerId alone. */
 function controlledPlanets(state: GameState, playerId: PlayerId): { systemId: SystemId; planet: PlanetState }[] {
   const out: { systemId: SystemId; planet: PlanetState }[] = [];
   for (const [systemId, system] of Object.entries(state.systems)) {
     for (const planet of system.planets) {
-      if (planet.controllerId === playerId) out.push({ systemId: systemId as SystemId, planet });
+      // TE SPACE STATIONS: "they do not count as planets for the purpose of voting, objectives, or controlling a home system" — excluded here regardless of controllerId/coexistingPlayerIds, since this is the shared helper every objective check in this file reads from.
+      if (planet.isSpaceStation) continue;
+      if (planet.controllerId === playerId || (planet.coexistingPlayerIds ?? []).includes(playerId)) out.push({ systemId: systemId as SystemId, planet });
     }
   }
   return out;
@@ -153,7 +156,26 @@ export const OBJECTIVE_CHECKS: Record<string, ObjectiveCheckFn> = {
       const color = rules.technologies[techId]?.color;
       if (color) byColor.set(color, (byColor.get(color) ?? 0) + 1);
     }
-    const colorsWithEnough = Array.from(byColor.values()).filter((c) => c >= techsPerColor).length;
+    // TE Breakthrough Synergy (yjmrobert.com/tirules/rules/r_synergy):
+    // "for the purposes of... scoring technology-related objectives" — a
+    // tech of either synergy color can count as the OTHER instead, never
+    // both at once. For THIS specific objective (how many colors reach a
+    // per-color threshold), the best use of that flexibility is to pool
+    // the 2 synergy colors' own counts together and re-split them to
+    // maximize how many of the 2 individually clear the threshold —
+    // never worse, and sometimes strictly better, than just using each
+    // tech's own natural color.
+    const synergy = state.players[playerId]?.hasBreakthrough ? rules.factions[state.players[playerId].factionId]?.breakthroughSynergy : null;
+    let colorsWithEnough = Array.from(byColor.entries()).filter(([color]) => !(synergy && synergy.includes(color))).filter(([, c]) => c >= techsPerColor).length;
+    if (synergy) {
+      const pooled = (byColor.get(synergy[0]) ?? 0) + (byColor.get(synergy[1]) ?? 0);
+      if (techsPerColor > 0) {
+        if (pooled >= 2 * techsPerColor) colorsWithEnough += 2;
+        else if (pooled >= techsPerColor) colorsWithEnough += 1;
+      } else {
+        colorsWithEnough += 2; // a 0-per-color threshold is trivially met by both, same as any other color would be
+      }
+    }
     const met = colorsWithEnough >= colorCount;
     return { met, reason: met ? undefined : `Only ${colorsWithEnough}/${colorCount} colors with ${techsPerColor}+ techs.` };
   },

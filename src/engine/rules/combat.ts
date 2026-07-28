@@ -2,7 +2,7 @@ import { GameState, Player, PlanetState, UnitStack } from "../types/GameState";
 import { PlayerId, SystemId, FactionId, UnitUpgradeId, AgendaId, asTechId } from "../types/ids";
 import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
-import { getDefenderCombatBonus } from "./anomalies";
+import { getDefenderCombatBonus, hasEntropicScar } from "./anomalies";
 import { getAdjacentSystems } from "./adjacency";
 import { usesCodex4Version } from "./gameMode";
 import { getEffectiveUnitAbilities, getLawOwner } from "../phases/agendaEffects";
@@ -172,7 +172,7 @@ export function buildSpaceCombatEntries(
 
     for (const stack of stacks) {
       if (!SHIP_TYPES.includes(stack.unitType) || stack.count <= 0) continue;
-      const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+      const stats = getUnitStatsForCombat(rules, player, stack.unitType, player.unitUpgrades);
       if (!stats || stats.combat == null) continue; // e.g. a transported ground force accidentally in the space stack list — shouldn't happen, but no combat value means no dice
 
       const diceCountPerUnit = stats.combatDiceCount ?? 1;
@@ -208,8 +208,18 @@ export function buildGroundCombatEntries(
   planet: PlanetState,
   /** RR "Magen Defense Grid" (base version): if the defender used it this round, the attacker can't roll any combat dice at all — excluded here entirely rather than zeroed out per-unit. */
   blockedPlayerId?: PlayerId,
+  /**
+   * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
+   * players actually fighting THIS combat — required whenever a 3rd (or
+   * more) coexisting party could also be present on the same planet, so
+   * their units are never pulled into a fight that isn't theirs.
+   * Optional/omittable for every pre-Thunder's-Edge call site, where
+   * playersWithGroundForces(planet) reliably already returns exactly the
+   * 2 real combatants on its own.
+   */
+  participantIds?: [PlayerId, PlayerId],
 ): CombatUnitEntry[] {
-  const playerIds = playersWithGroundForces(planet);
+  const playerIds = participantIds ?? playersWithGroundForces(planet);
   if (playerIds.length !== 2) {
     throw new Error(
       `RR 38: se esperan exactamente 2 jugadores en combate terrestre en ${planet.planetId}, hay ${playerIds.length}.`,
@@ -224,7 +234,7 @@ export function buildGroundCombatEntries(
     const moraleBoostBonus = getMoraleBoostHitOnBonus(state, playerId);
     for (const stack of stacks) {
       if (!GROUND_FORCE_TYPES.includes(stack.unitType) || stack.count <= 0) continue;
-      const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+      const stats = getUnitStatsForCombat(rules, player, stack.unitType, player.unitUpgrades);
       if (!stats || stats.combat == null) continue;
       // RR "X-89 Bacterial Weapon" ΩΩ (Codex 4): doubles the hits produced
       // by this player's own ground combat rolls — modeled as doubling the
@@ -284,7 +294,7 @@ export function buildBombardmentEntries(
     if (applyPlasmaScoringTo === stack.unitType) {
       diceCount += 1;
     }
-    entries.push({ playerId: attackerId, diceCount, hitOn: bombardment.value + bunkerPenalty });
+    entries.push({ playerId: attackerId, diceCount, hitOn: bombardment.value + bunkerPenalty, unitType: stack.unitType });
   }
   return entries;
 }
@@ -330,6 +340,86 @@ export type ApplyHitAssignmentsResult =
  * that matters (an earlier version of this auto-flipped, which silently
  * took away a real decision).
  */
+/**
+ * TE NEUTRAL UNITS (rulebook p.10): "hits are assigned to neutral units
+ * in the order presented on the neutral unit reference, prioritizing
+ * units LOWER on the reference first... always use unit abilities when
+ * they can (sustain damage, etc.)." There's no real neutral player to
+ * make the normal free choice of which stack absorbs a hit — this
+ * computes that choice automatically instead. Confirmed data point from
+ * this project's own Crimson Rebellion notes: destroyers absorb hits
+ * before cruisers do; the rest of this order is this project's own
+ * reasonable extrapolation (cheaper/more expendable unit types first)
+ * rather than a directly confirmed full ordering — flagged here rather
+ * than presented as certain.
+ */
+/**
+ * TE NEUTRAL UNITS: the game's own "Neutral Unit Reference" card values,
+ * confirmed directly by this project's user — NOT the same as any real
+ * faction's base or upgraded stats (e.g. neutral Carrier is 9/2/6, far
+ * stronger than any real faction's own Carrier I or II). This is its
+ * own, separate, fixed stat block. Used both for building this
+ * project's own CombatUnitEntry lists (getUnitStatsForCombat below) and
+ * for computeNeutralHitAssignments' own ability check — getUnitStats
+ * can't be used for any of this, since "neutral" isn't a real
+ * registered faction in rules.factionUnits.
+ *
+ * Per this project's own user: neutral units never use Production or
+ * any technology-granted ability — only Sustain Damage, Anti-Fighter
+ * Barrage, and Space Cannon, exactly as reflected below.
+ */
+const NEUTRAL_UNIT_STATS: Partial<Record<UnitType, { combat: number | null; combatDiceCount?: number; move: number | null; capacity: number | null; abilities: import("../types/enums").UnitAbility[]; abilityValues?: Partial<Record<import("../types/enums").UnitAbility, { value: number; dice: number }>> }>> = {
+  flagship: { combat: 7, combatDiceCount: 2, move: 1, capacity: 3, abilities: [] },
+  war_sun: { combat: 3, combatDiceCount: 3, move: 2, capacity: 6, abilities: ["sustainDamage", "bombardment"], abilityValues: { bombardment: { value: 3, dice: 3 } } },
+  dreadnought: { combat: 5, move: 2, capacity: 1, abilities: ["sustainDamage"] },
+  cruiser: { combat: 6, move: 3, capacity: 1, abilities: [] },
+  carrier: { combat: 9, move: 2, capacity: 6, abilities: [] },
+  destroyer: { combat: 8, move: 2, capacity: null, abilities: ["antiFighterBarrage"], abilityValues: { antiFighterBarrage: { value: 6, dice: 3 } } },
+  fighter: { combat: 8, move: 2, capacity: null, abilities: [] },
+  mech: { combat: 6, move: null, capacity: null, abilities: ["sustainDamage"] },
+  infantry: { combat: 8, move: null, capacity: null, abilities: [] },
+  pds: { combat: null, move: null, capacity: null, abilities: ["planetaryShield", "spaceCannon"], abilityValues: { spaceCannon: { value: 6, dice: 1 } } },
+  space_dock: { combat: null, move: null, capacity: null, abilities: [] },
+};
+
+/** Same shape as getUnitStats (types/RuleData.ts), but checks NEUTRAL_UNIT_STATS first for the neutral pseudo-player — every combat-entry-building function that could ever face neutral guardians (ground combat, space combat, AFB; Bombardment/Space Cannon Defense are always rolled BY a real attacker, never by neutral, so they don't need this) should call this instead of getUnitStats directly. */
+function getUnitStatsForCombat(rules: RuleData, player: Player, unitType: UnitType, unitUpgrades: import("../types/ids").UnitUpgradeId[]): import("../types/RuleData").UnitStats | undefined {
+  if (player.isNeutral) {
+    const neutral = NEUTRAL_UNIT_STATS[unitType];
+    return neutral ? { unitType, cost: 0, ...neutral } : undefined;
+  }
+  return getUnitStats(rules, player.factionId, unitType, unitUpgrades);
+}
+
+const NEUTRAL_HIT_PRIORITY: UnitType[] = ["infantry", "fighter", "destroyer", "carrier", "cruiser", "mech", "pds", "space_dock", "dreadnought", "war_sun", "flagship"];
+
+export function computeNeutralHitAssignments(
+  stacks: UnitStack[],
+  hitsOwed: number,
+  /** TE ENTROPIC SCAR: if true, neutral units can't use Sustain Damage here either — every assignment is forced to "destroy", matching what applyHitAssignments itself would reject otherwise. */
+  inEntropicScar = false,
+): { unitType: UnitType; outcome: "destroy" | "flip" }[] {
+  const assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] = [];
+  let remaining = hitsOwed;
+  const orderedStacks = [...stacks].sort((a, b) => NEUTRAL_HIT_PRIORITY.indexOf(a.unitType) - NEUTRAL_HIT_PRIORITY.indexOf(b.unitType));
+  for (const stack of orderedStacks) {
+    if (remaining <= 0) break;
+    const canSustain = !inEntropicScar && (NEUTRAL_UNIT_STATS[stack.unitType]?.abilities.includes("sustainDamage") ?? false);
+    const undamagedCount = stack.count - stack.damagedCount;
+    let flippedThisStack = 0;
+    for (let i = 0; i < stack.count && remaining > 0; i++) {
+      if (canSustain && flippedThisStack < undamagedCount) {
+        assignments.push({ unitType: stack.unitType, outcome: "flip" });
+        flippedThisStack += 1;
+      } else {
+        assignments.push({ unitType: stack.unitType, outcome: "destroy" });
+      }
+      remaining -= 1;
+    }
+  }
+  return assignments;
+}
+
 export function applyHitAssignments(
   state: GameState,
   stacks: UnitStack[],
@@ -338,6 +428,8 @@ export function applyHitAssignments(
   factionId: FactionId,
   ownedUnitUpgrades: UnitUpgradeId[],
   rules: RuleData,
+  /** TE ENTROPIC SCAR: this system's own anomalies — if it's an entropic scar, Sustain Damage ("flip") can't be used here at all, "by or against" units inside it. Optional/omittable for every pre-Thunder's-Edge call site, where this is simply never true. */
+  systemAnomalies: import("../types/enums").AnomalyType[] = [],
 ): ApplyHitAssignmentsResult {
   const updated = stacks.map((s) => ({ ...s }));
   const unitsLeft = updated.reduce((sum, s) => sum + s.count, 0);
@@ -359,6 +451,9 @@ export function applyHitAssignments(
     if (!stack) return { ok: false, error: `No ${unitType} left to assign a hit to.` };
 
     if (outcome === "flip") {
+      if (hasEntropicScar(systemAnomalies)) {
+        return { ok: false, error: 'TE ENTROPIC SCAR: Sustain Damage cannot be used by units inside an entropic scar.' };
+      }
       const effectiveAbilities = getEffectiveUnitAbilities(state, rules, factionId, unitType, ownedUnitUpgrades);
       if (!effectiveAbilities.includes("sustainDamage")) {
         return { ok: false, error: `RR 76: ${unitType} doesn't have Sustain Damage.` };
@@ -426,6 +521,8 @@ function spaceCannonEntriesForPlayer(
 ): CombatUnitEntry[] {
   const player = state.players[firingPlayerId];
   if (!player) return [];
+  // TE ENTROPIC SCAR (rulebook p.11): Space Cannon "cannot be used by or against units inside of an entropic scar" — the target system is what matters most here (hits would land on units inside it), covering both Offense and Defense since they share this same function.
+  if (hasEntropicScar(state.systems[targetSystemId]?.anomalies ?? [])) return [];
 
   const perType = new Map<UnitType, { diceCount: number; hitOn: number }>();
 
@@ -545,6 +642,8 @@ export function buildAntiFighterBarrageEntries(
 ): CombatUnitEntry[] {
   const system = state.systems[systemId];
   if (!system) return [];
+  // TE ENTROPIC SCAR (rulebook p.11): Anti-Fighter Barrage "cannot be used by or against units inside of an entropic scar."
+  if (hasEntropicScar(system.anomalies)) return [];
   const player = state.players[firingPlayerId];
   const stacks = (system.spaceUnitsByPlayer[firingPlayerId] ?? []) as UnitStack[];
 
@@ -552,7 +651,7 @@ export function buildAntiFighterBarrageEntries(
   let hitOn: number | null = null;
   for (const stack of stacks) {
     if (stack.count <= 0) continue;
-    const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
+    const stats = getUnitStatsForCombat(rules, player, stack.unitType, player.unitUpgrades);
     const afb = stats?.abilityValues?.antiFighterBarrage;
     if (!afb) continue;
     diceCount += stack.count * afb.dice;

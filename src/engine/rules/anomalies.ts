@@ -108,6 +108,23 @@ export function hasNebula(anomalies: AnomalyType[]): boolean {
   return anomalies.includes("nebula");
 }
 
+/**
+ * TE ENTROPIC SCAR (rulebook p.11): "All unit abilities (Sustain
+ * Damage, Production, Planetary Shield, Space Cannon, Bombardment,
+ * Deploy, and Anti-Fighter Barrage) cannot be used by or against units
+ * inside of an entropic scar. Text abilities are unaffected." — this
+ * single helper is checked from every one of those 7 abilities'
+ * own build/resolve functions across this project (see each one's own
+ * call site for the specific "by" vs "against" framing that applies
+ * there). Deploy itself isn't implemented as a generic engine mechanic
+ * yet (every faction's own Deploy text is still just prose, not wired
+ * game logic) — nothing to block there until that changes, flagged
+ * rather than silently ignored.
+ */
+export function hasEntropicScar(anomalies: AnomalyType[]): boolean {
+  return anomalies.includes("entropicScar");
+}
+
 /** RR 9 / combat: defender's per-roll bonus from anomalies present in the combat system (currently only Nebula grants one). */
 export function getDefenderCombatBonus(anomalies: AnomalyType[]): number {
   return anomalies.reduce((sum, type) => sum + (ANOMALY_RULES[type]?.combat?.defenderCombatRollBonus ?? 0), 0);

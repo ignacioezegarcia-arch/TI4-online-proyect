@@ -203,6 +203,15 @@ export function buildFactionTechIds(factionFiles: { factionTechnologies?: { id: 
   return ids;
 }
 
+/** TE ENTROPIC SCAR's own "gain one of THEIR faction-specific technologies" status-phase action needs to know which techs belong to the CURRENT player's own faction specifically — same underlying data as buildFactionTechIds above, just keyed by faction id instead of flattened into one big set. */
+export function buildFactionTechIdsByFaction(factionFiles: { id: string; factionTechnologies?: { id: string }[] }[]): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const file of factionFiles) {
+    result[file.id] = (file.factionTechnologies ?? []).map((t) => t.id);
+  }
+  return result;
+}
+
 /** Shared by both loaders — RR 35 exploration card mechanics (data/explorationCards.json), keyed by card id across all 4 decks. */
 export function buildExplorationCardsLookup(explorationCardsFile: {
   decks: Record<
@@ -360,7 +369,13 @@ export interface RawTilesFile {
       isLegendary?: boolean;
       isMecatolRex?: boolean;
       isMallice?: boolean;
+      hasRelicIcon?: boolean;
+      specialRules?: string[];
     }[];
+    /** TE multi-hex tiles (currently only the 3 Fracture tiles) — see createGame.ts's own RawTileEntry.hexes doc comment for why this needs flattening the same way there. */
+    hexes?: { planets?: RawTilesFile["tiles"][number]["planets"] }[];
+    /** TE The Fracture: neutral guardian unit counts for this tile, read by buildFractureNeutralGuardiansLookup below. */
+    neutralGuardians?: Partial<Record<string, number>>;
   }[];
 }
 
@@ -382,11 +397,18 @@ export function buildHomeSystemsLookup(
 /** Shared by both loaders (browser + Edge Function) — builds the per-planet static data RuleData.planets needs, straight from data/tiles.json. */
 export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<
   string,
-  { resources: number; influence: number; traits: string[]; techSpecialties: string[]; isLegendary: boolean; isMecatolRex: boolean; isMallice: boolean; homeFactionId: import("../types/ids").FactionId | null }
+  { resources: number; influence: number; traits: string[]; techSpecialties: string[]; isLegendary: boolean; isMecatolRex: boolean; isMallice: boolean; hasRelicIcon: boolean; homeFactionId: import("../types/ids").FactionId | null }
 > {
   const planets: ReturnType<typeof buildPlanetsLookup> = {};
   for (const tile of tilesFile.tiles) {
-    for (const planet of tile.planets ?? []) {
+    // TE multi-hex tiles (currently only the 3 Fracture tiles): planets
+    // live under tile.hexes instead of tile.planets directly — flattened
+    // here the same way createGame.ts's own rawTileToSystemState already
+    // does, otherwise Fracture planets (Cocytus, Lethe, Plegethon, Styx)
+    // would have NO static rule data at all (no resources/influence/
+    // traits lookup for any of them).
+    const flatPlanets = tile.hexes ? tile.hexes.flatMap((h) => h.planets ?? []) : (tile.planets ?? []);
+    for (const planet of flatPlanets) {
       planets[planetNameToId(planet.name)] = {
         resources: planet.resources,
         influence: planet.influence,
@@ -395,11 +417,27 @@ export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<
         isLegendary: planet.isLegendary ?? false,
         isMecatolRex: planet.isMecatolRex ?? false,
         isMallice: planet.isMallice ?? false,
+        // RR 73/75: "when a player gains a planet card... that has a
+        // relic icon... they draw the top card of the relic deck." Every
+        // Fracture planet has this per its own specialRules text — not
+        // yet a dedicated raw JSON field, so detected here from that
+        // free-form text instead of adding one more manual per-planet
+        // flag to keep in sync with it.
+        hasRelicIcon: planet.hasRelicIcon ?? (planet.specialRules ?? []).some((r) => /gain 1 relic/i.test(r)),
         homeFactionId: (tile.homeFaction ?? null) as import("../types/ids").FactionId | null,
       };
     }
   }
   return planets;
+}
+
+/** TE The Fracture: neutral guardian unit counts per Fracture system, keyed by SystemId (tile id as a string) — read once at load time from data/tiles.json's own tile-level neutralGuardians field. */
+export function buildFractureNeutralGuardiansLookup(tilesFile: RawTilesFile): Record<string, Partial<Record<string, number>>> {
+  const result: Record<string, Partial<Record<string, number>>> = {};
+  for (const tile of tilesFile.tiles) {
+    if (tile.neutralGuardians) result[String(tile.id)] = tile.neutralGuardians;
+  }
+  return result;
 }
 
 /** Shared by both loaders — the points + checkType/checkParams/timing/kind RuleData.objectives needs, from data/objectives.json's publicObjectives (stageI/stageII) and secretObjectives (all 3 phases). */
