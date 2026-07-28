@@ -1,11 +1,11 @@
 import { GameState, Player, SystemState, PlanetState } from "../types/GameState";
-import { PlayerId, FactionId, SystemId, PlanetId, TechId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId, asLeaderId } from "../types/ids";
+import { PlayerId, FactionId, SystemId, PlanetId, TechId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId, asLeaderId, asFactionId, NEUTRAL_PLAYER_ID } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { GameMode, UnitType, AnomalyType, WormholeType } from "../types/enums";
 import { generateMap, fisherYatesShuffle, PlaceableTile } from "./mapGeneration";
 import { initializePromissoryNotes } from "./promissoryNotes";
 import { planetNameToId } from "../rules/ruleDataMapping";
-import { hasPoKContent } from "../rules/gameMode";
+import { hasPoKContent, hasThundersEdge } from "../rules/gameMode";
 
 /**
  * RR "First-Game Setup" steps 1-12 (the COMPLETE/standard version — the
@@ -44,9 +44,35 @@ export interface RawTileEntry {
   isOffMap?: boolean;
   wormholesInactive?: string[];
   wormholesActive?: string[];
-  planets?: { name: string; resources: number; influence: number; traits?: string[]; tech?: string[]; isLegendary?: boolean; isMecatolRex?: boolean; isMallice?: boolean }[];
+  planets?: RawTilePlanetEntry[];
   anomalies?: string[];
   wormholes?: string[];
+  /** TE: which expansion introduced this tile — "thundersEdge" tiles need hasThundersEdge(mode) to be included; undefined/other values are always available. Not yet consumed by the tile-pool-selection logic (a broader map-setup concern beyond this one file's own tile->system conversion) — tracked here so that logic has something to read once it exists. */
+  set?: string;
+  /** TE The Fracture (rulebook p.9): true for the 3 off-map Fracture system tiles — carried straight through to SystemState.isFracture by rawTileToSystemState below. */
+  isFracture?: boolean;
+  /** TE multi-hex tiles (currently only the 3 Fracture tiles): planets/anomalies/wormholes/egress live per-hex here instead of at the top level — rawTileToSystemState flattens all of a tile's own hexes into that ONE system (this engine has no separate per-hex sub-state), when this is present. */
+  hexes?: { index: number; planets?: RawTilePlanetEntry[]; anomalies?: string[]; wormholes?: string[]; egress?: boolean }[];
+  /** TE The Fracture: neutral (non-player) units guarding this tile's own planet(s) — tied to the broader "Neutral Units" mechanic (not yet built); tracked here so the data itself isn't lost even though nothing consumes it yet. */
+  neutralGuardians?: Partial<Record<string, number>>;
+}
+
+export interface RawTilePlanetEntry {
+  name: string;
+  resources: number;
+  influence: number;
+  traits?: string[];
+  tech?: string[];
+  isLegendary?: boolean;
+  isMecatolRex?: boolean;
+  isMallice?: boolean;
+  /** RR 73/75: "when a player gains a planet card... that has a relic icon... they draw the top card of the relic deck." Every Fracture planet (Cocytus, Lethe, Plegethon, Styx) has this — a general RR mechanic, not Fracture-specific, just newly relevant since TE introduces the first planets that actually have it. */
+  hasRelicIcon?: boolean;
+  legendaryAbility?: { name: string; effect: string };
+  /** TE Space Stations (rulebook p.10): true for e.g. Last Bastion's own Revelation — not yet consumed by any engine logic (Space Stations mechanic itself isn't built), tracked here so it's not lost from the raw data. */
+  isSpaceStation?: boolean;
+  /** TE Fracture planets' own "when you gain control of this planet, gain 1 relic" wording, and similar one-off planet text not otherwise modeled — free-form, not yet consumed anywhere. */
+  specialRules?: string[];
 }
 
 export interface CreateGameInput {
@@ -157,6 +183,26 @@ export function createGame(input: CreateGameInput): GameState {
     }
   }
 
+  // TE The Fracture: off-map (isOffMap on all 3 tiles already excludes
+  // them from nonHomeTiles/boardAdjacency above, same as the Wormhole
+  // Nexus) — present in state.systems from the very start of a Thunder's
+  // Edge game, but with no adjacency to anything until fractureInPlay
+  // flips true and ingress tokens actually get placed (rules/adjacency.ts
+  // only links ingress<->egress dynamically at query time, so there's
+  // nothing more to do here for that part). Neutral guardian units get
+  // placed later too, by rules/breakthroughs.ts's own grantBreakthrough
+  // path — not at setup, since the Fracture may never come into play at
+  // all in a given game.
+  if (hasThundersEdge(input.mode)) {
+    for (const fractureTileId of ["125", "126", "127"]) {
+      const raw = allPlacedTiles.get(fractureTileId);
+      if (raw) {
+        const fractureSystemId = asSystemId(fractureTileId);
+        systems[fractureSystemId] = rawTileToSystemState(raw, fractureSystemId, input.mode);
+      }
+    }
+  }
+
   // 4/5/11. Players: color/faction already decided above; this builds the
   // rest (command tokens, starting units/tech placed on the home system,
   // home planets dealt READIED — RR 25.1's "gained control = exhausted"
@@ -221,6 +267,49 @@ export function createGame(input: CreateGameInput): GameState {
     placeStartingUnits(homeSystem, p.id, factionId, rules);
   }
 
+  // TE NEUTRAL UNITS: a minimal, non-real "player" entry so combat and
+  // reinforcement code that reads state.players[playerId] keeps working
+  // unmodified for Fracture guardians — deliberately no real faction
+  // (asFactionId("neutral") never matches any of rules.factions, so
+  // faction-ability/tech lookups just fall through to base stats, which
+  // is exactly right — neutral units never have faction techs or unit
+  // upgrades), no leaders, no command tokens, no victory points. Never
+  // added to seatOrder, never gets a turn, never eliminated. See
+  // GameState.ts's own Player.isNeutral doc comment.
+  if (hasThundersEdge(input.mode)) {
+    players[NEUTRAL_PLAYER_ID] = {
+      id: NEUTRAL_PLAYER_ID,
+      factionId: asFactionId("neutral"),
+      color: "neutral",
+      isSpeaker: false,
+      hasPassed: true,
+      eliminated: false,
+      isNeutral: true,
+      commandTokens: { tactic: 0, fleet: 0, strategy: 0, onBoard: [] },
+      victoryPoints: { current: 0, scoredObjectiveIds: [] },
+      strategyCards: [],
+      resourcesAvailable: 0,
+      influenceAvailable: 0,
+      commodities: 0,
+      tradeGoods: 0,
+      technologies: [],
+      exhaustedTechnologies: [],
+      unitUpgrades: [],
+      actionCards: [],
+      promissoryNotesInHand: [],
+      promissoryNotesInPlayArea: [],
+      secretObjectives: [],
+      leaders: [],
+      relics: [],
+      relicFragments: { cultural: 0, industrial: 0, hazardous: 0, unknown: 0 },
+      explorationCardsInPlayArea: [],
+      actionCardsDiscardedCount: 0,
+      abilityIds: [],
+      capturedUnits: [],
+      capturedGenericUnits: { infantry: 0, fighter: 0 },
+    };
+  }
+
   // 8. SHUFFLE COMMON DECKS + 12. PREPARE OBJECTIVES (secret dealt here too
   // — same "shuffle then draw" pass, since secret objectives are one of
   // the shuffled decks).
@@ -255,9 +344,27 @@ export function createGame(input: CreateGameInput): GameState {
     initiativeOrder: [],
     activePlayerId: null,
     systems,
-    boardAdjacency: generated.boardAdjacency,
+    // TE The Fracture: its own 3 systems are physically laid out touching
+    // each other in a row — confirmed order (left to right) is Fracture A
+    // (125) - Fracture C (127, Styx) - Fracture B (126); the middle one
+    // (Styx) has no egress token of its own precisely BECAUSE it reaches
+    // the outside board via this same normal physical adjacency to A and
+    // B (both of which do have their own egress), not via any ingress/
+    // egress link of its own. This mutual-adjacency chain isn't part of
+    // the normal hex-position-based generation at all (the Fracture is
+    // off-map), so it's patched in here directly rather than through
+    // generated.boardAdjacency.
+    boardAdjacency: hasThundersEdge(input.mode)
+      ? {
+          ...generated.boardAdjacency,
+          [asSystemId("125")]: [...(generated.boardAdjacency[asSystemId("125")] ?? []), asSystemId("127")],
+          [asSystemId("127")]: [asSystemId("125"), asSystemId("126")],
+          [asSystemId("126")]: [...(generated.boardAdjacency[asSystemId("126")] ?? []), asSystemId("127")],
+        }
+      : generated.boardAdjacency,
     mecatolCustodiansRemoved: false, // 7. PLACE CUSTODIANS TOKEN
     unclaimedStrategyCards,
+    thunderEdgeExpedition: { slicesClaimedBy: {}, completed: false },
     objectives,
     agendaDeck: { deckIds: decks.agendaDeck, discardIds: [], lawsInPlay: [] },
     publicObjectiveDeck: decks.publicObjectiveDeck,
@@ -327,15 +434,25 @@ function resolveStartingTechnologies(rules: RuleData, factionId: FactionId, chos
 function rawTileToPlaceableTile(t: RawTileEntry): PlaceableTile {
   return {
     systemId: asSystemId(String(t.id)),
-    anomalies: t.anomalies ?? [],
-    wormholes: t.wormholes ?? [],
+    anomalies: t.hexes ? t.hexes.flatMap((h) => h.anomalies ?? []) : (t.anomalies ?? []),
+    wormholes: t.hexes ? t.hexes.flatMap((h) => h.wormholes ?? []) : (t.wormholes ?? []),
   };
 }
 
 function rawTileToSystemState(t: RawTileEntry, systemId: SystemId, mode: GameMode): SystemState {
+  // TE multi-hex tiles (currently only the 3 Fracture ones): planets/
+  // anomalies/wormholes/egress live per-hex under t.hexes instead of at
+  // the top level — flattened into this ONE system, since this engine
+  // has no separate per-hex sub-state (a system is always exactly 1
+  // SystemId, regardless of how many physical hexes its tile spans).
+  const flatPlanets: RawTilePlanetEntry[] = t.hexes ? t.hexes.flatMap((h) => h.planets ?? []) : (t.planets ?? []);
+  const flatAnomalies: string[] = t.hexes ? t.hexes.flatMap((h) => h.anomalies ?? []) : (t.anomalies ?? []);
+  const flatWormholes: string[] = t.hexes ? t.hexes.flatMap((h) => h.wormholes ?? []) : (t.wormholes ?? []);
+  const hasEgress = t.hexes ? t.hexes.some((h) => h.egress) : false;
+
   return {
     systemId,
-    planets: (t.planets ?? []).map(
+    planets: flatPlanets.map(
       (p): PlanetState => ({
         planetId: asPlanetId(planetNameToId(p.name)),
         controllerId: null,
@@ -346,14 +463,21 @@ function rawTileToSystemState(t: RawTileEntry, systemId: SystemId, mode: GameMod
       }),
     ),
     spaceUnitsByPlayer: {},
-    wormholes: (t.wormholes ?? []) as WormholeType[],
-    anomalies: (t.anomalies ?? []) as AnomalyType[],
+    wormholes: flatWormholes as WormholeType[],
+    anomalies: flatAnomalies as AnomalyType[],
     // RR PoK "Place Custodians Token" step: a frontier token goes on every
-    // non-home system with no planets (even an anomaly-only system).
+    // non-home system with no REAL planets (even an anomaly-only system).
     // Base-only games don't have Frontier tokens at all — RR 35's whole
     // Exploration mechanic is PoK-only (see phases/exploration.ts's own
-    // mode guard).
-    frontierToken: hasPoKContent(mode) && (t.planets ?? []).length === 0,
+    // mode guard). Never on a Fracture tile regardless (off-map, not part
+    // of the normal frontier-exploration flow). TE Space Stations
+    // (rulebook clarification): "a system that contains a space station
+    // and no planets gets a frontier token" — a space station doesn't
+    // count as a "real" planet for this check, even though it has its own
+    // entry in this system's own planets array.
+    frontierToken: hasPoKContent(mode) && flatPlanets.every((p) => p.isSpaceStation) && !t.isFracture,
+    isFracture: t.isFracture || undefined,
+    egressToken: hasEgress || undefined,
   };
 }
 
