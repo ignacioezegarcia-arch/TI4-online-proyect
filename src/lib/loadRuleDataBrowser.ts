@@ -77,7 +77,7 @@ function findFactionFile(factionId: string) {
   return entry[1].default;
 }
 
-export function loadRuleDataBrowser(factionIds: string[]): RuleData {
+export function loadRuleDataBrowser(factionIds: string[], hasThundersEdgeMode = false): RuleData {
   const baseUnitsById = new Map<string, RawUnitEntry>(
     (unitsFile as { units: RawUnitEntry[] }).units.map((u) => [u.id, u]),
   );
@@ -144,7 +144,7 @@ export function loadRuleDataBrowser(factionIds: string[]): RuleData {
   return {
     factionUnits,
     unitUpgrades,
-    planets: buildPlanetsLookup(tilesFile as RawTilesFile),
+    planets: buildPlanetsLookup(tilesFile as RawTilesFile, hasThundersEdgeMode),
     fractureNeutralGuardians: buildFractureNeutralGuardiansLookup(tilesFile as RawTilesFile),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
     objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),

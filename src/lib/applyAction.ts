@@ -4,6 +4,7 @@ import { GameEngine } from "../engine/GameEngine";
 import { GameAction, ActionResult } from "../engine/types/Actions";
 import { GameState } from "../engine/types/GameState";
 import { loadRuleDataBrowser } from "./loadRuleDataBrowser";
+import { hasThundersEdge } from "../engine/rules/gameMode";
 
 export interface SubmitActionOutcome {
   /** Optimistic result the UI can render immediately, before the server confirms. */
@@ -30,7 +31,7 @@ export function submitAction(
   action: GameAction,
 ): SubmitActionOutcome {
   const factionIds = Object.values(currentState.players).map((p) => p.factionId);
-  const rules = loadRuleDataBrowser(factionIds);
+  const rules = loadRuleDataBrowser(factionIds, hasThundersEdge(currentState.mode));
   const optimistic = GameEngine.applyAction(currentState, action, rules);
 
   const confirmed = sendWithRetry(supabase, gameId, action);
