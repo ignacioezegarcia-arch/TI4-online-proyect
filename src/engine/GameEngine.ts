@@ -159,7 +159,8 @@ import {
   usePredictiveIntelligenceRedistribute,
   useTransitDiodes,
 } from "./phases/technologyAbilities";
-import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy } from "./phases/legendaryPlanets";
+import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy, useDokNPicsSalvageYardPlay, useTheAcropolis, useTheGalacticCouncil, useJupiterBrain } from "./phases/legendaryPlanets";
+import { useStarForge, useTheNucleus, applyStellarGenesisOnGain } from "./rules/muaat";
 import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective, getLawOwner } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
@@ -292,7 +293,7 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         result = chooseStrategyCard(state, action);
         break;
       case "PASS":
-        result = pass(state, action);
+        result = pass(state, action, rules);
         break;
       case "ACTIVATE_SYSTEM":
         result = activateSystem(state, action, rules);
@@ -914,6 +915,27 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_NEURALOOP":
         result = useNeuraloop(state, action, rules);
+        break;
+      case "USE_DOK_N_PICS_SALVAGE_YARD_PLAY":
+        result = useDokNPicsSalvageYardPlay(state, action);
+        break;
+      case "USE_THE_ACROPOLIS":
+        result = useTheAcropolis(state, action);
+        break;
+      case "USE_THE_GALACTIC_COUNCIL":
+        result = useTheGalacticCouncil(state, action);
+        break;
+      case "USE_JUPITER_BRAIN":
+        result = useJupiterBrain(state, action);
+        break;
+      case "USE_STAR_FORGE":
+        result = useStarForge(state, action, rules);
+        break;
+      case "USE_THE_NUCLEUS":
+        result = useTheNucleus(state, action, rules);
+        break;
+      case "APPLY_STELLAR_GENESIS":
+        result = applyStellarGenesisOnGain(state, action.playerId, action.targetSystemId, rules);
         break;
       case "PASS_PRIORITY":
         result = passPriority(state, action);
