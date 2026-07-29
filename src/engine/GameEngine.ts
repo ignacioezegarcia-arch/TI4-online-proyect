@@ -26,8 +26,9 @@ import { claimExpeditionSlice, completeThunderEdgeExpedition } from "./phases/ex
 import { placeIngressTokens } from "./phases/theFracture";
 import { convertCommoditiesViaSpaceStation } from "./rules/spaceStations";
 import { resolveTransaction } from "./rules/transactions";
+import { useCrownOfEmphidia, useMawOfWorlds, useBookOfLatvinia, useTheCodex, useStellarConverter, useNanoForge, useDynamisCore, useHeartOfIxth, useSilverFlame, useJrXs455O, useNeuraloop } from "./rules/relics";
 import { gainFactionTechViaEntropicScar } from "./phases/entropicScar";
-import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring, placeGainedCommandTokensAction } from "./phases/actionPhase";
+import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring, placeGainedCommandTokensAction, finishEndOfTurn } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
 import { playActionCard, discardActionCard } from "./phases/actionCards";
 import {
@@ -124,6 +125,20 @@ import {
   playFireTeam,
   playScrambleFrequency,
   playRevealPrototype,
+  playStrategize,
+  playOverrule,
+  playCrisis,
+  playPuppetsOnAString,
+  playRescue,
+  playLieInWait,
+  playExchangeProgram,
+  playBrilliance,
+  playMercenaryContract,
+  playPirateContract,
+  playPirateFleet,
+  playCrashLanding,
+  playExtremeDuress,
+  maybeApplyExtremeDuress,
 } from "./phases/actionCardEffects";
 import { passPriority, computeActionCardAnnounceWindowOrder, actionPhaseWindowOrder, agendaPhaseWindowOrder } from "./rules/priorityWindow";
 import { revealAgenda, castVotes, resolveAgendaVote, continueAgendaPhaseAfterElectionReaction } from "./phases/agendaPhase";
@@ -828,6 +843,78 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       case "PLAY_REVEAL_PROTOTYPE":
         result = playRevealPrototype(state, action, rules);
         break;
+      case "PLAY_STRATEGIZE":
+        result = playStrategize(state, action, rules);
+        break;
+      case "PLAY_OVERRULE":
+        result = playOverrule(state, action, rules);
+        break;
+      case "PLAY_CRISIS":
+        result = playCrisis(state, action);
+        break;
+      case "PLAY_PUPPETS_ON_A_STRING":
+        result = playPuppetsOnAString(state, action);
+        break;
+      case "PLAY_RESCUE":
+        result = playRescue(state, action);
+        break;
+      case "PLAY_LIE_IN_WAIT":
+        result = playLieInWait(state, action);
+        break;
+      case "PLAY_EXCHANGE_PROGRAM":
+        result = playExchangeProgram(state, action, rules);
+        break;
+      case "PLAY_BRILLIANCE":
+        result = playBrilliance(state, action, rules);
+        break;
+      case "PLAY_MERCENARY_CONTRACT":
+        result = playMercenaryContract(state, action, rules);
+        break;
+      case "PLAY_PIRATE_CONTRACT":
+        result = playPirateContract(state, action, rules);
+        break;
+      case "PLAY_PIRATE_FLEET":
+        result = playPirateFleet(state, action, rules);
+        break;
+      case "PLAY_CRASH_LANDING":
+        result = playCrashLanding(state, action, rules);
+        break;
+      case "PLAY_EXTREME_DURESS":
+        result = playExtremeDuress(state, action);
+        break;
+      case "USE_CROWN_OF_EMPHIDIA":
+        result = useCrownOfEmphidia(state, action, rules);
+        break;
+      case "USE_MAW_OF_WORLDS":
+        result = useMawOfWorlds(state, action);
+        break;
+      case "USE_BOOK_OF_LATVINIA":
+        result = useBookOfLatvinia(state, action, rules);
+        break;
+      case "USE_THE_CODEX":
+        result = useTheCodex(state, action);
+        break;
+      case "USE_STELLAR_CONVERTER":
+        result = useStellarConverter(state, action, rules);
+        break;
+      case "USE_NANO_FORGE":
+        result = useNanoForge(state, action, rules);
+        break;
+      case "USE_DYNAMIS_CORE":
+        result = useDynamisCore(state, action, rules);
+        break;
+      case "USE_HEART_OF_IXTH":
+        result = useHeartOfIxth(state, action);
+        break;
+      case "USE_SILVER_FLAME":
+        result = useSilverFlame(state, action, rules);
+        break;
+      case "USE_JR_XS455_O":
+        result = useJrXs455O(state, action, rules);
+        break;
+      case "USE_NEURALOOP":
+        result = useNeuraloop(state, action, rules);
+        break;
       case "PASS_PRIORITY":
         result = passPriority(state, action);
         break;
@@ -955,10 +1042,20 @@ export const GameEngine = {
         }
       } else if (state.pendingPriorityWindow?.kind === "space_combat_won" && dispatchResult.state.pendingTacticalAction?.step === "invasion") {
         result = { ok: true, state: openInvasionStartWindowIfNeeded(dispatchResult.state), events: dispatchResult.events ?? [] };
+      } else if (state.pendingPriorityWindow?.kind === "end_of_turn") {
+        // TE "Crisis"/"Puppets on a String": once every eligible player has declined (or acted), proceed to the SAME advanceActivePlayer call maybeAdvanceActivePlayer would have made directly.
+        result = { ok: true, state: finishEndOfTurn(dispatchResult.state), events: dispatchResult.events ?? [] };
       }
     }
 
     if (!result.ok || !result.state) return result;
+
+    // TE "Extreme Duress": checked against the ARMED player's own very
+    // next action, whatever its type — a no-op unless this action's own
+    // playerId matches whoever Extreme Duress is currently watching.
+    const actingPlayerId = "playerId" in action ? action.playerId : undefined;
+    const duressResult = actingPlayerId ? maybeApplyExtremeDuress(result.state, actingPlayerId, action.type) : { state: result.state, events: [] };
+    result = { ok: true, state: duressResult.state, events: [...(result.events ?? []), ...duressResult.events] };
 
     // RR 33: check every non-eliminated player against the 3 elimination
     // conditions after every single action — cheap (early-exits fast for
