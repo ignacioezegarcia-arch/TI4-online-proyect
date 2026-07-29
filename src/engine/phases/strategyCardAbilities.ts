@@ -125,7 +125,7 @@ export function resolveStrategyPrimary(
 }
 
 /** The actual per-card primary-ability effects — split out from resolveStrategyPrimary so that function's own ownership/exhaustion bookkeeping (RR 83.3/82.2) wraps every card's effect in exactly one place, instead of being duplicated in every `case` branch. */
-function resolveStrategyPrimaryEffect(
+export function resolveStrategyPrimaryEffect(
   state: GameState,
   action: { type: "RESOLVE_STRATEGY_PRIMARY"; playerId: PlayerId; cardId: string; payload: unknown },
   player: Player,
@@ -347,7 +347,7 @@ export function resolveStrategySecondary(
 }
 
 /** The actual per-card secondary-ability effects — split out from resolveStrategySecondary so that function's own eligibility/once-per-round bookkeeping (RR 83.4/82.1) wraps every card's effect in exactly one place. */
-function resolveStrategySecondaryEffect(
+export function resolveStrategySecondaryEffect(
   state: GameState,
   action: { type: "RESOLVE_STRATEGY_SECONDARY"; playerId: PlayerId; cardId: string; payload: unknown },
   player: Player,

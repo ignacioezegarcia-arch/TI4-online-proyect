@@ -559,73 +559,27 @@ export function useMinisterOfWar(
 }
 
 /**
- * RR "Shard of the Throne" / "The Crown of Emphidia": both share the exact
- * same shape — a VP-carrying card that jumps to whoever triggers its own
- * specific condition (winning a combat against the current owner; gaining
- * control of a planet in the owner's home system), giving the NEW owner
- * the card + 1 VP, and the PREVIOUS owner losing 1 VP. A no-op if nobody
- * currently owns the card (hasn't been elected into play yet this game),
- * if the triggering player already IS the current owner (can't "win"
- * against themselves / it's already their own home system), or — for
- * Shard of the Throne specifically — if the current owner wasn't even a
- * combatant in THIS fight at all (`requireOwnerAmong`, when supplied,
- * confirms that).
+ * RR "The Crown of Thalnos": the owner's own choice of how many of THEIR OWN missed dice, per unit type, to reroll — whichever of the supplied `newRolls` still miss destroys that many units of that type, mandatory. Only rerolling a subset (or none at all, via skipCrownOfThalnosReroll) is fully legal — the owner never has to risk a unit they'd rather leave alone.
+ *
+ * KNOWN SIMPLIFICATION (yjmrobert.com/tirules/components/c_relics):
+ * "If a unit rolls multiple combat dice, it will not be destroyed if it
+ * produces at least one hit from its original roll... roll those
+ * unit's dice separately from any other combat dice." This project's own
+ * missed-dice tracking is aggregated per UNIT TYPE (a flat count), not
+ * per individual physical unit — for unit types that only ever roll 1
+ * die each (the overwhelming majority), this distinction never matters
+ * (1 missed die = 1 unit at risk, exactly as here). For a multi-die unit
+ * type (Destroyer II/III, War Sun, some upgraded Dreadnoughts), this
+ * project's own count of "still-missed rerolled dice" could destroy MORE
+ * units than the real rule would if 2 misses actually belonged to the
+ * SAME physical unit (which only needs ONE hit across all its own dice
+ * to survive) rather than 2 different ones — properly fixing this needs
+ * per-individual-unit dice tracking through the whole combat-round
+ * pipeline (buildGroundCombatEntries/buildSpaceCombatEntries currently
+ * only ever build ONE entry per (player, unit type) pair), which is a
+ * deeper architectural change than this pass makes. Flagged rather than
+ * silently assumed correct.
  */
-function maybeTransferVpCard(state: GameState, agendaId: AgendaId, newOwnerId: PlayerId, requireOwnerAmong?: PlayerId[]): GameState {
-  const law = state.agendaDeck.lawsInPlay.find((l) => l.agendaId === agendaId);
-  if (!law || law.ownerId === "common" || law.ownerId === newOwnerId) return state;
-  if (requireOwnerAmong && !requireOwnerAmong.includes(law.ownerId)) return state;
-  const previousOwnerId = law.ownerId;
-  const previousOwner = state.players[previousOwnerId];
-  const newOwner = state.players[newOwnerId];
-  if (!previousOwner || !newOwner) return state;
-
-  return {
-    ...state,
-    agendaDeck: { ...state.agendaDeck, lawsInPlay: state.agendaDeck.lawsInPlay.map((l) => (l.agendaId === agendaId ? { ...l, ownerId: newOwnerId } : l)) },
-    players: {
-      ...state.players,
-      [previousOwnerId]: { ...previousOwner, victoryPoints: { ...previousOwner.victoryPoints, current: Math.max(0, previousOwner.victoryPoints.current - 1) } },
-      [newOwnerId]: { ...newOwner, victoryPoints: { ...newOwner.victoryPoints, current: newOwner.victoryPoints.current + 1 } },
-    },
-  };
-}
-
-/** RR "Shard of the Throne": called wherever a space or ground combat concludes with a clear winner — see phases/spaceCombat.ts's wrapUpCombatRound and phases/invasion.ts's wrapUpGroundCombat. `combatantIds` confirms the current owner was actually IN this specific fight (and therefore the one who lost it) — a card owner uninvolved in this combat never loses it just because someone else won somewhere else. */
-export function maybeApplyShardOfTheThroneOnCombatWin(state: GameState, winnerId: PlayerId, combatantIds: PlayerId[]): GameState {
-  return maybeTransferVpCard(state, "shard_of_the_throne" as AgendaId, winnerId, combatantIds);
-}
-
-/** RR "The Crown of Emphidia": called wherever a player gains control of a planet — see phases/invasion.ts's setPlanetController. Only actually transfers if that planet sits in the CURRENT owner's own home system (checked by the caller, since only it knows which system this planet is in). */
-export function maybeApplyCrownOfEmphidiaOnControlGain(state: GameState, gainerId: PlayerId): GameState {
-  return maybeTransferVpCard(state, "the_crown_of_emphidia" as AgendaId, gainerId);
-}
-
-/**
- * RR "The Crown of Thalnos": called right after a space/ground combat
- * round resolves (before wrapping up) — if the current owner is one of
- * this round's combatants AND missed at least 1 die, queues their own
- * reroll decision. A no-op (returns the pending action unchanged) if
- * nobody owns the card, or the owner had no misses this round at all.
- */
-export function maybeQueueCrownOfThalnosReroll(
-  state: GameState,
-  pending: PendingTacticalAction,
-  missedDiceByPlayerAndType: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>>,
-): PendingTacticalAction {
-  const ownerId = getLawOwner(state, "the_crown_of_thalnos" as AgendaId);
-  if (!ownerId) return pending;
-  const ownerMisses = missedDiceByPlayerAndType[ownerId];
-  if (!ownerMisses || Object.values(ownerMisses).every((c) => !c)) return pending;
-
-  return {
-    ...pending,
-    crownOfThalnosPendingPlayers: [...(pending.crownOfThalnosPendingPlayers ?? []), ownerId],
-    crownOfThalnosMissedDiceByPlayer: { ...pending.crownOfThalnosMissedDiceByPlayer, [ownerId]: ownerMisses },
-  };
-}
-
-/** RR "The Crown of Thalnos": the owner's own choice of how many of THEIR OWN missed dice, per unit type, to reroll — whichever of the supplied `newRolls` still miss destroys that many units of that type, mandatory. Only rerolling a subset (or none at all, via skipCrownOfThalnosReroll) is fully legal — the owner never has to risk a unit they'd rather leave alone. */
 export function useCrownOfThalnosReroll(
   state: GameState,
   action: { type: "USE_CROWN_OF_THALNOS_REROLL"; playerId: PlayerId; rerolls: { unitType: UnitType; newRolls: number[] }[] },

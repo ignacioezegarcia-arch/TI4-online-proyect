@@ -8,6 +8,8 @@ import { revealAgenda } from "./agendaPhase";
 import { drawActionCard } from "./actionCards";
 import { placeGainedCommandTokens } from "../rules/commandTokens";
 import { getLawOwner } from "./agendaEffects";
+import { maybeGainCrownOfEmphidiaVictoryPoint } from "../rules/relics";
+import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
 
 /**
@@ -58,14 +60,33 @@ export function advanceActivePlayer(state: GameState): GameState {
     return { ...state, activePlayerId: null };
   }
   const currentIndex = state.activePlayerId ? order.indexOf(state.activePlayerId) : -1;
-  for (let i = 1; i <= order.length; i++) {
+  let skipsRemaining = 1;
+  for (let i = 1; i <= order.length * 2; i++) {
     const candidate = order[(currentIndex + i) % order.length];
-    if (!state.players[candidate].hasPassed) {
-      // RR (yjmrobert.com/tirules/rules/r_transactions): the "1 per neighbor" transaction allowance is scoped to "the active player's turn" — a fresh turn starting (a new active player) resets it.
-      return { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0, transactionsThisTurn: undefined };
+    if (state.players[candidate].hasPassed) continue;
+    // TE "Crisis": this specific player's upcoming turn is skipped once — consumed here, then normal advancement continues to whoever's after them.
+    if (candidate === state.skipNextTurnForPlayerId && skipsRemaining > 0) {
+      skipsRemaining -= 1;
+      continue;
     }
+    // RR (yjmrobert.com/tirules/rules/r_transactions): the "1 per neighbor" transaction allowance is scoped to "the active player's turn" — a fresh turn starting (a new active player) resets it.
+    let nextState: GameState = { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0, transactionsThisTurn: undefined, skipNextTurnForPlayerId: undefined };
+    // TE "Extreme Duress": "At the start of another player's turn, if
+    // they have a readied strategy card" — opened here, right as a new
+    // player actually becomes active, for every OTHER player to
+    // optionally react. Doesn't apply to the player whose turn is
+    // starting (they can't play it against themselves).
+    const hasReadiedStrategyCard = nextState.players[candidate]?.strategyCards.some((c) => !c.exhausted);
+    if (hasReadiedStrategyCard) {
+      const eligibleIds = Object.keys(nextState.players).filter((id) => id !== candidate && !nextState.players[id as PlayerId]?.eliminated) as PlayerId[];
+      const turnStartOrder = actionPhaseWindowOrder(nextState, candidate, eligibleIds);
+      if (turnStartOrder.length > 0) {
+        nextState = { ...nextState, pendingPriorityWindow: { kind: "turn_start", order: turnStartOrder, currentIndex: 0, consecutivePasses: 0 } };
+      }
+    }
+    return nextState;
   }
-  return { ...state, activePlayerId: null };
+  return { ...state, activePlayerId: null, skipNextTurnForPlayerId: undefined };
 }
 
 /**
@@ -82,13 +103,29 @@ export function advanceActivePlayer(state: GameState): GameState {
 export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): GameState {
   const player = state.players[playerId];
   const actionsSoFar = state.activePlayerActionsTaken ?? 0;
-  if (player?.technologies.includes(asTechId("fleet_logistics")) && actionsSoFar < 1) {
+  // TE "Puppets on a String": "The active player cannot use the Fleet Logistics technology to perform an additional action" during their own Puppets-granted turn — skipped entirely here; Master Plan's own separate bonus (below) is untouched.
+  if (!state.puppetsOnAStringActive && player?.technologies.includes(asTechId("fleet_logistics")) && actionsSoFar < 1) {
     return { ...state, activePlayerActionsTaken: actionsSoFar + 1 };
   }
   // RR "Master Plan": same "stay active for 1 more action" shape as Fleet Logistics above, granted by the action card instead of a tech — consumed the moment it's used (unlike Fleet Logistics, which is a standing ability every turn).
   if (player?.masterPlanBonusAvailable) {
     return { ...state, players: { ...state.players, [playerId]: { ...player, masterPlanBonusAvailable: false } } };
   }
+  // TE "Puppets on a String": their own granted action is over — restore hasPassed (RR: "the active player is still considered passed during their action; they do not pass again at the end") and clear the flag, WITHOUT opening the shared end_of_turn window below (per RR: "it is not considered the turn of the player who played Puppets On A String for game effects" — no "end of your turn" reactions for this specific, borrowed turn).
+  if (state.puppetsOnAStringActive) {
+    return { ...advanceActivePlayer({ ...state, players: { ...state.players, [playerId]: { ...player, hasPassed: true } }, puppetsOnAStringActive: undefined }) };
+  }
+  // TE "Crisis"/"Puppets on a String": both react "at the end of any player's turn" — opened here, right at the one place that actually decides a turn is over (as opposed to being extended by Fleet Logistics/Master Plan above). Every non-eliminated player gets a chance (each card's own function checks its own further eligibility — Crisis's "2+ players haven't passed" condition, Puppets' "you have passed" one); phases/actionPhase.ts's own finishEndOfTurn is what actually calls advanceActivePlayer once this window closes (see GameEngine.ts's own end_of_turn window-close handling).
+  const eligibleIds = Object.keys(state.players).filter((id) => !state.players[id as PlayerId]?.eliminated) as PlayerId[];
+  const order = actionPhaseWindowOrder(state, playerId, eligibleIds);
+  if (order.length > 0) {
+    return { ...state, pendingPriorityWindow: { kind: "end_of_turn", order, currentIndex: 0, consecutivePasses: 0 } };
+  }
+  return advanceActivePlayer(state);
+}
+
+/** TE "Crisis"/"Puppets on a String": the continuation once the end_of_turn window (opened by maybeAdvanceActivePlayer above) actually closes — proceeds to the SAME advanceActivePlayer call that function would have made directly if there'd been nobody to ask. */
+export function finishEndOfTurn(state: GameState): GameState {
   return advanceActivePlayer(state);
 }
 
@@ -334,6 +371,10 @@ export function scoreObjectiveCore(
 
   const objectiveData = rules.objectives[objectiveId];
   if (!objectiveData) return { ok: false, error: `No rule data for objective ${objectiveId}.` };
+  // RR "The Silver Flame" (relic): "you cannot score public objectives" — a standing restriction once triggered.
+  if (objectiveData.kind !== "secret" && player.cannotScorePublicObjectives) {
+    return { ok: false, error: 'RR "The Silver Flame": this player cannot score public objectives.' };
+  }
 
   // RR 61.16: same check as scoreObjective's own wrapper — repeated here
   // since Imperial's strategy card ability calls this core function
@@ -615,6 +656,10 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
       strategyCards: player.strategyCards.map((c) => ({ ...c, exhausted: false })),
       // RR 70.6-adjacent: readies every exhausted TECH card too, same as strategy cards/planets.
       exhaustedTechnologies: [],
+      // RR: readies every exhausted RELIC too — everything exhausted during the action phase readies at the end of the status phase, same general rule as strategy cards/planets/techs above.
+      exhaustedRelics: [],
+      // RR "Agents" (confirmed by this project's own user): exhausting an agent to use its ability, then readying it at the end of the status phase — same general "exhausted during the action phase, readies at the end of the status phase" rule as everything else here. Commanders/heroes don't normally have an exhaust/ready cycle at all (they're unlock-once, standing-effect leaders) — resetting exhausted unconditionally on every leader entry is harmless for those (already false, stays false) and correct for any exhaust-ability commander/hero too, not just agents specifically.
+      leaders: player.leaders.map((l) => ({ ...l, exhausted: false })),
     };
     // RR 70.5: gain 2 command tokens — 3 instead, with Hyper Metabolism.
     // Confirmed: the PLAYER decides which pool(s) these go into — queued
@@ -681,8 +726,20 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
     }
   }
 
+  // RR "The Crown of Emphidia" (relic): "At the end of the status phase, if you control the 'Tomb of Emphidia' attachment, you may purge this card to gain 1 Victory Point." Checked for whoever currently holds it (there's ever only one).
+  let stateForCrownCheck: GameState = { ...state, players, systems };
+  for (const p of Object.values(players)) {
+    if (p.relics.includes("the_crown_of_emphidia" as never)) {
+      const crownResult = maybeGainCrownOfEmphidiaVictoryPoint(stateForCrownCheck, p.id);
+      stateForCrownCheck = crownResult.state;
+      events.push(...crownResult.events);
+      break;
+    }
+  }
+  players = stateForCrownCheck.players;
+
   return {
-    state: { ...state, players, systems, objectives, publicObjectiveDeck: nextDeck, actionCardDeck, actionCardDiscardPile, pendingCommandTokenGains },
+    state: { ...stateForCrownCheck, systems, objectives, publicObjectiveDeck: nextDeck, actionCardDeck, actionCardDiscardPile, pendingCommandTokenGains },
     events,
   };
 }

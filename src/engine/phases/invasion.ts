@@ -4,7 +4,8 @@ import { PlayerId, SystemId, PlanetId, AgendaId, asTechId, asAbilityId, NEUTRAL_
 import { UnitType, STRUCTURE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { usesCodex4Version, hasPoKContent } from "../rules/gameMode";
-import { isLawActiveWithOutcome, getLawOwner, maybeApplyShardOfTheThroneOnCombatWin, maybeApplyCrownOfEmphidiaOnControlGain, maybeQueueCrownOfThalnosReroll, isDemilitarizedZone } from "./agendaEffects";
+import { isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
+import { maybeTransferShardOfTheThroneOnControlGain, maybeQueueCrownOfThalnosReroll } from "../rules/relics";
 import { applyExplorationCard } from "./exploration";
 import {
   playersWithGroundForces,
@@ -1215,7 +1216,6 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
     if (winner) {
       const controlResult = setPlanetController(nextState, systemId, planetId, winner, rules, pending.dualTraitChoices?.[planetId]);
       nextState = controlResult.state;
-      nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winner, combatantsBeforeEnd);
       events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
       // TE COEXIST: this fight's own loser is out, and if the winner was
       // previously one of the coexisting parties (not the controller),
@@ -1317,6 +1317,8 @@ function setPlanetController(
     planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
   };
   let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  // RR "Shard of the Throne" (relic — PoK version, not the old base-game law): checked on every actual control change, not just combat wins — see rules/relics.ts's own doc comment for the full history/reasoning.
+  nextState = maybeTransferShardOfTheThroneOnControlGain(nextState, controllerId, planetId, previousControllerId, rules);
   const events: GameEvent[] = [];
 
   // RR 73/75: "When a player gains a planet card FROM THE PLANET DECK
@@ -1391,15 +1393,6 @@ function setPlanetController(
       const prev = nextState.players[previousControllerId];
       nextState = { ...nextState, players: { ...nextState.players, [previousControllerId]: { ...prev, victoryPoints: { ...prev.victoryPoints, current: Math.max(0, prev.victoryPoints.current - 1) } } } };
     }
-  }
-
-  // RR "The Crown of Emphidia": transfers to `controllerId` if the planet
-  // they just gained control of sits in the CURRENT owner's own home
-  // system — checked here (not via maybeTransferVpCard's own generic
-  // shape) since only this function knows which system this planet is in.
-  const crownOwnerId = getLawOwner(nextState, "the_crown_of_emphidia" as AgendaId);
-  if (crownOwnerId && crownOwnerId !== controllerId && rules.homeSystemByFaction[nextState.players[crownOwnerId]?.factionId] === systemId) {
-    nextState = maybeApplyCrownOfEmphidiaOnControlGain(nextState, controllerId);
   }
 
   // RR PoK "Wormhole Nexus": gaining control of Mallice is the OTHER trigger for the active-flip (the first being a ship arriving there — see tacticalAction.ts's moveShips).

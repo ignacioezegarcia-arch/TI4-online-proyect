@@ -1,7 +1,7 @@
 import { GameState, Player, PlanetState, SystemState, UnitStack, PendingAgendaVote, AgendaPredictionReward } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PlanetId, SystemId, ActionCardId, AgendaId, TechId, UnitUpgradeId, PromissoryNoteId, StrategyCardId, asActionCardId } from "../types/ids";
-import { UnitType, SHIP_TYPES } from "../types/enums";
+import { PlayerId, PlanetId, SystemId, ActionCardId, AgendaId, TechId, UnitUpgradeId, PromissoryNoteId, StrategyCardId, asActionCardId, NEUTRAL_PLAYER_ID } from "../types/ids";
+import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { applyHitAssignments, getMoraleBoostHitOnBonus } from "../rules/combat";
 import { getLawOwner, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
@@ -12,6 +12,10 @@ import { revealAgenda, continueAgendaPhaseAfterElectionReaction } from "./agenda
 import { drawActionCard } from "./actionCards";
 import { advanceActivePlayer } from "./actionPhase";
 import { checkReinforcementsAvailable, commandTokensAvailableInReinforcements, placeCommandTokenFromReinforcements } from "../rules/reinforcements";
+import { hasThundersEdge } from "../rules/gameMode";
+import { resolveStrategySecondaryEffect, resolveStrategyPrimaryEffect } from "./strategyCardAbilities";
+import { grantBreakthrough } from "../rules/breakthroughs";
+import { getGravityRiftDestructionCheck } from "../rules/anomalies";
 import { moveAllShips, announceRetreat } from "./spaceCombat";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { isPlayersTurnInWindow, advancePriorityWindowAfterAction, actionPhaseWindowOrder } from "../rules/priorityWindow";
@@ -1149,11 +1153,17 @@ export function playHackElection(state: GameState, action: { type: "PLAY_HACK_EL
   const speakerId = played.state.seatOrder.find((id) => played.state.players[id]?.isSpeaker);
   if (!speakerId) return { ok: false, error: "No speaker set — can't determine voting order." };
 
-  const reversedSeatOrder = [...played.state.seatOrder].reverse();
-  const reversedSpeakerIndex = reversedSeatOrder.indexOf(speakerId);
-  const newOrder = [...reversedSeatOrder.slice(reversedSpeakerIndex + 1), ...reversedSeatOrder.slice(0, reversedSpeakerIndex + 1)];
   const stillEligible = new Set(pending.votingOrder);
-  const reorderedVotingOrder = newOrder.filter((id) => stillEligible.has(id));
+  let reorderedVotingOrder: PlayerId[];
+  if (hasThundersEdge(played.state.mode)) {
+    // TE Hack Election Ω: "During this agenda, you vote last." — simpler than the base version: only the caster moves, to the very end, everyone else keeps their existing relative order.
+    reorderedVotingOrder = [...pending.votingOrder.filter((id) => id !== action.playerId), action.playerId].filter((id) => stillEligible.has(id));
+  } else {
+    const reversedSeatOrder = [...played.state.seatOrder].reverse();
+    const reversedSpeakerIndex = reversedSeatOrder.indexOf(speakerId);
+    const newOrder = [...reversedSeatOrder.slice(reversedSpeakerIndex + 1), ...reversedSeatOrder.slice(0, reversedSpeakerIndex + 1)];
+    reorderedVotingOrder = newOrder.filter((id) => stillEligible.has(id));
+  }
 
   const updatedPending: PendingAgendaVote = { ...pending, votingOrder: reorderedVotingOrder, nextVoterIndex: 0 };
   const nextState = advancePriorityWindowAfterAction({ ...played.state, pendingAgendaVote: updatedPending }, action.playerId);
@@ -3049,5 +3059,588 @@ export function playRevealPrototype(
     ok: true,
     state: nextState,
     events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("reveal_prototype") }, ...researched.events],
+  };
+}
+
+// ---------------------------------------------------------------------
+// Thunder's Edge action cards (data/actionCards.json's own former
+// _thundersEdge section, now merged into the main array).
+// ---------------------------------------------------------------------
+
+/**
+ * RR "Strategize" (TE): "Perform the secondary ability of any readied or
+ * unchosen strategy card." Broader than the normal RR 83.4 secondary-
+ * resolution rule (which requires someone ELSE to have chosen the card
+ * THIS round) — here, a card nobody chose this round (still sitting in
+ * unclaimedStrategyCards) is ALSO fair game, and so, per "readied", is a
+ * card someone chose but hasn't exhausted (used) yet — including,
+ * notably, the CASTER'S OWN chosen card (RR 83.4 normally forbids using
+ * your own card's secondary; this card's own wording doesn't exclude
+ * that case). Still costs the normal 1 strategy-pool token (Leadership's
+ * own secondary stays free either way) — resolveStrategySecondaryEffect
+ * itself charges that, called directly here rather than through
+ * resolveStrategySecondary's own narrower eligibility gate.
+ */
+export function playStrategize(
+  state: GameState,
+  action: { type: "PLAY_STRATEGIZE"; playerId: PlayerId; cardId: string; payload: unknown },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "strategize");
+  if (!played.ok) return played;
+
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "If a player is eliminated, the strategy cards that they had are considered 'unchosen'" — so an eliminated owner is treated the same as no owner at all here.
+  const ownerEntry = Object.values(played.state.players)
+    .filter((p) => !p.eliminated)
+    .flatMap((p) => p.strategyCards.map((c) => ({ ...c, ownerId: p.id })))
+    .find((c) => c.cardId === action.cardId);
+  const isUnchosen = played.state.unclaimedStrategyCards.some((c) => c.cardId === action.cardId);
+  if (!isUnchosen && (!ownerEntry || ownerEntry.exhausted)) {
+    return { ok: false, error: `TE "Strategize": "${action.cardId}" must be readied (chosen but not yet used this round) or unchosen (in the common area).` };
+  }
+  if ((played.state.strategyCardSecondariesUsedBy?.[action.cardId as import("../types/ids").StrategyCardId] ?? []).includes(action.playerId)) {
+    return { ok: false, error: "RR 82.1: this player has already resolved that strategy card's secondary ability this round." };
+  }
+
+  const p = (action.payload ?? {}) as Record<string, unknown>;
+  const result = resolveStrategySecondaryEffect(played.state, { type: "RESOLVE_STRATEGY_SECONDARY", playerId: action.playerId, cardId: action.cardId, payload: action.payload }, played.player, p, rules);
+  if (!result.ok) return result;
+
+  const cardIdBranded = action.cardId as import("../types/ids").StrategyCardId;
+  const nextState: GameState = {
+    ...result.state,
+    strategyCardSecondariesUsedBy: { ...result.state.strategyCardSecondariesUsedBy, [cardIdBranded]: [...(result.state.strategyCardSecondariesUsedBy?.[cardIdBranded] ?? []), action.playerId] },
+  };
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("strategize") }, ...result.events] };
+}
+
+/**
+ * RR "Overrule" (TE): "Perform the primary ability of any readied or
+ * unchosen strategy card." Same "readied or unchosen" eligibility as
+ * Strategize above, but for the PRIMARY instead — normally RR 83.3
+ * restricts a primary to the card's own OWNER only; this card bypasses
+ * that ownership check entirely (resolveStrategyPrimaryEffect is called
+ * directly, not through resolveStrategyPrimary's own gate). If the
+ * target card is currently owned by someone, exhausts THEIR copy (same
+ * "used this round" bookkeeping a normal primary resolution would); an
+ * unchosen (common-area) card has no owner to exhaust, so it's simply
+ * left as unchosen.
+ */
+export function playOverrule(
+  state: GameState,
+  action: { type: "PLAY_OVERRULE"; playerId: PlayerId; cardId: string; payload: unknown },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "overrule");
+  if (!played.ok) return played;
+
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "If a player is eliminated, the strategy cards that they had are considered 'unchosen'."
+  const ownerId = Object.values(played.state.players).find((p) => !p.eliminated && p.strategyCards.some((c) => c.cardId === action.cardId))?.id;
+  const ownerEntry = ownerId ? played.state.players[ownerId].strategyCards.find((c) => c.cardId === action.cardId) : undefined;
+  const isUnchosen = played.state.unclaimedStrategyCards.some((c) => c.cardId === action.cardId);
+  if (!isUnchosen && (!ownerEntry || ownerEntry.exhausted)) {
+    return { ok: false, error: `TE "Overrule": "${action.cardId}" must be readied (chosen but not yet used this round) or unchosen (in the common area).` };
+  }
+
+  const p = (action.payload ?? {}) as Record<string, unknown>;
+  const result = resolveStrategyPrimaryEffect(played.state, { type: "RESOLVE_STRATEGY_PRIMARY", playerId: action.playerId, cardId: action.cardId, payload: action.payload }, played.player, p, rules);
+  if (!result.ok) return result;
+
+  let nextState = result.state;
+  if (ownerId && ownerEntry) {
+    const resolvingOwner = nextState.players[ownerId];
+    nextState = {
+      ...nextState,
+      players: { ...nextState.players, [ownerId]: { ...resolvingOwner, strategyCards: resolvingOwner.strategyCards.map((c) => (c.cardId === action.cardId ? { ...c, exhausted: true } : c)) } },
+    };
+  }
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("overrule") }, ...result.events] };
+}
+
+/**
+ * TE "Rescue": "After another player moves ships into a system that
+ * contains your ships: You may move 1 of your ships into the active
+ * system from any system that does not contain one of your command
+ * tokens." Played during the after_ships_moved_in window (opened by
+ * phases/tacticalAction.ts's own moveShips, right after movement
+ * resolves) — moves exactly 1 ship, ignoring move value entirely (same
+ * "ability movement, not tactical-action movement" category RR 58.8
+ * already covers for effects like this one).
+ */
+export function playRescue(
+  state: GameState,
+  action: { type: "PLAY_RESCUE"; playerId: PlayerId; fromSystemId: SystemId; unitType: import("../types/enums").UnitType; gravityRiftDieRoll?: number },
+): ActionResult {
+  if (!isPlayersTurnInWindow(state, "after_ships_moved_in", action.playerId)) {
+    return { ok: false, error: "It isn't this player's turn in the current after-ships-moved-in priority window." };
+  }
+  const pending = state.pendingTacticalAction;
+  if (!pending) return { ok: false, error: "No tactical action in progress." };
+  const activeSystemId = pending.systemId;
+  const player = state.players[action.playerId];
+  if (player.commandTokens.onBoard.includes(action.fromSystemId)) {
+    return { ok: false, error: 'TE "Rescue": cannot move a ship from a system that contains this player\'s own command token.' };
+  }
+  const sourceSystem = state.systems[action.fromSystemId];
+  const sourceStack = sourceSystem?.spaceUnitsByPlayer[action.playerId]?.find((s) => s.unitType === action.unitType && s.count > 0);
+  if (!sourceSystem || !sourceStack) {
+    return { ok: false, error: `This player has no ${action.unitType} in ${action.fromSystemId}.` };
+  }
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "If the chosen ship is in a gravity rift, it must roll for removal." Same 1d10, destroyed on <=3 as the normal gravity-rift-movement rule elsewhere.
+  const riftCheck = getGravityRiftDestructionCheck(sourceSystem.anomalies);
+  if (riftCheck && action.gravityRiftDieRoll === undefined) {
+    return { ok: false, error: `TE "Rescue": ${action.fromSystemId} contains a gravity rift — gravityRiftDieRoll is required.` };
+  }
+  const destroyedByRift = riftCheck ? (action.gravityRiftDieRoll as number) <= riftCheck.destroyOnRollLessOrEqual : false;
+
+  const played = playCard(state, action.playerId, "rescue");
+  if (!played.ok) return played;
+
+  const updatedSourceStacks = (sourceSystem.spaceUnitsByPlayer[action.playerId] ?? [])
+    .map((s) => (s === sourceStack ? { ...s, count: s.count - 1 } : s))
+    .filter((s) => s.count > 0);
+  let systems: GameState["systems"] = { ...played.state.systems, [action.fromSystemId]: { ...sourceSystem, spaceUnitsByPlayer: { ...sourceSystem.spaceUnitsByPlayer, [action.playerId]: updatedSourceStacks } } };
+
+  const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("rescue") }];
+  if (destroyedByRift) {
+    events.push({ type: "UNITS_DESTROYED", playerId: action.playerId, systemId: action.fromSystemId, unitType: action.unitType, count: 1 });
+  } else {
+    const activeSystem = systems[activeSystemId];
+    const updatedActiveStacks = addSpaceUnits(activeSystem, action.playerId, action.unitType, 1);
+    systems = { ...systems, [activeSystemId]: updatedActiveStacks };
+  }
+
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems }, action.playerId);
+  return { ok: true, state: nextState, events };
+}
+
+/**
+ * TE "Lie in Wait": "After 2 of your neighbours resolve a transaction:
+ * Look at each of those player's hands of action cards, then choose and
+ * take 1 action card from each." Played during the after_transaction_
+ * resolved window (rules/transactions.ts's own resolveTransaction) —
+ * "look at their hands" itself needs no separate game-state modeling
+ * (that's just information a UI would show a human player); this action
+ * directly specifies which 1 card to take from each of the 2 banked
+ * pendingLieInWaitTargets.
+ */
+export function playLieInWait(
+  state: GameState,
+  action: { type: "PLAY_LIE_IN_WAIT"; playerId: PlayerId; cardIdFromFirst: string; cardIdFromSecond: string },
+): ActionResult {
+  if (!isPlayersTurnInWindow(state, "after_transaction_resolved", action.playerId)) {
+    return { ok: false, error: "It isn't this player's turn in the current after-transaction-resolved priority window." };
+  }
+  const targets = state.pendingLieInWaitTargets;
+  if (!targets) return { ok: false, error: "No transaction is currently pending a Lie in Wait reaction." };
+  const [firstId, secondId] = targets;
+  const firstPlayer = state.players[firstId];
+  const secondPlayer = state.players[secondId];
+  if (!firstPlayer?.actionCards.includes(action.cardIdFromFirst as never)) {
+    return { ok: false, error: `${firstId} doesn't have that action card.` };
+  }
+  if (!secondPlayer?.actionCards.includes(action.cardIdFromSecond as never)) {
+    return { ok: false, error: `${secondId} doesn't have that action card.` };
+  }
+
+  const played = playCard(state, action.playerId, "lie_in_wait");
+  if (!played.ok) return played;
+
+  const updatedFirst: Player = { ...played.state.players[firstId], actionCards: played.state.players[firstId].actionCards.filter((id) => id !== action.cardIdFromFirst) };
+  const updatedSecond: Player = { ...played.state.players[secondId], actionCards: played.state.players[secondId].actionCards.filter((id) => id !== action.cardIdFromSecond) };
+  const updatedCaster: Player = { ...played.player, actionCards: [...played.player.actionCards, action.cardIdFromFirst, action.cardIdFromSecond] as never };
+
+  const nextState = advancePriorityWindowAfterAction(
+    { ...played.state, players: { ...played.state.players, [firstId]: updatedFirst, [secondId]: updatedSecond, [action.playerId]: updatedCaster } },
+    action.playerId,
+  );
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("lie_in_wait") }] };
+}
+
+/**
+ * TE "Crisis": "At the end of any player's turn, if there are at least 2
+ * players who have not passed: Skip the next player's turn." Played
+ * during the shared end_of_turn window (phases/actionPhase.ts's own
+ * maybeAdvanceActivePlayer) — sets skipNextTurnForPlayerId to whoever
+ * would actually be up next (computed the same way advanceActivePlayer
+ * itself would), consumed there once that function actually runs.
+ */
+export function playCrisis(state: GameState, action: { type: "PLAY_CRISIS"; playerId: PlayerId }): ActionResult {
+  if (!isPlayersTurnInWindow(state, "end_of_turn", action.playerId)) {
+    return { ok: false, error: "It isn't this player's turn in the current end-of-turn priority window." };
+  }
+  const notPassedCount = Object.values(state.players).filter((p) => !p.eliminated && !p.hasPassed).length;
+  if (notPassedCount < 2) {
+    return { ok: false, error: 'TE "Crisis": requires at least 2 players who have not passed.' };
+  }
+  const played = playCard(state, action.playerId, "crisis");
+  if (!played.ok) return played;
+
+  const order = played.state.initiativeOrder;
+  const currentIndex = played.state.activePlayerId ? order.indexOf(played.state.activePlayerId) : -1;
+  let nextPlayerId: PlayerId | undefined;
+  for (let i = 1; i <= order.length; i++) {
+    const candidate = order[(currentIndex + i) % order.length];
+    if (!played.state.players[candidate]?.hasPassed) {
+      nextPlayerId = candidate;
+      break;
+    }
+  }
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, skipNextTurnForPlayerId: nextPlayerId }, action.playerId);
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("crisis") }] };
+}
+
+/**
+ * TE "Puppets on a String": "At the end of any player's turn, if you have
+ * passed: Perform 1 action." Same end_of_turn window as Crisis above —
+ * grants the CASTER (who must have already passed this round) 1 more
+ * action, by clearing their own hasPassed flag just long enough for
+ * maybeAdvanceActivePlayer's own upcoming advanceActivePlayer call to
+ * treat them as the (or a) valid next active player. Re-passing
+ * afterward (a normal PASS action) works exactly as it always does.
+ */
+export function playPuppetsOnAString(state: GameState, action: { type: "PLAY_PUPPETS_ON_A_STRING"; playerId: PlayerId }): ActionResult {
+  if (!isPlayersTurnInWindow(state, "end_of_turn", action.playerId)) {
+    return { ok: false, error: "It isn't this player's turn in the current end-of-turn priority window." };
+  }
+  const player = state.players[action.playerId];
+  if (!player?.hasPassed) {
+    return { ok: false, error: 'TE "Puppets on a String": this player must have already passed this round.' };
+  }
+  const played = playCard(state, action.playerId, "puppets_on_a_string");
+  if (!played.ok) return played;
+
+  const unpassedPlayer: Player = { ...played.player, hasPassed: false };
+  const nextState = advancePriorityWindowAfterAction(
+    { ...played.state, players: { ...played.state.players, [action.playerId]: unpassedPlayer }, activePlayerId: action.playerId, activePlayerActionsTaken: 0, puppetsOnAStringActive: true },
+    action.playerId,
+  );
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("puppets_on_a_string") }] };
+}
+
+/**
+ * TE "Exchange Program": "As an Action: Choose another player. You and
+ * the player may agree to place 1 infantry from each of your
+ * reinforcements into coexistence on a planet the other player controls
+ * that contains their ground forces; if no agreement is reached, you
+ * each discard 1 token from your fleet pool."
+ *
+ * A real negotiation between 2 people happens out loud before anything
+ * changes hands — same "one atomic action represents the already-agreed
+ * outcome" pattern this project's own Transactions already use — so
+ * `agreed` here just reports whether that negotiation succeeded, rather
+ * than this being a 2-step propose/accept flow.
+ *
+ * Reuses TE COEXIST's own data model directly (coexistingPlayerIds on
+ * the target PlanetState) rather than going through the normal
+ * commit-ground-forces pipeline at all — this places brand new infantry
+ * straight from each player's reinforcements, with no invasion step
+ * involved.
+ */
+export function playExchangeProgram(
+  state: GameState,
+  action: { type: "PLAY_EXCHANGE_PROGRAM"; playerId: PlayerId; otherPlayerId: PlayerId; agreed: boolean; targetPlanetId?: PlanetId },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "exchange_program");
+  if (!played.ok) return played;
+
+  if (!action.agreed) {
+    const caster = played.player;
+    const other = played.state.players[action.otherPlayerId];
+    if (!other) return { ok: false, error: "Unknown player." };
+    const removeOneFleetToken = (p: Player): Player => {
+      const { fleet, ...rest } = p.commandTokens;
+      return { ...p, commandTokens: { ...rest, fleet: Math.max(0, fleet - 1) } };
+    };
+    const nextState = advancePriorityWindowAfterAction(
+      { ...played.state, players: { ...played.state.players, [action.playerId]: removeOneFleetToken(caster), [action.otherPlayerId]: removeOneFleetToken(other) } },
+      action.playerId,
+    );
+    return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("exchange_program") }] };
+  }
+
+  if (!action.targetPlanetId) {
+    return { ok: false, error: 'TE "Exchange Program": targetPlanetId is required when agreement is reached.' };
+  }
+  const found = findPlanet(played.state, action.targetPlanetId);
+  if (!found) return { ok: false, error: `No planet ${action.targetPlanetId}.` };
+  if (found.planet.controllerId !== action.otherPlayerId) {
+    return { ok: false, error: "That planet must be controlled by the OTHER player named in this exchange." };
+  }
+  const otherHasGroundForces = (found.planet.unitsByPlayer[action.otherPlayerId] ?? []).some((s) => s.count > 0);
+  if (!otherHasGroundForces) {
+    return { ok: false, error: "That planet must contain the other player's own ground forces." };
+  }
+  const casterCheck = checkReinforcementsAvailable(played.state, action.playerId, [{ unitType: "infantry", count: 1 }]);
+  if (!casterCheck.ok) return casterCheck;
+  const otherCheck = checkReinforcementsAvailable(played.state, action.otherPlayerId, [{ unitType: "infantry", count: 1 }]);
+  if (!otherCheck.ok) return otherCheck;
+
+  let updatedPlanet = found.planet;
+  // The other player's own new infantry simply joins their existing presence (they already control this planet) — the caster's own is what actually starts coexisting.
+  updatedPlanet = addPlanetUnits(updatedPlanet, action.otherPlayerId, "infantry", 1);
+  updatedPlanet = addPlanetUnits(updatedPlanet, action.playerId, "infantry", 1);
+  updatedPlanet = { ...updatedPlanet, coexistingPlayerIds: [...(updatedPlanet.coexistingPlayerIds ?? []), action.playerId] };
+
+  const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === action.targetPlanetId ? updatedPlanet : p)) };
+  const nextState = advancePriorityWindowAfterAction(
+    { ...played.state, systems: { ...played.state.systems, [found.systemId]: updatedSystem } },
+    action.playerId,
+  );
+  return {
+    ok: true,
+    state: nextState,
+    events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("exchange_program") }, { type: "COEXISTENCE_STARTED", systemId: found.systemId, planetId: action.targetPlanetId, coexistingPlayerId: action.playerId }],
+  };
+}
+
+/**
+ * TE "Brilliance": "As an Action: Ready 1 of your planets that has a
+ * technology specialty or choose 1 player to gain their breakthrough."
+ * Reuses rules/breakthroughs.ts's own grantBreakthrough directly for the
+ * 2nd option.
+ */
+export function playBrilliance(
+  state: GameState,
+  action: { type: "PLAY_BRILLIANCE"; playerId: PlayerId; mode: "ready_planet" | "grant_breakthrough"; planetId?: PlanetId; targetPlayerId?: PlayerId; fractureDieRoll?: number },
+  rules: RuleData,
+): ActionResult {
+  const played = playCard(state, action.playerId, "brilliance");
+  if (!played.ok) return played;
+
+  if (action.mode === "ready_planet") {
+    if (!action.planetId) return { ok: false, error: 'TE "Brilliance": planetId is required for ready_planet mode.' };
+    const found = findPlanet(played.state, action.planetId);
+    if (!found || found.planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
+    if ((rules.planets[action.planetId]?.techSpecialties ?? []).length === 0) {
+      return { ok: false, error: "That planet has no technology specialty." };
+    }
+    const updatedPlanet: PlanetState = { ...found.planet, exhausted: false };
+    const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+    const nextState = advancePriorityWindowAfterAction({ ...played.state, systems: { ...played.state.systems, [found.systemId]: updatedSystem } }, action.playerId);
+    return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("brilliance") }] };
+  }
+
+  if (!action.targetPlayerId) return { ok: false, error: 'TE "Brilliance": targetPlayerId is required for grant_breakthrough mode.' };
+  const granted = grantBreakthrough(played.state, action.targetPlayerId, rules, action.fractureDieRoll);
+  const nextState = advancePriorityWindowAfterAction(granted.state, action.playerId);
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("brilliance") }, ...granted.events] };
+}
+
+/**
+ * TE "Mercenary Contract": "As an Action: Spend 2 trade goods to place 2
+ * neutral infantry on any non-home planet that contains no units; if
+ * that planet was owned by another player, they return its planet card
+ * to the planet card deck." Places under NEUTRAL_PLAYER_ID, same
+ * pseudo-player used for Fracture guardians.
+ */
+export function playMercenaryContract(state: GameState, action: { type: "PLAY_MERCENARY_CONTRACT"; playerId: PlayerId; planetId: PlanetId }, rules: RuleData): ActionResult {
+  const player = state.players[action.playerId];
+  if (player.tradeGoods < 2) return { ok: false, error: "Not enough trade goods (need 2)." };
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  if (rules.planets[action.planetId]?.homeFactionId) return { ok: false, error: "Cannot target a home planet." };
+  const hasAnyUnits = Object.values(found.planet.unitsByPlayer).some((stacks) => (stacks ?? []).some((s) => s.count > 0));
+  if (hasAnyUnits) return { ok: false, error: "That planet must contain no units." };
+
+  const played = playCard(state, action.playerId, "mercenary_contract");
+  if (!played.ok) return played;
+
+  const chargedPlayer: Player = { ...played.player, tradeGoods: played.player.tradeGoods - 2 };
+  // RR (yjmrobert.com/tirules/components/c_action_cards): "When a planet card is returned to the planet card deck... when a player later gains control of that planet, they will explore it" — so explored resets to false too, not just controllerId. "If a legendary planet card is returned, the player that controlled it also loses the associated legendary planet ability card" — legendaryAbilityExhausted reset alongside (the ability itself is tracked as "gone" the same way losing control normally works elsewhere in this project, via wasUncontrolled-gated re-grant on the NEXT controller).
+  const updatedPlanet: PlanetState = {
+    ...found.planet,
+    controllerId: null,
+    exhausted: false,
+    explored: false,
+    legendaryAbilityExhausted: undefined,
+    unitsByPlayer: { ...found.planet.unitsByPlayer, [NEUTRAL_PLAYER_ID]: [{ unitType: "infantry", count: 2, damagedCount: 0 }] },
+  };
+  const updatedSystem: SystemState = { ...found.system, planets: found.system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+  const nextState = advancePriorityWindowAfterAction(
+    { ...played.state, players: { ...played.state.players, [action.playerId]: chargedPlayer }, systems: { ...played.state.systems, [found.systemId]: updatedSystem } },
+    action.playerId,
+  );
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("mercenary_contract") }] };
+}
+
+/**
+ * TE "Pirate Contract": "As an Action: Place 1 neutral destroyer in a
+ * non-home system that contains no non-neutral ships."
+ */
+export function playPirateContract(state: GameState, action: { type: "PLAY_PIRATE_CONTRACT"; playerId: PlayerId; systemId: SystemId }, rules: RuleData): ActionResult {
+  const system = state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  if (Object.values(rules.homeSystemByFaction).includes(action.systemId)) {
+    return { ok: false, error: "Cannot place a neutral destroyer in a home system." };
+  }
+  const hasNonNeutralShips = Object.entries(system.spaceUnitsByPlayer).some(([id, stacks]) => id !== NEUTRAL_PLAYER_ID && (stacks ?? []).some((s) => s.count > 0));
+  if (hasNonNeutralShips) return { ok: false, error: "That system contains non-neutral ships." };
+
+  const played = playCard(state, action.playerId, "pirate_contract");
+  if (!played.ok) return played;
+
+  const updatedSystem = addSpaceUnits(system, NEUTRAL_PLAYER_ID, "destroyer", 1);
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems: { ...played.state.systems, [action.systemId]: updatedSystem } }, action.playerId);
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("pirate_contract") }] };
+}
+
+/**
+ * TE "Pirate Fleet": "As an Action: Spend 3 resources to place 1 neutral
+ * carrier, 1 neutral cruiser, 1 neutral destroyer, and 2 neutral
+ * fighters in a non-home system that contains no non-neutral ships."
+ */
+export function playPirateFleet(
+  state: GameState,
+  action: { type: "PLAY_PIRATE_FLEET"; playerId: PlayerId; systemId: SystemId; exhaustPlanetIdsForResources: PlanetId[] },
+  rules: RuleData,
+): ActionResult {
+  const system = state.systems[action.systemId];
+  if (!system) return { ok: false, error: `No system ${action.systemId}.` };
+  if (Object.values(rules.homeSystemByFaction).includes(action.systemId)) {
+    return { ok: false, error: "Cannot place a neutral fleet in a home system." };
+  }
+  const hasNonNeutralShips = Object.entries(system.spaceUnitsByPlayer).some(([id, stacks]) => id !== NEUTRAL_PLAYER_ID && (stacks ?? []).some((s) => s.count > 0));
+  if (hasNonNeutralShips) return { ok: false, error: "That system contains non-neutral ships." };
+
+  let totalResources = 0;
+  let systems = state.systems;
+  for (const planetId of action.exhaustPlanetIdsForResources) {
+    const found = findPlanet(state, planetId);
+    if (!found || found.planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    if (found.planet.exhausted) return { ok: false, error: `${planetId} is already exhausted.` };
+    totalResources += rules.planets[planetId]?.resources ?? 0;
+    const updatedPlanet: PlanetState = { ...found.planet, exhausted: true };
+    systems = { ...systems, [found.systemId]: { ...found.system, planets: found.system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } };
+  }
+  if (totalResources < 3) return { ok: false, error: "Not enough resources from the exhausted planets (need 3)." };
+
+  const played = playCard({ ...state, systems }, action.playerId, "pirate_fleet");
+  if (!played.ok) return played;
+
+  let updatedSystem = played.state.systems[action.systemId];
+  updatedSystem = addSpaceUnits(updatedSystem, NEUTRAL_PLAYER_ID, "carrier", 1);
+  updatedSystem = addSpaceUnits(updatedSystem, NEUTRAL_PLAYER_ID, "cruiser", 1);
+  updatedSystem = addSpaceUnits(updatedSystem, NEUTRAL_PLAYER_ID, "destroyer", 1);
+  updatedSystem = addSpaceUnits(updatedSystem, NEUTRAL_PLAYER_ID, "fighter", 2);
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems: { ...played.state.systems, [action.systemId]: updatedSystem } }, action.playerId);
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("pirate_fleet") }] };
+}
+
+/**
+ * TE "Crash Landing": "When your last ship in the active system is
+ * destroyed: Place 1 of your ground forces from the space area of the
+ * active system onto a planet in that system other than Mecatol Rex; if
+ * the planet contains other players' units, place your ground force
+ * into coexistence." Played during the last_ship_destroyed window
+ * (opened by phases/spaceCombat.ts's own assignHits, right when a
+ * player's ships in a system hit zero while they still have ground
+ * forces sitting in that system's space area). Grants its OWN
+ * coexistence placement directly — unlike TE COEXIST's own
+ * hasAbility("can_choose_coexist") gate (which is for a DIFFERENT
+ * situation, choosing to coexist instead of fighting during a normal
+ * commit), this card's text itself is the source of the ability here,
+ * so no such check applies.
+ */
+export function playCrashLanding(
+  state: GameState,
+  action: { type: "PLAY_CRASH_LANDING"; playerId: PlayerId; unitType: import("../types/enums").UnitType; targetPlanetId: PlanetId },
+  rules: RuleData,
+): ActionResult {
+  if (!isPlayersTurnInWindow(state, "last_ship_destroyed", action.playerId)) {
+    return { ok: false, error: "It isn't this player's turn in the current last-ship-destroyed priority window." };
+  }
+  const pending = state.pendingTacticalAction;
+  if (!pending) return { ok: false, error: "No tactical action in progress." };
+  const systemId = pending.systemId;
+  const system = state.systems[systemId];
+  const targetPlanet = system?.planets.find((p) => p.planetId === action.targetPlanetId);
+  if (!targetPlanet) return { ok: false, error: `${action.targetPlanetId} isn't in the active system.` };
+  if (rules.planets[action.targetPlanetId]?.isMecatolRex) {
+    return { ok: false, error: 'TE "Crash Landing": cannot target Mecatol Rex.' };
+  }
+  const spaceStack = system.spaceUnitsByPlayer[action.playerId]?.find((s) => s.unitType === action.unitType && s.count > 0 && GROUND_FORCE_TYPES.includes(s.unitType));
+  if (!spaceStack) return { ok: false, error: `This player has no ${action.unitType} in the space area of that system.` };
+
+  const played = playCard(state, action.playerId, "crash_landing");
+  if (!played.ok) return played;
+
+  const updatedSpaceStacks = (system.spaceUnitsByPlayer[action.playerId] ?? []).map((s) => (s === spaceStack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+  const otherPlayersHaveUnitsHere = Object.entries(targetPlanet.unitsByPlayer).some(([id, stacks]) => id !== action.playerId && (stacks ?? []).some((s) => s.count > 0));
+  let updatedPlanet = addPlanetUnits(targetPlanet, action.playerId, action.unitType, 1);
+  if (otherPlayersHaveUnitsHere) {
+    updatedPlanet = { ...updatedPlanet, coexistingPlayerIds: [...(updatedPlanet.coexistingPlayerIds ?? []), action.playerId] };
+  }
+  const updatedSystem: SystemState = {
+    ...system,
+    spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: updatedSpaceStacks },
+    planets: system.planets.map((p) => (p.planetId === action.targetPlanetId ? updatedPlanet : p)),
+  };
+  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems: { ...played.state.systems, [systemId]: updatedSystem } }, action.playerId);
+  const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("crash_landing") }];
+  if (otherPlayersHaveUnitsHere) events.push({ type: "COEXISTENCE_STARTED", systemId, planetId: action.targetPlanetId, coexistingPlayerId: action.playerId });
+  return { ok: true, state: nextState, events };
+}
+
+/**
+ * TE "Extreme Duress": "At the start of another player's turn, if they
+ * have a readied strategy card: If that player's next action is not a
+ * strategic action, they discard all of their action cards, gives you
+ * all of their trade goods, and shows you all of their secret
+ * objectives." Played during the turn_start window (opened by
+ * phases/actionPhase.ts's own advanceActivePlayer) — this only ever SETS
+ * pendingExtremeDuress; the actual conditional punishment fires later,
+ * from GameEngine.ts's own post-dispatch check against the armed
+ * player's very next action.
+ */
+export function playExtremeDuress(state: GameState, action: { type: "PLAY_EXTREME_DURESS"; playerId: PlayerId; armedPlayerId: PlayerId }): ActionResult {
+  if (!isPlayersTurnInWindow(state, "turn_start", action.playerId)) {
+    return { ok: false, error: "It isn't this player's turn in the current turn-start priority window." };
+  }
+  if (state.activePlayerId !== action.armedPlayerId) {
+    return { ok: false, error: 'TE "Extreme Duress": armedPlayerId must be whoever\'s turn is actually starting.' };
+  }
+  const played = playCard(state, action.playerId, "extreme_duress");
+  if (!played.ok) return played;
+
+  const nextState = advancePriorityWindowAfterAction(
+    { ...played.state, pendingExtremeDuress: { armedPlayerId: action.armedPlayerId, casterId: action.playerId } },
+    action.playerId,
+  );
+  return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("extreme_duress") }] };
+}
+
+/**
+ * TE "Extreme Duress": the actual punishment, checked/applied by
+ * GameEngine.ts's own post-dispatch logic against whatever action the
+ * armed player just took (any type OTHER than RESOLVE_STRATEGY_PRIMARY
+ * counts as "not a strategic action") — always clears
+ * pendingExtremeDuress either way, whether or not the punishment
+ * actually fires.
+ */
+export function maybeApplyExtremeDuress(state: GameState, actedPlayerId: PlayerId, actionType: string): { state: GameState; events: GameEvent[] } {
+  const pending = state.pendingExtremeDuress;
+  if (!pending || pending.armedPlayerId !== actedPlayerId) return { state, events: [] };
+  // PASS_PRIORITY (declining some OTHER, unrelated reactive window) isn't a real "action" for this card's own purposes — only count once the armed player actually does something that consumes their own turn.
+  if (actionType === "PASS_PRIORITY") return { state, events: [] };
+  if (actionType === "RESOLVE_STRATEGY_PRIMARY") {
+    return { state: { ...state, pendingExtremeDuress: undefined }, events: [] };
+  }
+  const armed = state.players[pending.armedPlayerId];
+  const caster = state.players[pending.casterId];
+  if (!armed || !caster) return { state: { ...state, pendingExtremeDuress: undefined }, events: [] };
+
+  const updatedArmed: Player = { ...armed, actionCards: [], tradeGoods: 0 };
+  const updatedCaster: Player = { ...caster, tradeGoods: caster.tradeGoods + armed.tradeGoods };
+  const nextState: GameState = {
+    ...state,
+    pendingExtremeDuress: undefined,
+    players: { ...state.players, [pending.armedPlayerId]: updatedArmed, [pending.casterId]: updatedCaster },
+  };
+  // "Shows you all of their secret objectives" needs no state change in this project (secretObjectives are already visible to whichever code needs them — there's no separate "hidden from other players" gate on this data structure); recorded as an event for any UI that wants to actually display them to the caster.
+  return {
+    state: nextState,
+    events: [{ type: "EXTREME_DURESS_TRIGGERED", armedPlayerId: pending.armedPlayerId, casterId: pending.casterId, secretObjectiveIds: armed.secretObjectives }],
   };
 }

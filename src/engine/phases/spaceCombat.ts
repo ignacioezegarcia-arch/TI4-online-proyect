@@ -5,7 +5,8 @@ import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { isAdjacent, maybeActivateWormholeNexus } from "../rules/adjacency";
 import { canShipEnterTile, hasEntropicScar } from "../rules/anomalies";
-import { getEffectiveUnitAbilities, maybeApplyShardOfTheThroneOnCombatWin, maybeQueueCrownOfThalnosReroll } from "./agendaEffects";
+import { getEffectiveUnitAbilities } from "./agendaEffects";
+import { maybeQueueCrownOfThalnosReroll } from "../rules/relics";
 import {
   playersWithShipsInSystem,
   buildSpaceCombatEntries,
@@ -322,7 +323,6 @@ function beginCombatRoundsAfterAFB(state: GameState, rules: RuleData): { state: 
   if (survivors.length <= 1) {
     const winnerId = survivors[0] ?? null;
     let nextState = state;
-    if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
     nextState = resolveSpaceStationControl(nextState, systemId);
     nextState = { ...nextState, pendingTacticalAction: { playerId: pending.playerId, systemId, step: "invasion" } };
     nextState = winnerId ? openSpaceCombatWonWindowIfNeeded(nextState, winnerId) : openInvasionStartWindowIfNeeded(nextState);
@@ -505,7 +505,7 @@ export function assignHits(
   // TE NEUTRAL UNITS: see phases/invasion.ts's own assignGroundCombatHits for the identical fixed-priority-order reasoning — same mechanic, space combat side.
   const spaceAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
 
-  const result = applyHitAssignments(state, stacks, spaceAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
+  const result = applyHitAssignments(state, stacks, spaceAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, player.relics.includes("metali_void_shielding" as never));
   if (!result.ok) return { ok: false, error: `RR 67.6: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -552,6 +552,17 @@ export function assignHits(
     players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
     pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, duraniumArmorPendingPlayers },
   };
+
+  // TE "Crash Landing": "When your last ship in the active system is
+  // destroyed" — checked right here, the one place a player's own ships
+  // in a system actually go from >0 to 0. Only offered if they actually
+  // have ground forces sitting in that system's space area (transported
+  // units) to place — nothing to react with otherwise.
+  const shipsLeft = (updatedSystem.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0);
+  const groundForcesInSpace = (updatedSystem.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => GROUND_FORCE_TYPES.includes(s.unitType) && s.count > 0);
+  if (!shipsLeft && groundForcesInSpace && !nextState.pendingPriorityWindow) {
+    nextState = { ...nextState, pendingPriorityWindow: { kind: "last_ship_destroyed", order: [action.playerId], currentIndex: 0, consecutivePasses: 0 } };
+  }
 
   if (Object.keys(remainingPendingHits).length === 0 && (duraniumArmorPendingPlayers ?? []).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpCombatRound(nextState, rules);
@@ -658,7 +669,6 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
 
   if (survivors.length <= 1) {
     const winnerId = survivors[0] ?? null;
-    if (winnerId) nextState = maybeApplyShardOfTheThroneOnCombatWin(nextState, winnerId, combatantsBeforeEnd);
     nextState = resolveSpaceStationControl(nextState, systemId);
 
     // RR 16.3/78.10a: the winner's own surviving ships might have less

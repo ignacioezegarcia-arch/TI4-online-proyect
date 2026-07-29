@@ -3,6 +3,7 @@ import { ActionResult } from "../types/Actions";
 import { PlayerId, TechId, UnitUpgradeId, PlanetId, AgendaId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { maybeQueueAntiIntellectualRevolutionDestruction, isLawActiveWithOutcome } from "./agendaEffects";
+import { hasQuantumcoreUniversalSynergy } from "../rules/relics";
 
 /**
  * RR 90 TECHNOLOGY. There's no general "spend resources, research anything"
@@ -147,7 +148,7 @@ export function checkTechPrerequisites(
   // specific player has earned their breakthrough (rules/breakthroughs.ts's
   // own grantBreakthrough) — a fresh game shouldn't get synergy for free.
   const synergy = state.players[playerId]?.hasBreakthrough ? (rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null) : null;
-  return checkPrerequisitesAgainst(techData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreColors);
+  return checkPrerequisitesAgainst(techData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreColors, hasQuantumcoreUniversalSynergy(state, playerId));
 }
 
 export function researchUnitUpgrade(
@@ -236,7 +237,7 @@ export function checkUnitUpgradePrerequisites(
   }
 
   const synergy = state.players[playerId]?.hasBreakthrough ? (rules.factions[state.players[playerId].factionId]?.breakthroughSynergy ?? null) : null;
-  return checkPrerequisitesAgainst(upgradeData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreColors);
+  return checkPrerequisitesAgainst(upgradeData.prerequisites, getOwnedTechColors(state, playerId, rules), synergy, ignoreColors, hasQuantumcoreUniversalSynergy(state, playerId));
 }
 
 /** Every color this player already owns a tech (or unit upgrade — those count too, RR 90.7) in, one entry per tech. */
@@ -253,6 +254,8 @@ function checkPrerequisitesAgainst(
   synergy: [string, string] | null,
   /** Each entry ignores exactly ONE instance of that color's requirement (e.g. two entries of "red" turn a "2 red" requirement into "0 red") — stackable across however many sources (Research Team, AI Development Algorithm, tech-specialty planets) the caller combined. */
   ignoreColors: string[] = [],
+  /** RR "The Quantumcore" (relic): "you have SYNERGY for all technology types" — broader than the normal 2-color faction pair; when true, ALL 4 tech colors count as mutually substitutable for every prerequisite check, ignoring the `synergy` pair above entirely (it would be redundant). */
+  universalSynergy = false,
 ): { met: boolean; reason?: string } {
   if (prerequisites.length === 0) return { met: true };
   const neededByColor = new Map<string, number>();
@@ -266,12 +269,14 @@ function checkPrerequisitesAgainst(
   for (const [color, count] of neededByColor) {
     if (count <= 0) continue;
     let owned = ownedColors.filter((c) => c === color).length;
-    if (synergy && (synergy[0] === color || synergy[1] === color)) {
+    if (universalSynergy) {
+      owned = ownedColors.length; // any color counts toward any other color's requirement
+    } else if (synergy && (synergy[0] === color || synergy[1] === color)) {
       const substituteColor = synergy[0] === color ? synergy[1] : synergy[0];
       owned += ownedColors.filter((c) => c === substituteColor).length;
     }
     if (owned < count) {
-      return { met: false, reason: `Needs ${count} ${color} tech(s)${synergy ? " (or Breakthrough-synergy equivalent)" : ""}, only owns ${owned}.` };
+      return { met: false, reason: `Needs ${count} ${color} tech(s)${synergy || universalSynergy ? " (or Breakthrough-synergy equivalent)" : ""}, only owns ${owned}.` };
     }
   }
   return { met: true };

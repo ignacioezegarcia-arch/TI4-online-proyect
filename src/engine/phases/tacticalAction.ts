@@ -11,6 +11,7 @@ import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "
 import { maybeReturnCapturedUnitsOnBlockade } from "../rules/capture";
 import { computeSpaceCombatEntry, openCombatRoundStartWindowIfNeeded } from "./spaceCombat";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
+import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -136,6 +137,8 @@ export function moveShips(
     transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
     transportedFighters?: { fromSystemId: SystemId; count: number }[];
     gravityDriveBoostFromSystemId?: SystemId;
+    /** RR "Dominus Orb" (relic): "Before you move units during a tactical action, you may purge this card to move and transport units that are in systems that contain 1 of your command tokens" — bypasses the normal reachability/adjacency check entirely for any move whose fromSystemId has this player's own command token. Purges the relic (one-time), applies to the WHOLE tactical action's movement, not per-move. */
+    useDominusOrb?: boolean;
   },
   rules: RuleData,
 ): ActionResult {
@@ -157,7 +160,14 @@ export function moveShips(
   const player = state.players[action.playerId];
   const activeSystemId = pending.systemId;
 
+  if (action.useDominusOrb && !player.relics.includes("dominus_orb" as never)) {
+    return { ok: false, error: "This player doesn't have Dominus Orb." };
+  }
+
   let workingState = state;
+  if (action.useDominusOrb) {
+    workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...player, relics: player.relics.filter((id) => id !== ("dominus_orb" as never)) } } };
+  }
   let usedGravityDrive = false;
 
   for (const move of action.moves) {
@@ -195,13 +205,18 @@ export function moveShips(
       effectiveMove += 1;
     }
 
+    // RR "Dominus Orb" (relic): bypasses the reachability check entirely for this move if its source system has this player's own command token.
+    const dominusOrbBypass = action.useDominusOrb && player.commandTokens.onBoard.includes(move.fromSystemId);
     if (
+      !dominusOrbBypass &&
       !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, {
         ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
         // "In the Silence of Space": scoped to ships whose move ORIGINATES from the chosen system — Light Wave Deflector's own version below has no such scoping.
         ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId,
         // "Nav Suite": ignores every anomaly effect (asteroid/supernova blocking, nebula's move clamp, even the gravity rift bonus — see canShipReachSystem's own doc comment on that last part) for this player's whole movement step.
         ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
+        // RR "Circlet of the Void" (relic): same asteroid/supernova/nebula bypass as Nav Suite, but explicitly KEEPS the gravity rift movement bonus (canShipReachSystem's own doc comment covers the distinction) — a standing passive effect, not gated on the relic being exhausted or not.
+        circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
       }, rules)
     ) {
       return {
@@ -310,6 +325,19 @@ export function moveShips(
   // captured non-fighter ship/mech whose original owner is now
   // blockading the capturing player's own space dock.
   workingState = maybeReturnCapturedUnitsOnBlockade(workingState);
+
+  // TE "Rescue": "After another player moves ships into a system that
+  // contains your ships" — checked right after movement resolves, before
+  // Space Cannon Offense even begins (RR 1.19's own "after X" priority
+  // windows resolve before the next scripted step), for every OTHER
+  // player who already has ships in the just-activated system.
+  const rescueEligible = Object.keys(workingState.systems[activeSystemId]?.spaceUnitsByPlayer ?? {})
+    .filter((id) => id !== player.id && (workingState.systems[activeSystemId]?.spaceUnitsByPlayer[id as PlayerId] ?? []).some((s) => s.count > 0))
+    .filter((id) => !workingState.players[id as PlayerId]?.eliminated) as PlayerId[];
+  const rescueOrder = actionPhaseWindowOrder(workingState, player.id, rescueEligible);
+  if (rescueOrder.length > 0) {
+    workingState = { ...workingState, pendingPriorityWindow: { kind: "after_ships_moved_in", order: rescueOrder, currentIndex: 0, consecutivePasses: 0 } };
+  }
 
   const spaceCannonResponders = getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
   const willHaveCombat = playersWithShipsInSystem(workingState, activeSystemId).length > 1;
