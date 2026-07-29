@@ -132,7 +132,15 @@ export function createGame(input: CreateGameInput): GameState {
   }
 
   // Sort tiles into home / Mecatol / available-for-the-board.
-  const mecatolTile = input.allTiles.find((t) => t.planets?.some((p) => p.isMecatolRex));
+  // TE: Thunder's Edge replaces the base Mecatol Rex tile with its own
+  // updated one (tile 112 in this project's own data) — "The Galactic
+  // Council" legendary ability, "isLegendary: true" — which the base
+  // tile (18) never had. Previously this always picked whichever one
+  // .find() happened to hit first (tile 18, since it has the lower id
+  // and appears earlier in the array), regardless of game mode, silently
+  // discarding the TE version's legendary status/ability entirely.
+  const mecatolCandidates = input.allTiles.filter((t) => t.planets?.some((p) => p.isMecatolRex));
+  const mecatolTile = (hasThundersEdge(input.mode) ? mecatolCandidates.find((t) => t.set === "ThundersEdge") : mecatolCandidates.find((t) => t.set !== "ThundersEdge")) ?? mecatolCandidates[0];
   if (!mecatolTile) throw new Error("No Mecatol Rex tile found in allTiles.");
   const homeTileByFaction = new Map<string, RawTileEntry>();
   for (const t of input.allTiles) {
