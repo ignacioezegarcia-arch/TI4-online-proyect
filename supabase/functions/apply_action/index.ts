@@ -21,6 +21,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getAdminClient, getCallerClient } from "../_shared/supabaseClients.ts";
 import { loadRuleData } from "../_shared/ruleData.ts";
+import { hasThundersEdge } from "../_shared/engine/rules/gameMode.ts";
 import { GameEngine } from "../_shared/engine/GameEngine.ts";
 import type { GameState } from "../_shared/engine/types/GameState.ts";
 import type { GameAction } from "../_shared/engine/types/Actions.ts";
@@ -92,7 +93,7 @@ Deno.serve(async (req) => {
 
   const state = game.state as GameState;
   const factionIds = Object.values(state.players).map((p) => p.factionId);
-  const rules = await loadRuleData(factionIds);
+  const rules = await loadRuleData(factionIds, hasThundersEdge(state.mode));
 
   // --- 4. Run the same engine the client already ran optimistically -----
   const result = GameEngine.applyAction(state, action, rules);
