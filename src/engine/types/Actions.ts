@@ -40,7 +40,16 @@ export type GameAction =
     }
 
   // --- Action phase / turn structure (RR 3) ---
-  | { type: "PASS"; playerId: PlayerId }
+  | {
+      type: "PASS";
+      playerId: PlayerId;
+      /** RR "when you pass" legendary planet abilities (Ordinian/4X41D Hyperion VI, Faunus/Maxis Central Control, Garbozia/Dok'N Pic's Salvage Yard's own store half, Industrex/Aeurex Mechanica) — genuinely tied to the moment of passing itself, unlike the generic "EXHAUST:" any-time abilities (The Atrament, Imperial Arms Vault, Exterrix Headquarters) or the "at the end of your turn" ones (The Acropolis, The Galactic Council — those use the end_of_turn window instead, since passing itself isn't required for them). Optional — a player passing without one of these planets, or choosing not to use it, simply omits this. */
+      whenYouPassAbility?:
+        | { kind: "4x41d_hyperion_vi"; commandTokenPool: "tactic" | "fleet" | "strategy" }
+        | { kind: "maxis_central_control"; targetPlanetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" }
+        | { kind: "dok_n_pics_salvage_yard_store"; cardId: string }
+        | { kind: "aeurex_mechanica"; unitUpgradeId: UnitUpgradeId; targetSystemId: SystemId };
+    }
 
   // --- Tactical action (RR 78) ---
   | { type: "ACTIVATE_SYSTEM"; playerId: PlayerId; systemId: SystemId }
@@ -58,6 +67,12 @@ export type GameAction =
       transportedFighters?: { fromSystemId: SystemId; count: number }[];
       /** RR "Gravity Drive": exhaust that tech (if owned and readied) to apply +1 move value to ONE of the moves entries above (identified by its fromSystemId) for this tactical action only. */
       gravityDriveBoostFromSystemId?: SystemId;
+      /** TE "Ionian Fuel Refinery" (Tempesta's own legendary planet ability): same "+1 to one specific moves-entry" shape as Gravity Drive above, but exhausts the ability card instead of being a repeatable tech. */
+      ionianFuelRefineryBoostFromSystemId?: SystemId;
+      /** RR "Dominus Orb" (relic): purges the card to bypass the normal reachability/adjacency check entirely for any move whose fromSystemId has this player's own command token. */
+      useDominusOrb?: boolean;
+      /** Muaat "Stellar Genesis" breakthrough ability: if a war sun's own path this action visits Avernus's system (as its literal origin OR a mid-path hop — properly tracked via canShipReachSystem's own mustPassThroughSystemId parameter, not just a direct-origin check), setting this brings Avernus's token along to the final destination — never into a home system. */
+      relocateAvernusWithWarSun?: boolean;
     }
   | {
       type: "USE_SPACE_CANNON_OFFENSE";
@@ -192,6 +207,8 @@ export type GameAction =
       playerId: PlayerId;
       targetSystemId: SystemId;
       infantryPlacingPlayerId?: PlayerId;
+      /** Trusted-RNG input for grantBreakthrough's own Fracture-roll, since completing the expedition also grants the breakthrough (via Jupiter Brain, Thunder's Edge's own legendary ability) if the placing player doesn't already have it. */
+      fractureDieRoll?: number;
     } // TE Thunder's Edge Expedition completion — see phases/expedition.ts's own completeThunderEdgeExpedition.
   | {
       type: "PLACE_INGRESS_TOKENS";
@@ -421,6 +438,13 @@ export type GameAction =
   | { type: "USE_SILVER_FLAME"; playerId: PlayerId; dieRoll: number; fractureDieRoll?: number } // RR relic — see rules/relics.ts's own useSilverFlame
   | { type: "USE_JR_XS455_O"; playerId: PlayerId; targetPlayerId: PlayerId; placeStructure?: { planetId: PlanetId; structureType: "space_dock" | "pds"; exhaustPlanetIdsForResources: PlanetId[] } } // RR relic/agent — see rules/relics.ts's own useJrXs455O
   | { type: "USE_NEURALOOP"; playerId: PlayerId; relicIdToPurge: string; discardedObjectiveId: ObjectiveId; replacementObjectiveId: ObjectiveId; replacementDeck: "publicStageI" | "publicStageII" | "secret" } // RR relic — see rules/relics.ts's own useNeuraloop
+  | { type: "USE_DOK_N_PICS_SALVAGE_YARD_PLAY"; playerId: PlayerId; cardId: string } // TE Garbozia's own legendary ability — see phases/legendaryPlanets.ts
+  | { type: "USE_THE_ACROPOLIS"; playerId: PlayerId; target: { kind: "planet"; planetId: PlanetId } | { kind: "relic"; relicId: string } | { kind: "technology"; techId: TechId } | { kind: "leader"; leaderId: string } } // TE Emelpar's own legendary ability, "at the end of your turn" — usable only during the end_of_turn priority window — see phases/legendaryPlanets.ts
+  | { type: "USE_THE_GALACTIC_COUNCIL"; playerId: PlayerId; discardedSecretObjectiveId: string } // TE Mecatol Rex's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
+  | { type: "USE_JUPITER_BRAIN"; playerId: PlayerId } // TE Thunder's Edge's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
+  | { type: "USE_STAR_FORGE"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Muaat's own base faction ability — see rules/muaat.ts
+  | { type: "USE_THE_NUCLEUS"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Avernus's own legendary ability (Muaat's Breakthrough) — see rules/muaat.ts
+  | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain
   /** RR 1.19/1.20: declines this player's current turn in an open priority window (see types/GameState.ts's own PendingPriorityWindow doc comment) — legal any time it's their turn in ANY open window, whichever kind it is. */
   | { type: "PASS_PRIORITY"; playerId: PlayerId }
   | {
