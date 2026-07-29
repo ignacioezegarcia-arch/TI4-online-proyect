@@ -430,6 +430,8 @@ export function applyHitAssignments(
   rules: RuleData,
   /** TE ENTROPIC SCAR: this system's own anomalies — if it's an entropic scar, Sustain Damage ("flip") can't be used here at all, "by or against" units inside it. Optional/omittable for every pre-Thunder's-Edge call site, where this is simply never true. */
   systemAnomalies: import("../types/enums").AnomalyType[] = [],
+  /** RR "Metali Void Shielding" (relic): "each time hits are produced against 1 of your non-fighter ships, 1 of those ships may use SUSTAIN DAMAGE as if it had that ability" — true if the OWNING side of these `stacks` has this relic, letting exactly 1 flip bypass the normal ability check below (consumed the first time it's used within this single call; SPACE combat only in practice, since these stacks would be ground forces otherwise, but not explicitly gated on that here since a non-fighter SHIP is the only thing this could ever apply to anyway). */
+  metaliVoidShieldingAvailable = false,
 ): ApplyHitAssignmentsResult {
   const updated = stacks.map((s) => ({ ...s }));
   const unitsLeft = updated.reduce((sum, s) => sum + s.count, 0);
@@ -445,6 +447,7 @@ export function applyHitAssignments(
 
   const destroyed = new Map<UnitType, number>();
   const flipped = new Map<UnitType, number>();
+  let metaliShieldingUsed = false;
 
   for (const { unitType, outcome } of assignments) {
     const stack = updated.find((s) => s.unitType === unitType && s.count > 0);
@@ -455,9 +458,11 @@ export function applyHitAssignments(
         return { ok: false, error: 'TE ENTROPIC SCAR: Sustain Damage cannot be used by units inside an entropic scar.' };
       }
       const effectiveAbilities = getEffectiveUnitAbilities(state, rules, factionId, unitType, ownedUnitUpgrades);
-      if (!effectiveAbilities.includes("sustainDamage")) {
+      const usingMetaliShielding = !effectiveAbilities.includes("sustainDamage") && unitType !== "fighter" && metaliVoidShieldingAvailable && !metaliShieldingUsed;
+      if (!effectiveAbilities.includes("sustainDamage") && !usingMetaliShielding) {
         return { ok: false, error: `RR 76: ${unitType} doesn't have Sustain Damage.` };
       }
+      if (usingMetaliShielding) metaliShieldingUsed = true;
       if (stack.damagedCount >= stack.count) {
         return { ok: false, error: `RR 76: every ${unitType} in this stack is already damaged — this hit must destroy one.` };
       }
@@ -526,6 +531,7 @@ function spaceCannonEntriesForPlayer(
 
   const perType = new Map<UnitType, { diceCount: number; hitOn: number }>();
 
+  const hasLightrailOrdnance = player.relics.includes("lightrail_ordnance" as never);
   const scanSystem = (systemId: SystemId, requireRangesToAdjacent: boolean) => {
     const system = state.systems[systemId];
     if (!system) return;
@@ -534,7 +540,11 @@ function spaceCannonEntriesForPlayer(
       for (const stack of stacks) {
         if (stack.count <= 0) continue;
         const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
-        const sc = stats?.abilityValues?.spaceCannon;
+        let sc = stats?.abilityValues?.spaceCannon;
+        // RR "Lightrail Ordnance" (relic): "Your space docks gain SPACE CANNON 5 (X2). You may use your space dock's SPACE CANNON against ships that are adjacent to their system." — space docks have no printed Space Cannon at all normally, so this is a virtual grant (with rangesToAdjacent implicitly true, per the relic's own explicit "adjacent" wording) rather than something getUnitStats itself would ever return.
+        if (!sc && stack.unitType === "space_dock" && hasLightrailOrdnance) {
+          sc = { value: 5, dice: 2, rangesToAdjacent: true };
+        }
         if (!sc) continue;
         if (requireRangesToAdjacent && !sc.rangesToAdjacent) continue;
         const existing = perType.get(stack.unitType);
@@ -656,6 +666,12 @@ export function buildAntiFighterBarrageEntries(
     if (!afb) continue;
     diceCount += stack.count * afb.dice;
     hitOn = afb.value;
+  }
+
+  // RR "Metali Void Armaments" (relic): "During the Anti-Fighter Barrage step of space combat, you may resolve ANTI-FIGHTER BARRAGE 6 (X3) against your opponent's units" — a virtual AFB source, independent of what unit types this player actually has present. Confirmed ruling: "has no effect when the Argent player resolves their Raid Formation faction ability" (that specific faction ability isn't implemented in this project yet, so nothing to exclude in practice — flagged for whenever it is).
+  if (diceCount === 0 && player?.relics.includes("metali_void_armaments" as never)) {
+    diceCount = 3;
+    hitOn = 6;
   }
 
   if (diceCount === 0 || hitOn === null) return [];

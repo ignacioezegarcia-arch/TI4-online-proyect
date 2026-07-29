@@ -79,8 +79,9 @@ export const ANOMALY_RULES: Record<AnomalyType, AnomalyRuleDefinition> = {
 /** Can a ship (no special tech) enter this system? `isActiveSystem` must be true only for the system being activated this tactical action — never for a mid-path system. `ignoreAsteroidFields` is Antimass Deflectors' own effect ("your ships can move into and through asteroid fields") — everything else (Supernova, Nebula's active-system-only rule) still applies even with it. */
 export function canShipEnterTile(
   anomalies: AnomalyType[],
-  opts: { isActiveSystem?: boolean; ignoreAsteroidFields?: boolean } = {},
+  opts: { isActiveSystem?: boolean; ignoreAsteroidFields?: boolean; bypassAllBlocking?: boolean } = {},
 ): boolean {
+  if (opts.bypassAllBlocking) return true;
   const isActiveSystem = opts.isActiveSystem ?? false;
   for (const type of anomalies) {
     if (opts.ignoreAsteroidFields && type === "asteroidField") continue;
@@ -93,7 +94,8 @@ export function canShipEnterTile(
 }
 
 /** Can a ship (no special tech) pass through this system as a mid-path stop? Same Antimass Deflectors carve-out as canShipEnterTile above. */
-export function canShipPassThroughTile(anomalies: AnomalyType[], ignoreAsteroidFields = false): boolean {
+export function canShipPassThroughTile(anomalies: AnomalyType[], ignoreAsteroidFields = false, bypassAllBlocking = false): boolean {
+  if (bypassAllBlocking) return true;
   return anomalies.every((type) => {
     if (ignoreAsteroidFields && type === "asteroidField") return true;
     return ANOMALY_RULES[type]?.movement.canPassThrough !== false;

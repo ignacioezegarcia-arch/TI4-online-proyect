@@ -3,6 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PromissoryNoteId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { arePlayersNeighbors } from "./adjacency";
+import { actionPhaseWindowOrder } from "./priorityWindow";
 import { spaceStationsControlledBy } from "./spaceStations";
 
 type RelicFragmentType = "cultural" | "industrial" | "hazardous" | "unknown";
@@ -55,6 +56,10 @@ interface TransactionOffer {
   relicFragments?: Partial<Record<RelicFragmentType, number>>;
   /** RR "Capture": "Captured units may be returned to the player that originally owned them as part of a transaction." Only meaningful on the GIVING side, and only for non-fighter/non-infantry captured units (RR 17.4a: captured fighters/infantry are generic, ownerless tokens and cannot be returned this way). Returns to the original owner's reinforcements — there's no board location to place it at, so this just removes it from the giver's own capturedUnits list. */
   returnedCapturedUnitType?: import("../types/enums").UnitType;
+  /** TE "Black Market Dealings": "you and the other player can include relics, action cards, and unscored secret objectives as part of the transaction" — only valid when action.blackMarketDealings is true on the SAME PROPOSE_TRANSACTION this offer is part of; rejected otherwise (see resolveTransaction's own validation). */
+  relicId?: import("../types/ids").RelicId;
+  actionCardId?: string;
+  unscoredSecretObjectiveId?: string;
 }
 
 /**
@@ -83,11 +88,25 @@ export function resolveTransaction(
     withPlayerId: PlayerId;
     offer: TransactionOffer;
     request: TransactionOffer;
+    /** TE "Black Market Dealings": if true, this player is spending that card (from their own hand) as PART of this same transaction, unlocking relics/action cards/unscored secret objectives on EITHER side's offer. Consumed here directly rather than through the normal PLAY_<CARD>/Sabotage-interception flow — the card's own "this card cannot be cancelled" line means it was never eligible for that announce-then-maybe-cancel mechanism in the first place (see GameEngine.ts's own COMPONENT_ACTION_CARD_IDS-adjacent exclusion list). */
+    blackMarketDealings?: boolean;
   },
   rules: RuleData,
 ): ActionResult {
   const check = canTransact(state, action.playerId, action.withPlayerId, rules);
   if (!check.ok) return { ok: false, error: check.error };
+
+  if (!action.blackMarketDealings) {
+    const usesWideItems = (o: TransactionOffer) => o.relicId || o.actionCardId || o.unscoredSecretObjectiveId;
+    if (usesWideItems(action.offer) || usesWideItems(action.request)) {
+      return { ok: false, error: 'TE "Black Market Dealings": relics, action cards, and unscored secret objectives can only be included in a transaction when this card is played as part of it.' };
+    }
+  } else {
+    const caster = state.players[action.playerId];
+    if (!caster?.actionCards.includes("black_market_dealings" as never)) {
+      return { ok: false, error: 'This player does not have "Black Market Dealings" in hand.' };
+    }
+  }
 
   const player = state.players[action.playerId];
   const other = state.players[action.withPlayerId];
@@ -136,6 +155,23 @@ export function resolveTransaction(
       if (!entry) return { error: `${g.id} hasn't captured a ${unitType} from ${r.id}.` };
       g = { ...g, capturedUnits: g.capturedUnits.map((c) => (c === entry ? { ...c, count: c.count - 1 } : c)).filter((c) => c.count > 0) };
     }
+    if (offer.relicId) {
+      if (!g.relics.includes(offer.relicId)) return { error: `${g.id} doesn't have that relic.` };
+      g = { ...g, relics: g.relics.filter((id) => id !== offer.relicId) };
+      r = { ...r, relics: [...r.relics, offer.relicId] };
+    }
+    if (offer.actionCardId) {
+      if (!g.actionCards.includes(offer.actionCardId as never)) return { error: `${g.id} doesn't have that action card.` };
+      g = { ...g, actionCards: g.actionCards.filter((id) => id !== offer.actionCardId) as never };
+      r = { ...r, actionCards: [...r.actionCards, offer.actionCardId] as never };
+    }
+    if (offer.unscoredSecretObjectiveId) {
+      if (!g.secretObjectives.includes(offer.unscoredSecretObjectiveId as never) || g.victoryPoints.scoredObjectiveIds.includes(offer.unscoredSecretObjectiveId as never)) {
+        return { error: `${g.id} doesn't have that UNSCORED secret objective.` };
+      }
+      g = { ...g, secretObjectives: g.secretObjectives.filter((id) => id !== offer.unscoredSecretObjectiveId) as never };
+      r = { ...r, secretObjectives: [...r.secretObjectives, offer.unscoredSecretObjectiveId] as never };
+    }
     return { giver: g, receiver: r };
   };
 
@@ -149,14 +185,43 @@ export function resolveTransaction(
   updatedOther = step2.giver;
   updatedPlayer = step2.receiver;
 
+  if (action.blackMarketDealings) {
+    updatedPlayer = { ...updatedPlayer, actionCards: updatedPlayer.actionCards.filter((id) => id !== "black_market_dealings") as never };
+  }
+
   const key = pairKey(action.playerId, action.withPlayerId);
-  const nextState: GameState = {
+  let nextState: GameState = {
     ...state,
     players: { ...state.players, [action.playerId]: updatedPlayer, [action.withPlayerId]: updatedOther },
     transactionsThisTurn: state.phase === "agenda" ? state.transactionsThisTurn : [...(state.transactionsThisTurn ?? []), key],
     transactionsThisAgenda: state.phase === "agenda" ? [...(state.transactionsThisAgenda ?? []), key] : state.transactionsThisAgenda,
   };
   events.push({ type: "TRANSACTION_RESOLVED", playerId: action.playerId, otherPlayerId: action.withPlayerId });
+
+  // TE "Lie in Wait": "After 2 of your neighbours resolve a transaction"
+  // — checked for every OTHER player who is a neighbor of BOTH parties to
+  // THIS transaction (the 2 who just transacted don't count as "their
+  // own" neighbours reacting to themselves). No strict priority order is
+  // specified by the card itself; uses actionPhaseWindowOrder the same
+  // way most other reactive windows in this project do, for consistency.
+  const lieInWaitEligible = Object.keys(nextState.players).filter(
+    (id) =>
+      id !== action.playerId &&
+      id !== action.withPlayerId &&
+      !nextState.players[id as PlayerId]?.eliminated &&
+      arePlayersNeighbors(nextState, id as PlayerId, action.playerId, rules) &&
+      arePlayersNeighbors(nextState, id as PlayerId, action.withPlayerId, rules),
+  ) as PlayerId[];
+  if (lieInWaitEligible.length > 0) {
+    const order = actionPhaseWindowOrder(nextState, action.playerId, lieInWaitEligible);
+    if (order.length > 0) {
+      nextState = {
+        ...nextState,
+        pendingPriorityWindow: { kind: "after_transaction_resolved", order, currentIndex: 0, consecutivePasses: 0 },
+        pendingLieInWaitTargets: [action.playerId, action.withPlayerId],
+      };
+    }
+  }
 
   return { ok: true, state: nextState, events };
 }

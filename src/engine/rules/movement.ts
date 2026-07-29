@@ -49,11 +49,11 @@ export function canShipReachSystem(
   from: SystemId,
   to: SystemId,
   baseMoveValue: number,
-  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean; ignoreAllAnomalyEffects?: boolean } = {},
+  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean; ignoreAllAnomalyEffects?: boolean; circletOfTheVoidActive?: boolean } = {},
   rules?: RuleData,
 ): boolean {
   if (from === to) return true;
-  const ignoreAsteroidFields = techs.ignoreAsteroidFields || techs.ignoreAllAnomalyEffects;
+  const ignoreAsteroidFields = techs.ignoreAsteroidFields || techs.ignoreAllAnomalyEffects || techs.circletOfTheVoidActive;
 
   const originAnomalies = state.systems[from]?.anomalies ?? [];
   // Nebula overrides (doesn't add to) the ship's move value when leaving it.
@@ -64,7 +64,7 @@ export function canShipReachSystem(
   // while this law is active — the clamp below is simply skipped.
   // "Nav Suite": same clamp-skip, this player's own action-card choice
   // instead of an active law — see this function's own `techs` param doc.
-  const nebulaClampLifted = isLawActiveWithOutcome(state, "shared_research" as AgendaId, "for") || techs.ignoreAllAnomalyEffects;
+  const nebulaClampLifted = isLawActiveWithOutcome(state, "shared_research" as AgendaId, "for") || techs.ignoreAllAnomalyEffects || techs.circletOfTheVoidActive;
   const maxBudget = hasNebula(originAnomalies) && !nebulaClampLifted ? 1 : baseMoveValue;
   if (maxBudget <= 0) return false;
 
@@ -76,6 +76,10 @@ export function canShipReachSystem(
   // flagged interpretation call: the card says "ignore the effects of
   // anomalies" without carving out an exception for beneficial ones, so
   // this treats the rift's own bonus as one of those ignored effects too.
+  // RR "Circlet of the Void" (relic): confirmed explicitly DIFFERENT —
+  // "still applies the movement bonus" even while otherwise ignoring
+  // anomaly movement effects — so circletOfTheVoidActive does NOT gate
+  // this rift-bonus tracking the way ignoreAllAnomalyEffects does.
   const startRiftUsed = hasGravityRift(originAnomalies) && !techs.ignoreAllAnomalyEffects;
   const bestHopsForState = new Map<string, number>();
   bestHopsForState.set(stateKey(from, startRiftUsed), 0);
@@ -98,11 +102,11 @@ export function canShipReachSystem(
         const neighborAnomalies = state.systems[neighborId]?.anomalies ?? [];
 
         if (isDestination) {
-          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields })) continue;
+          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields, bypassAllBlocking: techs.circletOfTheVoidActive })) continue;
           return true;
         }
 
-        if (!canShipPassThroughTile(neighborAnomalies, ignoreAsteroidFields)) continue;
+        if (!canShipPassThroughTile(neighborAnomalies, ignoreAsteroidFields, techs.circletOfTheVoidActive)) continue;
         const blockedByEnemyFleet =
           !techs.ignoreEnemyFleets && playersWithShipsInSystem(state, neighborId).some((p) => p !== playerId);
         if (blockedByEnemyFleet) continue;

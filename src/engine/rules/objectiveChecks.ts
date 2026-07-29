@@ -222,7 +222,8 @@ export const OBJECTIVE_CHECKS: Record<string, ObjectiveCheckFn> = {
 
   units_in_systems_without_planets: ({ state, playerId }, params) => {
     const count = params.count as number;
-    const n = systemsWithPlayerUnits(state, playerId).filter((id) => state.systems[id].planets.length === 0).length;
+    // RR "Stellar Converter": "a system that contains a planet destroyed by Stellar Converter, and no other planets, is considered to contain no planets" — same reasoning already applied to Space Stations elsewhere in this project.
+    const n = systemsWithPlayerUnits(state, playerId).filter((id) => state.systems[id].planets.every((p) => p.destroyed)).length;
     return { met: n >= count, reason: n >= count ? undefined : `Units in only ${n}/${count} systems without planets.` };
   },
 
