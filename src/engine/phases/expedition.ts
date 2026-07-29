@@ -176,7 +176,7 @@ function findPlanetHere(systems: GameState["systems"], planetId: PlanetId): { sy
  */
 export function completeThunderEdgeExpedition(
   state: GameState,
-  action: { type: "COMPLETE_THUNDER_EDGE_EXPEDITION"; playerId: PlayerId; targetSystemId: SystemId; infantryPlacingPlayerId?: PlayerId },
+  action: { type: "COMPLETE_THUNDER_EDGE_EXPEDITION"; playerId: PlayerId; targetSystemId: SystemId; infantryPlacingPlayerId?: PlayerId; fractureDieRoll?: number },
   rules: RuleData,
 ): ActionResult {
   if (state.thunderEdgeExpedition.completed) {
@@ -215,8 +215,10 @@ export function completeThunderEdgeExpedition(
 
   const thunderEdgePlanet: PlanetState = {
     planetId: "thunders_edge" as PlanetId,
-    controllerId: null,
-    exhausted: false,
+    // RR (FFG's own official preview, ti4.dronz.co reference): "the player who claimed the most slices gains control" — previously left uncontrolled (null), which was wrong.
+    controllerId: infantryPlacingPlayerId,
+    exhausted: true, // gained control = exhausted, the normal rule (Jupiter Brain's own text doesn't say otherwise, unlike Muaat's Avernus/Stellar Genesis which explicitly does)
+    legendaryAbilityExhausted: false,
     explored: false,
     attachmentIds: [],
     exhaustedAttachmentIds: [],
@@ -224,15 +226,19 @@ export function completeThunderEdgeExpedition(
   };
   const updatedSystem: SystemState = { ...system, planets: [...system.planets, thunderEdgePlanet] };
 
-  const nextState: GameState = {
+  let nextState: GameState = {
     ...state,
     systems: { ...state.systems, [action.targetSystemId]: updatedSystem },
     thunderEdgeExpedition: { ...state.thunderEdgeExpedition, completed: true },
   };
+  const events: GameEvent[] = [{ type: "THUNDER_EDGE_EXPEDITION_COMPLETED", systemId: action.targetSystemId, infantryPlacingPlayerId, infantryCount }];
 
-  return {
-    ok: true,
-    state: nextState,
-    events: [{ type: "THUNDER_EDGE_EXPEDITION_COMPLETED", systemId: action.targetSystemId, infantryPlacingPlayerId, infantryCount }],
-  };
+  // "Jupiter Brain" (Thunder's Edge's own legendary ability, CORRECTED — a previous session note here wrongly claimed this planet had no ability card at all): "Gain your breakthrough when you gain this card if you do not already have it."
+  if (!nextState.players[infantryPlacingPlayerId]?.hasBreakthrough) {
+    const granted = grantBreakthrough(nextState, infantryPlacingPlayerId, rules, action.fractureDieRoll);
+    nextState = granted.state;
+    events.push(...granted.events);
+  }
+
+  return { ok: true, state: nextState, events };
 }

@@ -9,6 +9,7 @@ import { drawActionCard } from "./actionCards";
 import { placeGainedCommandTokens } from "../rules/commandTokens";
 import { getLawOwner } from "./agendaEffects";
 import { maybeGainCrownOfEmphidiaVictoryPoint } from "../rules/relics";
+import { use4X41DHyperionVI, useMaxisCentralControl, useDokNPicsSalvageYardStore, useAeurexMechanica } from "./legendaryPlanets";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
 
@@ -20,7 +21,19 @@ import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
  * itself — see autoAdvancePhase, which is what actually notices "everyone's
  * done" and moves things along.
  */
-export function pass(state: GameState, action: { type: "PASS"; playerId: PlayerId }): ActionResult {
+export function pass(
+  state: GameState,
+  action: {
+    type: "PASS";
+    playerId: PlayerId;
+    whenYouPassAbility?:
+      | { kind: "4x41d_hyperion_vi"; commandTokenPool: "tactic" | "fleet" | "strategy" }
+      | { kind: "maxis_central_control"; targetPlanetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" }
+      | { kind: "dok_n_pics_salvage_yard_store"; cardId: string }
+      | { kind: "aeurex_mechanica"; unitUpgradeId: import("../types/ids").UnitUpgradeId; targetSystemId: SystemId };
+  },
+  rules: RuleData,
+): ActionResult {
   if (state.phase !== "action") {
     return { ok: false, error: "RR 3: passing only applies during the action phase." };
   }
@@ -38,14 +51,43 @@ export function pass(state: GameState, action: { type: "PASS"; playerId: PlayerI
     return { ok: false, error: "RR 3.4: a player cannot pass until his strategy card(s) are exhausted." };
   }
 
-  const updatedPlayer: Player = { ...player, hasPassed: true };
-  const nextState = advanceActivePlayer({
-    ...state,
-    players: { ...state.players, [player.id]: updatedPlayer },
-    lastPlayerToPass: action.playerId,
-  });
+  // RR "when you pass" legendary planet abilities — resolved as part of THIS same action, before hasPassed actually flips, since each one's own underlying function doesn't care about pass status but the ability itself is meant to trigger right at this moment.
+  let workingState: GameState = state;
+  const events: GameEvent[] = [];
+  if (action.whenYouPassAbility) {
+    const w = action.whenYouPassAbility;
+    let abilityResult: ActionResult;
+    if (w.kind === "4x41d_hyperion_vi") {
+      abilityResult = use4X41DHyperionVI(workingState, { type: "USE_4X41D_HYPERION_VI", playerId: action.playerId, commandTokenPool: w.commandTokenPool });
+    } else if (w.kind === "maxis_central_control") {
+      abilityResult = useMaxisCentralControl(workingState, { type: "USE_MAXIS_CENTRAL_CONTROL", playerId: action.playerId, targetPlanetId: w.targetPlanetId, chosenTrait: w.chosenTrait }, rules);
+    } else if (w.kind === "dok_n_pics_salvage_yard_store") {
+      abilityResult = useDokNPicsSalvageYardStore(workingState, { type: "USE_DOK_N_PICS_SALVAGE_YARD_STORE", playerId: action.playerId, cardId: w.cardId });
+    } else {
+      abilityResult = useAeurexMechanica(workingState, { type: "USE_AEUREX_MECHANICA", playerId: action.playerId, unitUpgradeId: w.unitUpgradeId, targetSystemId: w.targetSystemId }, rules);
+    }
+    if (!abilityResult.ok) return abilityResult;
+    workingState = abilityResult.state;
+    events.push(...abilityResult.events);
+  }
 
-  return { ok: true, state: nextState, events: [{ type: "PLAYER_PASSED", playerId: action.playerId }] };
+  const updatedPlayer: Player = { ...workingState.players[action.playerId], hasPassed: true };
+  let nextState: GameState = {
+    ...workingState,
+    players: { ...workingState.players, [action.playerId]: updatedPlayer },
+    lastPlayerToPass: action.playerId,
+  };
+  // RR: "at the end of your turn" abilities (The Acropolis, The Galactic
+  // Council) and TE "Crisis"/"Puppets on a String" all need the
+  // end_of_turn window to open here too — passing IS a player's own turn
+  // ending, same as taking a normal action and having
+  // maybeAdvanceActivePlayer decide there's nothing more to do. Calls
+  // openEndOfTurnWindow DIRECTLY (not maybeAdvanceActivePlayer) since a
+  // passing player never gets a Fleet Logistics/Master Plan bonus action
+  // — those checks would be wrong to apply here.
+  nextState = openEndOfTurnWindow(nextState, action.playerId);
+
+  return { ok: true, state: nextState, events: [{ type: "PLAYER_PASSED", playerId: action.playerId }, ...events] };
 }
 
 /**
@@ -115,7 +157,24 @@ export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): 
   if (state.puppetsOnAStringActive) {
     return { ...advanceActivePlayer({ ...state, players: { ...state.players, [playerId]: { ...player, hasPassed: true } }, puppetsOnAStringActive: undefined }) };
   }
-  // TE "Crisis"/"Puppets on a String": both react "at the end of any player's turn" — opened here, right at the one place that actually decides a turn is over (as opposed to being extended by Fleet Logistics/Master Plan above). Every non-eliminated player gets a chance (each card's own function checks its own further eligibility — Crisis's "2+ players haven't passed" condition, Puppets' "you have passed" one); phases/actionPhase.ts's own finishEndOfTurn is what actually calls advanceActivePlayer once this window closes (see GameEngine.ts's own end_of_turn window-close handling).
+  return openEndOfTurnWindow(state, playerId);
+}
+
+/**
+ * TE "Crisis"/"Puppets on a String" + RR "at the end of your turn"
+ * legendary planet abilities (The Acropolis, The Galactic Council): the
+ * actual "is this turn over" moment, shared by maybeAdvanceActivePlayer
+ * above (called AFTER its own Fleet Logistics/Master Plan bonus-action
+ * checks) and phases/actionPhase.ts's own pass() (called DIRECTLY,
+ * skipping those checks — a passing player never gets a bonus action
+ * from either of those, whether or not they own Fleet Logistics or have
+ * an unused Master Plan). Every non-eliminated player gets a chance to
+ * react (each card's own function checks its own further eligibility);
+ * finishEndOfTurn is what actually calls advanceActivePlayer once this
+ * window closes (see GameEngine.ts's own end_of_turn window-close
+ * handling).
+ */
+export function openEndOfTurnWindow(state: GameState, playerId: PlayerId): GameState {
   const eligibleIds = Object.keys(state.players).filter((id) => !state.players[id as PlayerId]?.eliminated) as PlayerId[];
   const order = actionPhaseWindowOrder(state, playerId, eligibleIds);
   if (order.length > 0) {
@@ -124,8 +183,28 @@ export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): 
   return advanceActivePlayer(state);
 }
 
-/** TE "Crisis"/"Puppets on a String": the continuation once the end_of_turn window (opened by maybeAdvanceActivePlayer above) actually closes — proceeds to the SAME advanceActivePlayer call that function would have made directly if there'd been nobody to ask. */
+/**
+ * TE "Crisis"/"Puppets on a String" + RR "at the end of your turn"
+ * legendary planet abilities: the continuation once the end_of_turn
+ * window (opened by openEndOfTurnWindow above) actually closes.
+ * Previously this jumped straight to advanceActivePlayer, silently
+ * skipping the SAME "does this player still get a bonus action"
+ * check maybeAdvanceActivePlayer itself makes — meaning "Jupiter Brain"
+ * (Thunder's Edge's own legendary ability, usable ONLY inside this exact
+ * window) granting its bonus action would have been ignored the moment
+ * the window closed. Fixed: checks masterPlanBonusAvailable here too
+ * (the same flag Jupiter Brain sets, reusing Master Plan's own
+ * mechanism) before finally advancing — deliberately NOT re-opening
+ * end_of_turn again for this same turn-ending (that already happened
+ * once; Jupiter Brain's own bonus action is a genuinely separate turn
+ * that will get its own end_of_turn opportunity when IT concludes).
+ */
 export function finishEndOfTurn(state: GameState): GameState {
+  const activePlayerId = state.activePlayerId;
+  const player = activePlayerId ? state.players[activePlayerId] : undefined;
+  if (player?.masterPlanBonusAvailable) {
+    return { ...state, players: { ...state.players, [activePlayerId!]: { ...player, masterPlanBonusAvailable: false } } };
+  }
   return advanceActivePlayer(state);
 }
 

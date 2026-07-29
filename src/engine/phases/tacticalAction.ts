@@ -1,6 +1,6 @@
 import { GameState, Player, SystemState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, SystemId, asTechId } from "../types/ids";
+import { PlayerId, SystemId, asTechId, asPlanetId } from "../types/ids";
 import { STRUCTURE_TYPES, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
@@ -12,6 +12,7 @@ import { maybeReturnCapturedUnitsOnBlockade } from "../rules/capture";
 import { computeSpaceCombatEntry, openCombatRoundStartWindowIfNeeded } from "./spaceCombat";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
+import { findControlledLegendaryPlanet, exhaustLegendaryAbility } from "./legendaryPlanets";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -137,6 +138,10 @@ export function moveShips(
     transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
     transportedFighters?: { fromSystemId: SystemId; count: number }[];
     gravityDriveBoostFromSystemId?: SystemId;
+    /** TE "Ionian Fuel Refinery" (Tempesta's own legendary planet ability): "exhaust this card after you activate a system to apply +1 to the move value of 1 of your ships during this tactical action" — same "identify the one moves-entry by its fromSystemId" shape as Gravity Drive above, but exhausts the legendary ability (once per its own ready cycle) rather than being a repeatable-every-turn tech. */
+    ionianFuelRefineryBoostFromSystemId?: SystemId;
+    /** Muaat "Stellar Genesis" breakthrough ability: if a war sun's own path this action visits Avernus's system — as its literal origin OR a mid-path hop, see this function's own warSunPassedThroughAvernusSystem tracking (canShipReachSystem's own mustPassThroughSystemId parameter) — setting this brings Avernus's token along to the final destination, never into a home system. */
+    relocateAvernusWithWarSun?: boolean;
     /** RR "Dominus Orb" (relic): "Before you move units during a tactical action, you may purge this card to move and transport units that are in systems that contain 1 of your command tokens" — bypasses the normal reachability/adjacency check entirely for any move whose fromSystemId has this player's own command token. Purges the relic (one-time), applies to the WHOLE tactical action's movement, not per-move. */
     useDominusOrb?: boolean;
   },
@@ -169,6 +174,18 @@ export function moveShips(
     workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...player, relics: player.relics.filter((id) => id !== ("dominus_orb" as never)) } } };
   }
   let usedGravityDrive = false;
+  let usedIonianFuelRefinery = false;
+  // Muaat "Stellar Genesis" breakthrough ability: "after you move 1 of your war suns out of OR THROUGH Avernus's system and into a non-home system, you may move the Avernus token with it" — found once upfront (its system doesn't change mid-loop; the token itself only actually relocates once, after every move this action resolves), then checked per war-sun move below using canShipReachSystem's own mustPassThroughSystemId parameter (properly covers a war sun's move whose PATH crosses Avernus's system, not just one that starts there).
+  let avernusSystemId: SystemId | null = null;
+  for (const [systemId, system] of Object.entries(state.systems)) {
+    if (system.planets.some((p) => p.planetId === ("avernus" as never) && p.controllerId === player.id)) {
+      avernusSystemId = systemId as SystemId;
+      break;
+    }
+  }
+  let warSunPassedThroughAvernusSystem = false;
+  // RR 84.1: each move's own final effective move value (after Gravity Drive/Flank Speed/Ionian Fuel Refinery bonuses), kept around for the cargo-pickup pass-through check below — a cargo pickup at a mid-path hop is only legal if SOME ship making this move can actually reach that hop within its OWN move budget on the way to activeSystemId.
+  const moveEffectiveValues: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; effectiveMove: number }[] = [];
 
   for (const move of action.moves) {
     if (move.fromSystemId === activeSystemId) continue; // already there, nothing to validate
@@ -204,6 +221,16 @@ export function moveShips(
     if (pending.flankSpeedPlayerId === action.playerId) {
       effectiveMove += 1;
     }
+    // TE "Ionian Fuel Refinery" (Tempesta's own legendary planet ability): same "+1 to one specific moves-entry" shape as Gravity Drive, but exhausts the ability card instead of being a repeatable tech.
+    if (action.ionianFuelRefineryBoostFromSystemId === move.fromSystemId && !usedIonianFuelRefinery) {
+      const found = findControlledLegendaryPlanet(workingState, action.playerId, asPlanetId("tempesta"));
+      if ("error" in found) return { ok: false, error: found.error };
+      effectiveMove += 1;
+      usedIonianFuelRefinery = true;
+      workingState = exhaustLegendaryAbility(workingState, found.systemId, asPlanetId("tempesta"));
+    }
+
+    moveEffectiveValues.push({ fromSystemId: move.fromSystemId, unitType: move.unitType, effectiveMove });
 
     // RR "Dominus Orb" (relic): bypasses the reachability check entirely for this move if its source system has this player's own command token.
     const dominusOrbBypass = action.useDominusOrb && player.commandTokens.onBoard.includes(move.fromSystemId);
@@ -225,6 +252,26 @@ export function moveShips(
       };
     }
 
+    // Muaat "Stellar Genesis": does THIS war sun's move have a valid path (within the same move value / techs it's actually using) that visits Avernus's system somewhere along the way — either as the literal origin, or as a mid-path hop?
+    if (move.unitType === "war_sun" && avernusSystemId && !warSunPassedThroughAvernusSystem) {
+      const passesThroughAvernus = canShipReachSystem(
+        workingState,
+        player.id,
+        move.fromSystemId,
+        activeSystemId,
+        effectiveMove,
+        {
+          ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
+          ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId,
+          ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
+          circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
+        },
+        rules,
+        avernusSystemId,
+      );
+      if (passesThroughAvernus) warSunPassedThroughAvernusSystem = true;
+    }
+
     const originSystem = workingState.systems[move.fromSystemId];
     const originStack = originSystem?.spaceUnitsByPlayer[player.id]?.find((s) => s.unitType === move.unitType);
     if (!originStack || originStack.count < move.count) {
@@ -235,20 +282,76 @@ export function moveShips(
     workingState = addToSystem(workingState, activeSystemId, player.id, move.unitType, move.count);
   }
 
-  // RR 84.1 — cargo (ground forces + fighters) riding along with the moving
-  // ships. Simplification, flagged rather than silently wrong: each cargo
-  // entry must originate from the SAME system as one of this action's own
-  // `moves` entries — picking up cargo at an intermediate hop mid-path (RR
-  // 84.1 technically allows this) isn't supported yet. Capacity itself
+  // Muaat "Stellar Genesis": actually relocate the Avernus token, if a war sun's path this action visited its system (either as the literal origin or a mid-path hop — see warSunPassedThroughAvernusSystem's own computation above) and the player chose to bring it along — never into a home system (matches the ability's own "into a non-home system" wording).
+  if (warSunPassedThroughAvernusSystem && action.relocateAvernusWithWarSun && avernusSystemId) {
+    if (Object.values(rules.homeSystemByFaction).includes(activeSystemId)) {
+      return { ok: false, error: 'Muaat "Stellar Genesis": Avernus cannot be relocated into a home system.' };
+    }
+    const avernusPlanet = workingState.systems[avernusSystemId]?.planets.find((p) => p.planetId === ("avernus" as never) && p.controllerId === player.id);
+    if (avernusPlanet) {
+      const sourceSystem = workingState.systems[avernusSystemId];
+      const destSystem = workingState.systems[activeSystemId];
+      workingState = {
+        ...workingState,
+        systems: {
+          ...workingState.systems,
+          [avernusSystemId]: { ...sourceSystem, planets: sourceSystem.planets.filter((p) => p.planetId !== ("avernus" as never)) },
+          [activeSystemId]: { ...destSystem, planets: [...destSystem.planets, avernusPlanet] },
+        },
+      };
+    }
+  }
+
+  // RR 84.1 — cargo (ground forces + fighters) riding along with the
+  // moving ships. Previously each cargo entry had to originate from the
+  // SAME system as one of this action's own `moves` entries directly —
+  // fixed to also allow picking up cargo at an intermediate hop mid-path,
+  // by checking (via canShipReachSystem's own mustPassThroughSystemId
+  // parameter, the same machinery Muaat's own Avernus relocation uses)
+  // whether AT LEAST ONE of this action's moving ships has a path that
+  // actually visits the cargo's own system on its way to activeSystemId,
+  // within that specific ship's own effective move value. Capacity itself
   // (RR 16.3, total cargo can't exceed the combined capacity of the ships
-  // making this move) IS enforced — see the check right after this loop.
-  const moveOrigins = new Set(action.moves.map((m) => m.fromSystemId));
+  // making this move) IS enforced separately — see the check right after
+  // this loop.
+  // RR 84.1: cargo can only ever be carried by a ship that actually HAS
+  // capacity (Carrier/Cruiser/Dreadnought/War Sun/etc., never a
+  // Destroyer/Fighter, which are always 0) — so both the direct-origin
+  // case and the pass-through case below need to filter down to moves
+  // whose OWN unit type has capacity > 0, not just any move whatsoever.
+  // Previously (both before and immediately after this project's own
+  // pass-through fix) neither case actually checked this.
+  const hasCapacity = (unitType: import("../types/enums").UnitType): boolean => {
+    const stats = getUnitStats(rules, player.factionId, unitType, player.unitUpgrades);
+    return (stats?.capacity ?? 0) > 0;
+  };
+  const capacityBearingMoves = moveEffectiveValues.filter((m) => hasCapacity(m.unitType));
+  const cargoPickupReachable = (systemId: SystemId): boolean => {
+    if (capacityBearingMoves.some((m) => m.fromSystemId === systemId)) return true;
+    return capacityBearingMoves.some((m) =>
+      canShipReachSystem(
+        workingState,
+        player.id,
+        m.fromSystemId,
+        activeSystemId,
+        m.effectiveMove,
+        {
+          ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
+          ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === m.fromSystemId,
+          ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
+          circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
+        },
+        rules,
+        systemId,
+      ),
+    );
+  };
 
   for (const cargo of action.transportedGroundForces ?? []) {
-    if (!moveOrigins.has(cargo.fromSystemId)) {
+    if (!cargoPickupReachable(cargo.fromSystemId)) {
       return {
         ok: false,
-        error: `RR 84.1: transported ground forces must come from a system this action is already moving ships from (${cargo.fromSystemId} isn't one of them).`,
+        error: `RR 84.1: transported ground forces must come from a system on the path of a ship this action is moving (no such ship's route passes through ${cargo.fromSystemId}).`,
       };
     }
     const originStack = workingState.systems[cargo.fromSystemId]?.spaceUnitsByPlayer[player.id]?.find(
@@ -262,10 +365,10 @@ export function moveShips(
   }
 
   for (const cargo of action.transportedFighters ?? []) {
-    if (!moveOrigins.has(cargo.fromSystemId)) {
+    if (!cargoPickupReachable(cargo.fromSystemId)) {
       return {
         ok: false,
-        error: `RR 84.1: transported fighters must come from a system this action is already moving ships from (${cargo.fromSystemId} isn't one of them).`,
+        error: `RR 84.1: transported fighters must come from a system on the path of a ship this action is moving (no such ship's route passes through ${cargo.fromSystemId}).`,
       };
     }
     const originStack = workingState.systems[cargo.fromSystemId]?.spaceUnitsByPlayer[player.id]?.find(

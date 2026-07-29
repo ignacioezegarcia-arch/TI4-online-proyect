@@ -1280,7 +1280,7 @@ export function finishGroundCombatWrapUp(state: GameState, pending: NonNullable<
 }
 
 /** RR 25.1: gaining control of a planet ALWAYS exhausts its planet card — no exceptions, regardless of how control was gained (invasion win, uncontested landing, anything else). RR 53.2: a legendary planet's separate ability card only readies if this is the FIRST time it's ever been controlled (i.e. it's coming "from the deck"); if it's being taken FROM another player, it keeps whatever exhausted/readied state it already had — untouched here, on purpose. RR 25.1c: if the planet wasn't already controlled by ANOTHER player (i.e. this is genuinely the first time anyone's controlled it), the new controller explores it automatically — this used to only happen via the separate, player-initiated EXPLORE_PLANET action, which incorrectly made exploring a planet an optional extra step rather than an automatic consequence of gaining control. */
-function setPlanetController(
+export function setPlanetController(
   state: GameState,
   systemId: SystemId,
   planetId: PlanetId,
@@ -1319,6 +1319,17 @@ function setPlanetController(
   let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
   // RR "Shard of the Throne" (relic — PoK version, not the old base-game law): checked on every actual control change, not just combat wins — see rules/relics.ts's own doc comment for the full history/reasoning.
   nextState = maybeTransferShardOfTheThroneOnControlGain(nextState, controllerId, planetId, previousControllerId, rules);
+  // Styx / "A Song Like Marrow" (Fracture legendary planet ability): "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point." Simple, direct VP swing tied to control of this ONE specific planet — unlike Shard of the Throne, no broader "legendary or home system" condition to check, just this planet by name.
+  if (planetId === ("styx" as never)) {
+    if (previousControllerId) {
+      const losingPlayer = nextState.players[previousControllerId];
+      if (losingPlayer) {
+        nextState = { ...nextState, players: { ...nextState.players, [previousControllerId]: { ...losingPlayer, victoryPoints: { ...losingPlayer.victoryPoints, current: Math.max(0, losingPlayer.victoryPoints.current - 1) } } } };
+      }
+    }
+    const gainingPlayer = nextState.players[controllerId];
+    nextState = { ...nextState, players: { ...nextState.players, [controllerId]: { ...gainingPlayer, victoryPoints: { ...gainingPlayer.victoryPoints, current: gainingPlayer.victoryPoints.current + 1 } } } };
+  }
   const events: GameEvent[] = [];
 
   // RR 73/75: "When a player gains a planet card FROM THE PLANET DECK
