@@ -360,6 +360,7 @@ export interface RawTilesFile {
   tiles: {
     id: number;
     homeFaction?: string;
+    set?: string;
     planets?: {
       name: string;
       resources: number;
@@ -395,12 +396,19 @@ export function buildHomeSystemsLookup(
 }
 
 /** Shared by both loaders (browser + Edge Function) — builds the per-planet static data RuleData.planets needs, straight from data/tiles.json. */
-export function buildPlanetsLookup(tilesFile: RawTilesFile): Record<
+export function buildPlanetsLookup(
+  tilesFile: RawTilesFile,
+  /** TE: Thunder's Edge replaces the base Mecatol Rex tile (id 18, not legendary) with its own updated one (id 112 — "The Galactic Council" legendary ability). Both exist in this project's own tiles.json; without this flag, whichever one iterates LAST here would silently win for every game mode (previously always the TE one, since it has the higher id — incorrectly making Mecatol Rex legendary even in base/PoK-only games). */
+  hasThundersEdgeMode = false,
+): Record<
   string,
   { resources: number; influence: number; traits: string[]; techSpecialties: string[]; isLegendary: boolean; isMecatolRex: boolean; isMallice: boolean; hasRelicIcon: boolean; homeFactionId: import("../types/ids").FactionId | null }
 > {
   const planets: ReturnType<typeof buildPlanetsLookup> = {};
   for (const tile of tilesFile.tiles) {
+    const isWrongMecatolVariant =
+      tile.planets?.some((p) => p.isMecatolRex) && (hasThundersEdgeMode ? tile.set !== "ThundersEdge" : tile.set === "ThundersEdge");
+    if (isWrongMecatolVariant) continue;
     // TE multi-hex tiles (currently only the 3 Fracture tiles): planets
     // live under tile.hexes instead of tile.planets directly — flattened
     // here the same way createGame.ts's own rawTileToSystemState already

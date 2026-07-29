@@ -51,6 +51,18 @@ export function canShipReachSystem(
   baseMoveValue: number,
   techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean; ignoreAllAnomalyEffects?: boolean; circletOfTheVoidActive?: boolean } = {},
   rules?: RuleData,
+  /**
+   * Muaat "Stellar Genesis" breakthrough ability: "after you move 1 of
+   * your war suns out of OR THROUGH Avernus's system..." — the "or
+   * through" half needs to know whether the path ACTUALLY TAKEN visits
+   * this specific system somewhere along the way, not just whether the
+   * move is legal at all. Tracked as a 3rd BFS state dimension
+   * (alongside riftUsed below) exactly the same way — a path either has
+   * or hasn't visited it yet at each point, and once true it stays true
+   * for the rest of that path. If undefined, behaves exactly as before
+   * (no such tracking, no such requirement).
+   */
+  mustPassThroughSystemId?: SystemId,
 ): boolean {
   if (from === to) return true;
   const ignoreAsteroidFields = techs.ignoreAsteroidFields || techs.ignoreAllAnomalyEffects || techs.circletOfTheVoidActive;
@@ -81,10 +93,11 @@ export function canShipReachSystem(
   // anomaly movement effects — so circletOfTheVoidActive does NOT gate
   // this rift-bonus tracking the way ignoreAllAnomalyEffects does.
   const startRiftUsed = hasGravityRift(originAnomalies) && !techs.ignoreAllAnomalyEffects;
+  const startPassedThrough = mustPassThroughSystemId === undefined || from === mustPassThroughSystemId;
   const bestHopsForState = new Map<string, number>();
-  bestHopsForState.set(stateKey(from, startRiftUsed), 0);
-  let frontier: { systemId: SystemId; hops: number; riftUsed: boolean }[] = [
-    { systemId: from, hops: 0, riftUsed: startRiftUsed },
+  bestHopsForState.set(stateKey(from, startRiftUsed, startPassedThrough), 0);
+  let frontier: { systemId: SystemId; hops: number; riftUsed: boolean; passedThrough: boolean }[] = [
+    { systemId: from, hops: 0, riftUsed: startRiftUsed, passedThrough: startPassedThrough },
   ];
 
   while (frontier.length > 0) {
@@ -100,10 +113,13 @@ export function canShipReachSystem(
 
         const isDestination = neighborId === to;
         const neighborAnomalies = state.systems[neighborId]?.anomalies ?? [];
+        const passedThrough = current.passedThrough || neighborId === mustPassThroughSystemId;
 
         if (isDestination) {
           if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields, bypassAllBlocking: techs.circletOfTheVoidActive })) continue;
-          return true;
+          if (passedThrough) return true;
+          // Doesn't satisfy mustPassThroughSystemId via THIS path — keep exploring other paths/hop-counts instead of returning early, same as any other non-final state.
+          continue;
         }
 
         if (!canShipPassThroughTile(neighborAnomalies, ignoreAsteroidFields, techs.circletOfTheVoidActive)) continue;
@@ -112,11 +128,11 @@ export function canShipReachSystem(
         if (blockedByEnemyFleet) continue;
 
         const riftUsed = current.riftUsed || (hasGravityRift(neighborAnomalies) && !techs.ignoreAllAnomalyEffects);
-        const key = stateKey(neighborId, riftUsed);
+        const key = stateKey(neighborId, riftUsed, passedThrough);
         const bestKnown = bestHopsForState.get(key);
         if (bestKnown !== undefined && bestKnown <= hops) continue;
         bestHopsForState.set(key, hops);
-        nextFrontier.push({ systemId: neighborId, hops, riftUsed });
+        nextFrontier.push({ systemId: neighborId, hops, riftUsed, passedThrough });
       }
     }
 
@@ -126,6 +142,6 @@ export function canShipReachSystem(
   return false;
 }
 
-function stateKey(systemId: SystemId, riftUsed: boolean): string {
-  return `${systemId}|${riftUsed ? 1 : 0}`;
+function stateKey(systemId: SystemId, riftUsed: boolean, passedThrough: boolean): string {
+  return `${systemId}|${riftUsed ? 1 : 0}|${passedThrough ? 1 : 0}`;
 }
