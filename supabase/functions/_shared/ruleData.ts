@@ -62,7 +62,7 @@ interface RawFactionFile {
  * Loads and shapes RuleData for exactly the factions in play — no reason to
  * parse every faction file on every request.
  */
-export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
+export async function loadRuleData(factionIds: string[], hasThundersEdgeMode = false): Promise<RuleData> {
   const unitsFile = JSON.parse(await Deno.readTextFile(new URL("./data/units.json", import.meta.url)));
   const baseUnitsById = new Map<string, RawUnitEntry>(unitsFile.units.map((u: RawUnitEntry) => [u.id, u]));
 
@@ -142,7 +142,7 @@ export async function loadRuleData(factionIds: string[]): Promise<RuleData> {
   return {
     factionUnits,
     unitUpgrades,
-    planets: buildPlanetsLookup(tilesFile as RawTilesFile),
+    planets: buildPlanetsLookup(tilesFile as RawTilesFile, hasThundersEdgeMode),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
     objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
     technologies: {
