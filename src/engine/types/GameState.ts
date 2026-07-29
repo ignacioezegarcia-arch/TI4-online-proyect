@@ -62,6 +62,8 @@ export interface PlanetState {
   coexistingPlayerIds?: PlayerId[];
   /** TE space stations (p.10) act like planets but can't hold ground forces/structures; flag so invasion logic can reject commits here. */
   isSpaceStation?: boolean;
+  /** RR "Stellar Converter" (relic): "place the destroyed planet token on that planet" — the planet keeps existing as an entry (preserving its own identity/data) rather than being deleted outright, marked destroyed instead. "A system that contains a planet destroyed by Stellar Converter, and no other planets, is considered to contain no planets" — checked the same way isSpaceStation is checked wherever "does this system have any REAL planets" matters (frontier tokens, objectives, etc.). No units can ever occupy a destroyed planet again; it produces no resources/influence and has no traits/specialties for any purpose. */
+  destroyed?: boolean;
 }
 
 /** RR 77: a system tile's live game state. */
@@ -161,6 +163,10 @@ export interface Player {
 
   leaders: { leaderId: LeaderId; locked: boolean; exhausted: boolean }[]; // PoK/TE agents/commanders/heroes
   relics: RelicId[];
+  /** A relic's own component action can be "exhaust" (Circlet of the Void, Scepter of Emelpar, The Prophet's Tears, Crown of Emphidia's own explore ability) rather than "purge" (most relics — one-time, removed from Player.relics entirely on use). Tracked separately since player.relics itself only means "owned", not "currently available to use". RR: everything exhausted during the action phase readies at the end of the status phase, same as planets — this project's own runStatusPhaseBookkeeping (actionPhase.ts) readies every exhausted relic there too, not just planets. The Triad (a relic that behaves like an actual planet card) is the one confirmed EXCEPTION worth calling out — it's explicitly confirmed to ready "by effects that ready planets" specifically, which is really the same general rule, not a special case. */
+  exhaustedRelics?: RelicId[];
+  /** RR "The Silver Flame" (relic): "you cannot score public objectives" — a permanent, ongoing restriction once triggered (this project's own rules/relics.ts's own useSilverFlame is the only current source of this flag). */
+  cannotScorePublicObjectives?: boolean;
   /** RR 35.9: purge 3 of the same type (Unknown fragments substitute for any one type) to gain a Relic. */
   relicFragments: { cultural: number; industrial: number; hazardous: number; unknown: number };
   /** Exploration cards with `keepInPlayArea` (e.g. "Enigmatic Device") — sit face-up in front of the player until purged, distinct from actionCards/promissoryNotes. */
@@ -277,6 +283,8 @@ export interface GameState {
   transactionsThisTurn?: string[];
   /** RR (yjmrobert.com/tirules/rules/r_transactions): "while resolving each agenda... a player may perform one transaction with each other player" without needing to be neighbors — canonical pair keys, reset whenever a new agenda is revealed (including a discarded-and-replaced one, per the confirmed note that grants a fresh allowance then). */
   transactionsThisAgenda?: string[];
+  /** TE "Lie in Wait": the 2 players whose transaction just triggered the after_transaction_resolved window above — banked here since the window's own `order` only lists potential REACTORS, not who they're reacting to. */
+  pendingLieInWaitTargets?: [PlayerId, PlayerId];
   /** TE The Fracture: set by phases/theFracture.ts's own setUpFractureOnEntry right when the Fracture comes into play, cleared once placeIngressTokens resolves the triggering player's own choice. synergyColors mirrors whatever that player's breakthrough synergy was AT THAT MOMENT (null if they have none), since that's what determines whether the 3-per-color or the 4-different-specialties path applies. */
   pendingFractureIngressChoice?: { playerId: PlayerId; synergyColors: [string, string] | null };
 
@@ -470,6 +478,12 @@ export interface GameState {
    * finishing a tactical/component action is.
    */
   activePlayerActionsTaken?: number;
+  /** TE "Crisis": the specific player whose UPCOMING turn should be skipped once — checked (and cleared) by phases/actionPhase.ts's own advanceActivePlayer the next time it computes who's up next. Deliberately NOT the same as hasPassed (a passed player never acts again this round at all; this is a one-time skip of whoever's turn would be next, who can still act on their OWN later turn if the action phase continues that far). */
+  skipNextTurnForPlayerId?: PlayerId;
+  /** TE "Extreme Duress": set when played during the turn_start window (advanceActivePlayer's own doc comment above) — checked by GameEngine.ts's own post-dispatch logic against the ARMED player's very next action; if it's anything other than RESOLVE_STRATEGY_PRIMARY, the punishment fires and this is cleared either way. */
+  pendingExtremeDuress?: { armedPlayerId: PlayerId; casterId: PlayerId };
+  /** TE "Puppets on a String" (yjmrobert.com/tirules/components/c_action_cards): "The active player cannot use the Fleet Logistics technology to perform an additional action [during this granted turn]... they may use the Master Plan action card or the Minister of War agenda to perform additional actions [instead]." Set true only while this player's own Puppets-granted bonus action is in progress; checked (and skipped past) by maybeAdvanceActivePlayer's own Fleet Logistics check specifically — Master Plan's own bonus isn't affected. */
+  puppetsOnAStringActive?: boolean;
   /**
    * RR "Deploy": each deploy-ability instance (e.g. Titans of Ul's Ouranos
    * flagship's own DEPLOY) can only be resolved once per occurrence of its
@@ -845,7 +859,12 @@ export interface PendingPriorityWindow {
     | "planet_control_gained"
     | "ground_forces_committed"
     | "after_another_player_activates_system"
-    | "space_combat_won";
+    | "space_combat_won"
+    | "end_of_turn"
+    | "after_ships_moved_in"
+    | "after_transaction_resolved"
+    | "last_ship_destroyed"
+    | "turn_start";
   order: PlayerId[];
   currentIndex: number;
   consecutivePasses: number;

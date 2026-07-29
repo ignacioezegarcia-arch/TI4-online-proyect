@@ -397,6 +397,30 @@ export type GameAction =
   | { type: "PLAY_FIRE_TEAM"; playerId: PlayerId; rerollUnitType: "infantry" | "mech"; newDiceRolls: number[] }
   | { type: "PLAY_SCRAMBLE_FREQUENCY"; playerId: PlayerId; opponentId: PlayerId; opponentUnitType: UnitType; newDiceRolls: number[] }
   | { type: "PLAY_REVEAL_PROTOTYPE"; playerId: PlayerId; techId: TechId; exhaustPlanetIdsForResources: PlanetId[] }
+  | { type: "PLAY_STRATEGIZE"; playerId: PlayerId; cardId: string; payload: unknown } // TE — see phases/actionCardEffects.ts's own playStrategize
+  | { type: "PLAY_OVERRULE"; playerId: PlayerId; cardId: string; payload: unknown } // TE — see phases/actionCardEffects.ts's own playOverrule
+  | { type: "PLAY_CRISIS"; playerId: PlayerId } // TE — see phases/actionCardEffects.ts's own playCrisis
+  | { type: "PLAY_PUPPETS_ON_A_STRING"; playerId: PlayerId } // TE — see phases/actionCardEffects.ts's own playPuppetsOnAString
+  | { type: "PLAY_RESCUE"; playerId: PlayerId; fromSystemId: SystemId; unitType: UnitType; gravityRiftDieRoll?: number } // TE — see phases/actionCardEffects.ts's own playRescue
+  | { type: "PLAY_LIE_IN_WAIT"; playerId: PlayerId; cardIdFromFirst: string; cardIdFromSecond: string } // TE — see phases/actionCardEffects.ts's own playLieInWait
+  | { type: "PLAY_EXCHANGE_PROGRAM"; playerId: PlayerId; otherPlayerId: PlayerId; agreed: boolean; targetPlanetId?: PlanetId } // TE — see phases/actionCardEffects.ts's own playExchangeProgram
+  | { type: "PLAY_BRILLIANCE"; playerId: PlayerId; mode: "ready_planet" | "grant_breakthrough"; planetId?: PlanetId; targetPlayerId?: PlayerId; fractureDieRoll?: number } // TE — see phases/actionCardEffects.ts's own playBrilliance
+  | { type: "PLAY_MERCENARY_CONTRACT"; playerId: PlayerId; planetId: PlanetId } // TE — see phases/actionCardEffects.ts's own playMercenaryContract
+  | { type: "PLAY_PIRATE_CONTRACT"; playerId: PlayerId; systemId: SystemId } // TE — see phases/actionCardEffects.ts's own playPirateContract
+  | { type: "PLAY_PIRATE_FLEET"; playerId: PlayerId; systemId: SystemId; exhaustPlanetIdsForResources: PlanetId[] } // TE — see phases/actionCardEffects.ts's own playPirateFleet
+  | { type: "PLAY_CRASH_LANDING"; playerId: PlayerId; unitType: UnitType; targetPlanetId: PlanetId } // TE — see phases/actionCardEffects.ts's own playCrashLanding
+  | { type: "PLAY_EXTREME_DURESS"; playerId: PlayerId; armedPlayerId: PlayerId } // TE — see phases/actionCardEffects.ts's own playExtremeDuress
+  | { type: "USE_CROWN_OF_EMPHIDIA"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" } // RR relic — see rules/relics.ts's own useCrownOfEmphidia
+  | { type: "USE_MAW_OF_WORLDS"; playerId: PlayerId; techId: TechId } // RR relic — see rules/relics.ts's own useMawOfWorlds
+  | { type: "USE_BOOK_OF_LATVINIA"; playerId: PlayerId } // RR relic — see rules/relics.ts's own useBookOfLatvinia
+  | { type: "USE_THE_CODEX"; playerId: PlayerId; cardIds: string[] } // RR relic — see rules/relics.ts's own useTheCodex
+  | { type: "USE_STELLAR_CONVERTER"; playerId: PlayerId; bombardmentSystemId: SystemId; targetSystemId: SystemId; targetPlanetId: PlanetId } // RR relic — see rules/relics.ts's own useStellarConverter
+  | { type: "USE_NANO_FORGE"; playerId: PlayerId; relicId: "nano_forge_attach" | "nano_forge_no_repeat"; planetId: PlanetId } // RR relic — see rules/relics.ts's own useNanoForge
+  | { type: "USE_DYNAMIS_CORE"; playerId: PlayerId; relicId: "dynamo_core_exhaust" | "dynamo_core_gain" } // RR relic — see rules/relics.ts's own useDynamisCore
+  | { type: "USE_HEART_OF_IXTH"; playerId: PlayerId; originalRoll: number; adjustment: 1 | -1 } // RR relic — see rules/relics.ts's own useHeartOfIxth
+  | { type: "USE_SILVER_FLAME"; playerId: PlayerId; dieRoll: number; fractureDieRoll?: number } // RR relic — see rules/relics.ts's own useSilverFlame
+  | { type: "USE_JR_XS455_O"; playerId: PlayerId; targetPlayerId: PlayerId; placeStructure?: { planetId: PlanetId; structureType: "space_dock" | "pds"; exhaustPlanetIdsForResources: PlanetId[] } } // RR relic/agent — see rules/relics.ts's own useJrXs455O
+  | { type: "USE_NEURALOOP"; playerId: PlayerId; relicIdToPurge: string; discardedObjectiveId: ObjectiveId; replacementObjectiveId: ObjectiveId; replacementDeck: "publicStageI" | "publicStageII" | "secret" } // RR relic — see rules/relics.ts's own useNeuraloop
   /** RR 1.19/1.20: declines this player's current turn in an open priority window (see types/GameState.ts's own PendingPriorityWindow doc comment) — legal any time it's their turn in ANY open window, whichever kind it is. */
   | { type: "PASS_PRIORITY"; playerId: PlayerId }
   | {
@@ -484,8 +508,26 @@ export type GameAction =
       type: "PROPOSE_TRANSACTION";
       playerId: PlayerId;
       withPlayerId: PlayerId;
-      offer: { tradeGoods?: number; commodities?: number; promissoryNoteId?: PromissoryNoteId; relicFragments?: Partial<Record<"cultural" | "industrial" | "hazardous" | "unknown", number>> };
-      request: { tradeGoods?: number; commodities?: number; promissoryNoteId?: PromissoryNoteId; relicFragments?: Partial<Record<"cultural" | "industrial" | "hazardous" | "unknown", number>> };
+      offer: {
+        tradeGoods?: number;
+        commodities?: number;
+        promissoryNoteId?: PromissoryNoteId;
+        relicFragments?: Partial<Record<"cultural" | "industrial" | "hazardous" | "unknown", number>>;
+        relicId?: import("./ids").RelicId;
+        actionCardId?: string;
+        unscoredSecretObjectiveId?: string;
+      };
+      request: {
+        tradeGoods?: number;
+        commodities?: number;
+        promissoryNoteId?: PromissoryNoteId;
+        relicFragments?: Partial<Record<"cultural" | "industrial" | "hazardous" | "unknown", number>>;
+        relicId?: import("./ids").RelicId;
+        actionCardId?: string;
+        unscoredSecretObjectiveId?: string;
+      };
+      /** TE "Black Market Dealings": true if that card (from the caster's own hand) is being spent as part of this same transaction, unlocking relics/action cards/unscored secret objectives on either offer above. */
+      blackMarketDealings?: boolean;
     } // RR (yjmrobert.com/tirules/rules/r_transactions) — binding immediately since both sides confirm client-side before submitting; see rules/transactions.ts's own resolveTransaction.
 
   // --- Status phase (RR 70) — mostly automatic, but objective scoring is a player choice ---
@@ -638,6 +680,7 @@ export type GameEvent =
   | { type: "INGRESS_TOKENS_PLACED"; playerId: PlayerId; systemIds: SystemId[] }
   | { type: "COMMODITIES_CONVERTED_VIA_SPACE_STATION"; playerId: PlayerId; amount: number }
   | { type: "TRANSACTION_RESOLVED"; playerId: PlayerId; otherPlayerId: PlayerId }
+  | { type: "EXTREME_DURESS_TRIGGERED"; armedPlayerId: PlayerId; casterId: PlayerId; secretObjectiveIds: string[] }
   | { type: "EXPEDITION_SLICE_CLAIMED"; playerId: PlayerId; slice: import("./enums").ThunderEdgeExpeditionSliceCost }
   | { type: "THUNDER_EDGE_EXPEDITION_COMPLETED"; systemId: SystemId; infantryPlacingPlayerId: PlayerId; infantryCount: number }
   | { type: "BOMBARDMENT_RESOLVED"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; hits: number; targetPlayerId?: PlayerId }
@@ -680,7 +723,12 @@ export type GameEvent =
         | "planet_control_gained"
         | "ground_forces_committed"
         | "after_another_player_activates_system"
-        | "space_combat_won";
+        | "space_combat_won"
+        | "end_of_turn"
+        | "after_ships_moved_in"
+        | "after_transaction_resolved"
+        | "last_ship_destroyed"
+        | "turn_start";
     }
   | { type: "ACTION_CARD_ANNOUNCED"; playerId: PlayerId; cardId: ActionCardId }
   | { type: "ACTION_CARD_CANCELLED"; playerId: PlayerId; cardId: ActionCardId; cancelledBy: PlayerId }
@@ -693,6 +741,9 @@ export type GameEvent =
   | { type: "EXPLORATION_CARD_DRAWN"; playerId: PlayerId; cardId: string; deck: "cultural" | "industrial" | "hazardous" | "frontier" }
   | { type: "RELIC_FRAGMENT_GAINED"; playerId: PlayerId; fragmentType: "cultural" | "industrial" | "hazardous" | "any" }
   | { type: "RELIC_GAINED"; playerId: PlayerId; relicId: string }
+  | { type: "RELIC_PURGED"; playerId: PlayerId; relicId: string }
+  | { type: "PLANET_DESTROYED"; systemId: SystemId; planetId: PlanetId }
+  | { type: "HEART_OF_IXTH_ADJUSTED_ROLL"; playerId: PlayerId; originalRoll: number; adjustedRoll: number }
   | { type: "GAME_ENDED"; winnerId: PlayerId }
   | { type: "PLAYER_ELIMINATED"; playerId: PlayerId };
 
