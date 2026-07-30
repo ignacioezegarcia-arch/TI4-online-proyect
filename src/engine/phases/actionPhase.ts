@@ -1,14 +1,18 @@
 import { GameState, Player, PlanetState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, ObjectiveId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
-import { ObjectiveKind } from "../types/enums";
-import { RuleData } from "../types/RuleData";
+import { PlayerId, ObjectiveId, PlanetId, SystemId, AgendaId, asTechId, asAbilityId, asLeaderId } from "../types/ids";
+import { ObjectiveKind, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
+import { RuleData, getUnitStats } from "../types/RuleData";
 import { OBJECTIVE_CHECKS, SPEND_CHECK_TYPES } from "../rules/objectiveChecks";
 import { revealAgenda } from "./agendaPhase";
 import { drawActionCard } from "./actionCards";
 import { placeGainedCommandTokens } from "../rules/commandTokens";
 import { getLawOwner } from "./agendaEffects";
 import { maybeGainCrownOfEmphidiaVictoryPoint } from "../rules/relics";
+import { hasAbility } from "../rules/abilities";
+import { checkReinforcementsAvailable } from "../rules/reinforcements";
+import { maybeUnlockHero } from "../rules/leaders";
+import { placeRespawnedSpecOps } from "../rules/sol";
 import { use4X41DHyperionVI, useMaxisCentralControl, useDokNPicsSalvageYardStore, useAeurexMechanica } from "./legendaryPlanets";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
@@ -85,7 +89,7 @@ export function pass(
   // openEndOfTurnWindow DIRECTLY (not maybeAdvanceActivePlayer) since a
   // passing player never gets a Fleet Logistics/Master Plan bonus action
   // — those checks would be wrong to apply here.
-  nextState = openEndOfTurnWindow(nextState, action.playerId);
+  nextState = openEndOfTurnWindow(nextState, action.playerId, rules);
 
   return { ok: true, state: nextState, events: [{ type: "PLAYER_PASSED", playerId: action.playerId }, ...events] };
 }
@@ -96,7 +100,7 @@ export function pass(
  * everyone has passed, there's no active player — autoAdvancePhase (below)
  * picks that up and moves to the status phase.
  */
-export function advanceActivePlayer(state: GameState): GameState {
+export function advanceActivePlayer(state: GameState, rules?: RuleData): GameState {
   const order = state.initiativeOrder;
   if (order.length === 0 || order.every((id) => state.players[id].hasPassed)) {
     return { ...state, activePlayerId: null };
@@ -112,7 +116,9 @@ export function advanceActivePlayer(state: GameState): GameState {
       continue;
     }
     // RR (yjmrobert.com/tirules/rules/r_transactions): the "1 per neighbor" transaction allowance is scoped to "the active player's turn" — a fresh turn starting (a new active player) resets it.
-    let nextState: GameState = { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0, transactionsThisTurn: undefined, skipNextTurnForPlayerId: undefined };
+    let nextState: GameState = { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0, transactionsThisTurn: undefined, skipNextTurnForPlayerId: undefined, usedMilitarySupportForActivePlayerTurn: undefined };
+    // Sol "Spec Ops II" (RESPAWN): "at the start of your next turn, place each unit that is on this card..." — right here, as this player actually becomes active again.
+    if (rules) nextState = placeRespawnedSpecOps(nextState, candidate, rules);
     // TE "Extreme Duress": "At the start of another player's turn, if
     // they have a readied strategy card" — opened here, right as a new
     // player actually becomes active, for every OTHER player to
@@ -142,7 +148,7 @@ export function advanceActivePlayer(state: GameState): GameState {
  * PASS if they'd rather stop early); otherwise this behaves exactly like
  * advanceActivePlayer.
  */
-export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): GameState {
+export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId, rules?: RuleData): GameState {
   const player = state.players[playerId];
   const actionsSoFar = state.activePlayerActionsTaken ?? 0;
   // TE "Puppets on a String": "The active player cannot use the Fleet Logistics technology to perform an additional action" during their own Puppets-granted turn — skipped entirely here; Master Plan's own separate bonus (below) is untouched.
@@ -155,9 +161,9 @@ export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): 
   }
   // TE "Puppets on a String": their own granted action is over — restore hasPassed (RR: "the active player is still considered passed during their action; they do not pass again at the end") and clear the flag, WITHOUT opening the shared end_of_turn window below (per RR: "it is not considered the turn of the player who played Puppets On A String for game effects" — no "end of your turn" reactions for this specific, borrowed turn).
   if (state.puppetsOnAStringActive) {
-    return { ...advanceActivePlayer({ ...state, players: { ...state.players, [playerId]: { ...player, hasPassed: true } }, puppetsOnAStringActive: undefined }) };
+    return { ...advanceActivePlayer({ ...state, players: { ...state.players, [playerId]: { ...player, hasPassed: true } }, puppetsOnAStringActive: undefined }, rules) };
   }
-  return openEndOfTurnWindow(state, playerId);
+  return openEndOfTurnWindow(state, playerId, rules);
 }
 
 /**
@@ -174,13 +180,13 @@ export function maybeAdvanceActivePlayer(state: GameState, playerId: PlayerId): 
  * window closes (see GameEngine.ts's own end_of_turn window-close
  * handling).
  */
-export function openEndOfTurnWindow(state: GameState, playerId: PlayerId): GameState {
+export function openEndOfTurnWindow(state: GameState, playerId: PlayerId, rules?: RuleData): GameState {
   const eligibleIds = Object.keys(state.players).filter((id) => !state.players[id as PlayerId]?.eliminated) as PlayerId[];
   const order = actionPhaseWindowOrder(state, playerId, eligibleIds);
   if (order.length > 0) {
     return { ...state, pendingPriorityWindow: { kind: "end_of_turn", order, currentIndex: 0, consecutivePasses: 0 } };
   }
-  return advanceActivePlayer(state);
+  return advanceActivePlayer(state, rules);
 }
 
 /**
@@ -199,13 +205,13 @@ export function openEndOfTurnWindow(state: GameState, playerId: PlayerId): GameS
  * once; Jupiter Brain's own bonus action is a genuinely separate turn
  * that will get its own end_of_turn opportunity when IT concludes).
  */
-export function finishEndOfTurn(state: GameState): GameState {
+export function finishEndOfTurn(state: GameState, rules?: RuleData): GameState {
   const activePlayerId = state.activePlayerId;
   const player = activePlayerId ? state.players[activePlayerId] : undefined;
   if (player?.masterPlanBonusAvailable) {
     return { ...state, players: { ...state.players, [activePlayerId!]: { ...player, masterPlanBonusAvailable: false } } };
   }
-  return advanceActivePlayer(state);
+  return advanceActivePlayer(state, rules);
 }
 
 /**
@@ -258,7 +264,7 @@ export function autoAdvancePhase(state: GameState, rules: RuleData): { state: Ga
     let next = state;
     let events: GameEvent[] = [];
     if (state.pendingCommandTokenGains === undefined) {
-      const bookkeeping = runStatusPhaseBookkeeping(state);
+      const bookkeeping = runStatusPhaseBookkeeping(state, rules);
       next = bookkeeping.state;
       events = [...bookkeeping.events];
       // RR 61.15/81.2b: the game may have just ended right here (no public
@@ -502,6 +508,13 @@ export function scoreObjectiveCore(
   let nextState: GameState = { ...workingState, players: { ...workingState.players, [playerId]: updatedPlayer } };
   const events: GameEvent[] = [{ type: "OBJECTIVE_SCORED", playerId, objectiveId, points }];
 
+  // RR "Leaders": every hero's own unlock condition is universally "3 scored objectives" — checked generically here for whichever hero THIS player's own faction has, right after their own scoredObjectiveIds count could have just crossed that threshold. Previously never hooked in anywhere at all, for any faction.
+  const heroLeaderId = rules.factionLeaders[updatedPlayer.factionId]?.hero?.id;
+  if (heroLeaderId) {
+    const unlockedPlayer = maybeUnlockHero(nextState.players[playerId], asLeaderId(heroLeaderId));
+    nextState = { ...nextState, players: { ...nextState.players, [playerId]: unlockedPlayer } };
+  }
+
   // RR 87: first to the target wins outright — doesn't yet handle the tie-break rule for two players crossing in the same status phase (RR 87.3-ish), flagged rather than guessed.
   if (!nextState.winnerId && updatedPlayer.victoryPoints.current >= state.victoryPointTarget) {
     nextState = { ...nextState, winnerId: playerId };
@@ -677,7 +690,7 @@ export function finishStatusPhaseScoring(
   return { ok: true, state: nextState, events: [] };
 }
 
-function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events: GameEvent[] } {
+function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const events: GameEvent[] = [];
 
   // RR 61.15/81.2b: if there are no unrevealed public objectives left at
@@ -744,7 +757,11 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
     // Confirmed: the PLAYER decides which pool(s) these go into — queued
     // here (see GameState.ts's own doc comment on pendingCommandTokenGains)
     // rather than auto-assigned, resolved via PLACE_GAINED_COMMAND_TOKENS.
-    const commandTokenGain = player.technologies.includes(asTechId("hyper_metabolism")) ? 3 : 2;
+    // Sol's own "VERSATILE" faction ability: "When you gain command
+    // tokens during the status phase, gain 1 additional command token"
+    // — stacks with Hyper Metabolism (a Sol player with both technologies
+    // and abilities gains 4, not just 3).
+    const commandTokenGain = (player.technologies.includes(asTechId("hyper_metabolism")) ? 3 : 2) + (hasAbility(player, asAbilityId("versatile")) ? 1 : 0);
     pendingCommandTokenGains[id as PlayerId] = commandTokenGain;
 
     if (!player.eliminated) {
@@ -817,8 +834,52 @@ function runStatusPhaseBookkeeping(state: GameState): { state: GameState; events
   }
   players = stateForCrownCheck.players;
 
+  // Sol "Genesis" (flagship): "At the end of the status phase, place 1
+  // infantry from your reinforcements in this system's space area." Only
+  // triggers if the flagship is actually built and present somewhere on
+  // the board (a player could have Sol as their faction but not have
+  // built/kept their flagship).
+  const genesisCapacityOverflow: { playerId: PlayerId; systemId: SystemId }[] = [];
+  for (const [systemId, system] of Object.entries(systems)) {
+    for (const [ownerId, stacks] of Object.entries(system.spaceUnitsByPlayer)) {
+      const hasGenesis = (stacks ?? []).some((s) => s.unitType === "flagship" && s.count > 0);
+      if (!hasGenesis) continue;
+      const owner = players[ownerId as PlayerId];
+      if (!owner || owner.factionId !== ("sol" as never)) continue;
+      const reinforcementsCheck = checkReinforcementsAvailable({ ...state, systems, players }, ownerId as PlayerId, [{ unitType: "infantry", count: 1 }]);
+      if (!reinforcementsCheck.ok) continue;
+      const ownerStacks = system.spaceUnitsByPlayer[ownerId as PlayerId] ?? [];
+      const existingInfantry = ownerStacks.find((s) => s.unitType === "infantry");
+      const updatedStacks = existingInfantry
+        ? ownerStacks.map((s) => (s.unitType === "infantry" ? { ...s, count: s.count + 1 } : s))
+        : [...ownerStacks, { unitType: "infantry" as const, count: 1, damagedCount: 0 }];
+      systems[systemId as SystemId] = { ...systems[systemId as SystemId], spaceUnitsByPlayer: { ...systems[systemId as SystemId].spaceUnitsByPlayer, [ownerId]: updatedStacks } };
+      events.push({ type: "UNITS_PRODUCED", playerId: ownerId as PlayerId, systemId: systemId as SystemId, unitType: "infantry", count: 1, totalCost: 0 });
+
+      // Confirmed (yjmrobert.com/tirules/factions/f_sol): "the Sol player might need to remove an infantry or fighter to meet capacity limits" — checked right after the mandatory placement, same RR 16.3 combined-capacity math used elsewhere, but as a PENDING CHOICE (which unit to remove) rather than an upfront rejection, since this placement itself is mandatory and can't simply be blocked.
+      const totalCapacity = updatedStacks.reduce((sum, s) => {
+        if (s.count <= 0 || !SHIP_TYPES.includes(s.unitType)) return sum;
+        const shipStats = getUnitStats(rules, owner.factionId, s.unitType, owner.unitUpgrades);
+        return sum + (shipStats?.capacity ?? 0) * s.count;
+      }, 0);
+      const totalCargo = updatedStacks.reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
+      if (totalCargo > totalCapacity) {
+        genesisCapacityOverflow.push({ playerId: ownerId as PlayerId, systemId: systemId as SystemId });
+      }
+    }
+  }
+
   return {
-    state: { ...stateForCrownCheck, systems, objectives, publicObjectiveDeck: nextDeck, actionCardDeck, actionCardDiscardPile, pendingCommandTokenGains },
+    state: {
+      ...stateForCrownCheck,
+      systems,
+      objectives,
+      publicObjectiveDeck: nextDeck,
+      actionCardDeck,
+      actionCardDiscardPile,
+      pendingCommandTokenGains,
+      ...(genesisCapacityOverflow.length > 0 ? { pendingGenesisCapacityOverflow: genesisCapacityOverflow } : {}),
+    },
     events,
   };
 }

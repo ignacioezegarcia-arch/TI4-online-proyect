@@ -200,8 +200,45 @@ export function executeProduction(
     usedAiDevelopmentAlgorithmForCost = true;
   }
 
-  if (totalCost > productionLimit) {
-    return { ok: false, error: `RR 58: total cost ${totalCost} exceeds this Space Dock's Production limit (${productionLimit}).` };
+  // Sol's own Breakthrough ability, "Bellum Gloriosum": "When you produce
+  // a ship that has capacity, you may also produce any combination of
+  // ground forces or fighters up to that ship's capacity; they do not
+  // count against your PRODUCTION limit." Confirmed rulings
+  // (yjmrobert.com/tirules/factions/f_sol): (1) if producing MULTIPLE
+  // capacity ships at once, their COMBINED capacity is what's exempted;
+  // (2) the exempt units are still PAID for normally, at their own
+  // COMBINED/token cost (e.g. Production 2, producing a dreadnought + 2
+  // infantry: 5 resources total, since the infantry PAIR itself is a
+  // single 1-resource token — not "infantry cost × 2 individually").
+  // Confirmed via this same combined-cost example: only the LIMIT check
+  // is exempted, not the actual resource-spending check right after.
+  let limitCheckCost = totalCost;
+  if (player.hasBreakthrough && player.factionId === ("sol" as never)) {
+    const combinedCapacity = units.reduce((sum, u) => {
+      if (u.count <= 0) return sum;
+      const stats = getUnitStats(rules, player.factionId, u.unitType, player.unitUpgrades);
+      return sum + (stats?.capacity ?? 0) * u.count;
+    }, 0);
+    let ridersLeft = combinedCapacity;
+    for (const u of units) {
+      if (ridersLeft <= 0) break;
+      if (!GROUND_FORCE_TYPES.includes(u.unitType) && u.unitType !== "fighter") continue;
+      const stats = getUnitStats(rules, player.factionId, u.unitType, player.unitUpgrades);
+      const perToken = getEffectiveProducesQuantity(state, u.unitType, stats?.producesQuantity ?? 1);
+      // Exemption only applies to whole TOKENS (e.g. a full pair of
+      // infantry) — a leftover single unit that can't form a complete
+      // token still counts fully against the limit, same as it would
+      // cost a full token's worth of resources on its own.
+      const exemptUnits = Math.min(u.count, ridersLeft) - (Math.min(u.count, ridersLeft) % perToken);
+      if (exemptUnits <= 0) continue;
+      const exemptTokens = exemptUnits / perToken;
+      limitCheckCost -= exemptTokens * (stats?.cost ?? 0);
+      ridersLeft -= exemptUnits;
+    }
+  }
+
+  if (limitCheckCost > productionLimit) {
+    return { ok: false, error: `RR 58: total cost ${limitCheckCost} exceeds this Space Dock's Production limit (${productionLimit}).` };
   }
   const spendable = player.resourcesAvailable + player.tradeGoods;
   if (totalCost > spendable) {
@@ -341,6 +378,7 @@ export function executeProduction(
 export function finishTacticalAction(
   state: GameState,
   action: { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId },
+  rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.playerId !== action.playerId) {
@@ -350,6 +388,6 @@ export function finishTacticalAction(
     return { ok: false, error: `RR 78: a tactical action can only be finished from the "production" step, currently at "${pending.step}".` };
   }
 
-  const nextState = maybeAdvanceActivePlayer({ ...state, pendingTacticalAction: null }, action.playerId);
+  const nextState = maybeAdvanceActivePlayer({ ...state, pendingTacticalAction: null }, action.playerId, rules);
   return { ok: true, state: nextState, events: [] };
 }

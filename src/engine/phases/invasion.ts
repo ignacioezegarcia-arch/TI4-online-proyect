@@ -6,6 +6,7 @@ import { RuleData, getUnitStats } from "../types/RuleData";
 import { usesCodex4Version, hasPoKContent } from "../rules/gameMode";
 import { isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeTransferShardOfTheThroneOnControlGain, maybeQueueCrownOfThalnosReroll } from "../rules/relics";
+import { checkSpecOpsRespawn } from "../rules/sol";
 import { applyExplorationCard } from "./exploration";
 import {
   playersWithGroundForces,
@@ -915,7 +916,7 @@ export function assignSpaceCannonDefenseHits(
 
 export function resolveGroundCombatRound(
   state: GameState,
-  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[] },
+  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[]; evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" } },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -942,9 +943,26 @@ export function resolveGroundCombatRound(
     return { ok: false, error: "RR 38.1: only a player with ground forces in this combat can submit its dice roll." };
   }
 
+  // Sol "Evelyn DeLouis" (agent): validated + exhausted here, right before the round's own dice entries get built, since her bonus die needs to already be reflected in them.
+  let workingState = state;
+  if (action.evelynDelouisBonus) {
+    const evelynOwner = workingState.players[action.evelynDelouisBonus.playerId];
+    const evelynEntry = evelynOwner?.leaders.find((l) => l.leaderId === ("evelyn_delouis" as never));
+    if (!evelynEntry) return { ok: false, error: "That player doesn't have Evelyn DeLouis." };
+    if (evelynEntry.exhausted) return { ok: false, error: "Evelyn DeLouis is already exhausted." };
+    if (!combatants.includes(action.evelynDelouisBonus.playerId)) return { ok: false, error: "That player isn't a combatant in this ground combat." };
+    workingState = {
+      ...workingState,
+      players: {
+        ...workingState.players,
+        [action.evelynDelouisBonus.playerId]: { ...evelynOwner, leaders: evelynOwner.leaders.map((l) => (l.leaderId === ("evelyn_delouis" as never) ? { ...l, exhausted: true } : l)) },
+      },
+    };
+  }
+
   let entries;
   try {
-    entries = buildGroundCombatEntries(state, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined, pending.groundCombatParticipantIds);
+    entries = buildGroundCombatEntries(workingState, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined, pending.groundCombatParticipantIds, action.evelynDelouisBonus);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -962,8 +980,8 @@ export function resolveGroundCombatRound(
   if (result.hitsScoredByPlayer[b]) pendingHits[a] = result.hitsScoredByPlayer[b];
 
   const round = pending.combatRound ?? 1;
-  const updatedPending = maybeQueueCrownOfThalnosReroll(state, { ...pending, combatRound: round, pendingHits }, result.missedDiceByPlayerAndType);
-  let nextState: GameState = { ...state, pendingTacticalAction: updatedPending };
+  const updatedPending = maybeQueueCrownOfThalnosReroll(workingState, { ...pending, combatRound: round, pendingHits }, result.missedDiceByPlayerAndType);
+  let nextState: GameState = { ...workingState, pendingTacticalAction: updatedPending };
   const events: GameEvent[] = [
     { type: "COMBAT_ROUND_RESOLVED", systemId, planetId, round, hitsScoredByPlayer: result.hitsScoredByPlayer },
   ];
@@ -1083,7 +1101,7 @@ export function initiateCoexistCombat(state: GameState, action: { type: "INITIAT
 
 export function assignGroundCombatHits(
   state: GameState,
-  action: { type: "ASSIGN_HITS"; playerId: PlayerId; assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[] },
+  action: { type: "ASSIGN_HITS"; playerId: PlayerId; assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[]; specOpsRespawnDieRolls?: number[] },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -1141,6 +1159,12 @@ export function assignGroundCombatHits(
     players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
     pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
   };
+
+  // Sol "Spec Ops II" (RESPAWN): checked for whichever of this player's own infantry were just destroyed here.
+  const destroyedInfantryCount = result.destroyed.get("infantry") ?? 0;
+  if (destroyedInfantryCount > 0 && action.specOpsRespawnDieRolls) {
+    nextState = checkSpecOpsRespawn(nextState, action.playerId, destroyedInfantryCount, action.specOpsRespawnDieRolls, rules);
+  }
 
   if (Object.keys(remainingPendingHits).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpGroundCombat(nextState, rules);

@@ -288,7 +288,7 @@ export function useX89BacterialWeapon(
   // same as PASS or finishing a tactical/strategic action, so initiative
   // advances to the next player exactly like those do (respecting Fleet
   // Logistics's own extra-action allowance, if this player has it).
-  nextState = maybeAdvanceActivePlayer(nextState, action.playerId);
+  nextState = maybeAdvanceActivePlayer(nextState, action.playerId, rules);
   return { ok: true, state: nextState, events };
 }
 
@@ -563,7 +563,7 @@ export function useSlingRelay(
     players: { ...nextState.players, [action.playerId]: exhaustTech(nextState.players[action.playerId], "sling_relay") },
   };
   // RR: this is a component ACTION — it uses this player's entire turn, same as PASS/finishing a tactical/strategic action (respecting Fleet Logistics's own extra-action allowance, if this player has it).
-  nextState = maybeAdvanceActivePlayer(nextState, action.playerId);
+  nextState = maybeAdvanceActivePlayer(nextState, action.playerId, rules);
   return { ok: true, state: nextState, events: productionResult.events };
 }
 
