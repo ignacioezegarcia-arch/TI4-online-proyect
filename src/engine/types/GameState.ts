@@ -378,6 +378,8 @@ export interface GameState {
 
   /** Active tactical action in progress, if any — null between actions. Lets the engine resume mid-combat across async turns. */
   pendingTacticalAction: PendingTacticalAction | null;
+  /** Sardakk N'orr "T'ro" (agent): "At the end of a player's tactical action" — set by phases/production.ts's own finishTacticalAction every time, regardless of faction, so useTro (rules/sardakk.ts) has something concrete to validate against. */
+  lastCompletedTacticalAction?: { playerId: PlayerId; systemId: SystemId };
   /** Active agenda vote in progress, if any. */
   pendingAgendaVote: PendingAgendaVote | null;
   /**
@@ -752,6 +754,10 @@ export interface PendingTacticalAction {
   groundCombatAttackerBlockedThisRound?: boolean;
   /** Letnev "Dunlain Reaper" (mech, DEPLOY): "once per timing window" — resets at the start of each new ground combat round (rules/letnev.ts's own useDunlainReaperDeploy). */
   usedDunlainReaperDeployThisRound?: boolean;
+  /** Sardakk N'orr "Tekklar Legion" (promissory note): "At the start of an invasion combat" — played once for the whole invasion (not per-round, unlike most other reroll/bonus abilities here), applying its +1/-1 to every round of THIS ground combat. Set once, at round 1, by rules/sardakk.ts's own useTekklarLegion. */
+  tekklarLegionHolderIdThisCombat?: PlayerId;
+  /** Sardakk N'orr "Sh'val, Harbinger — TEKKLAR CONDITIONING" (hero): set once used, right after movement — skips Space Cannon Offense/Space Combat/Bombardment entirely, straight to Commit Ground Forces. Purge + return-ships-to-reinforcements happens once commits finish (phases/invasion.ts's own finishInvasionCommits). */
+  shvalHarbingerActive?: boolean;
   /**
    * RR "Magen Defense Grid" ΩΩ (Codex 4, everywhere except base-only
    * games): NOT optional and doesn't exhaust anything — if the defender

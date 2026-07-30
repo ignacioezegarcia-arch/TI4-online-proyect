@@ -469,6 +469,12 @@ export type GameAction =
       opponentRerolls: { unitType: UnitType; newRolls: number[] }[];
       ownRerolls: { unitType: UnitType; newRolls: number[] }[];
     } // Letnev's own promissory note (Codex) — see rules/letnev.ts
+  | { type: "USE_TEKKLAR_LEGION"; playerId: PlayerId } // Sardakk N'orr's own promissory note — see rules/sardakk.ts
+  | { type: "USE_EXOTRIREME_II_SELF_DESTRUCT"; playerId: PlayerId; systemId: SystemId; targets: { playerId: PlayerId; unitType: UnitType; count: number }[] } // Sardakk N'orr's own unit ability — see rules/sardakk.ts
+  | { type: "USE_TRO"; playerId: PlayerId; targetPlanetId?: PlanetId } // Sardakk N'orr's own agent — see rules/sardakk.ts
+  | { type: "USE_NORR_SUPREMACY"; playerId: PlayerId; commandTokenPool: "tactic" | "fleet" | "strategy" } // Sardakk N'orr's own Breakthrough — see rules/sardakk.ts
+  | { type: "USE_GHOM_SEKKUS"; playerId: PlayerId; targetPlanetId: PlanetId; sources: { planetId: PlanetId; unitType: "infantry" | "mech" }[] } // Sardakk N'orr's own commander — see rules/sardakk.ts
+  | { type: "USE_SHVAL_HARBINGER"; playerId: PlayerId } // Sardakk N'orr's own hero — see rules/sardakk.ts
   | { type: "USE_STAR_FORGE"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Muaat's own base faction ability — see rules/muaat.ts
   | { type: "USE_THE_NUCLEUS"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Avernus's own legendary ability (Muaat's Breakthrough) — see rules/muaat.ts
   | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain
