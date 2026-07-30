@@ -150,6 +150,10 @@ export function buildSpaceCombatEntries(
   rules: RuleData,
   systemId: SystemId,
   activePlayerId: PlayerId,
+  /** Letnev "Viscount Unlenn" (agent): "you may exhaust this card to choose 1 ship in the active system; that ship rolls 1 additional die during this combat round." Confirmed (yjmrobert.com/tirules/factions/f_letnev): "only applies to combat rolls" (not AFB) and "the extra die is mandatory for the chosen unit" — a flat +1, same shape as Sol's Evelyn DeLouis but for ships/space combat instead of ground forces/ground combat. */
+  viscountUnlennBonus?: { playerId: PlayerId; unitType: UnitType },
+  /** Letnev "Gravleash Maneuvers" (breakthrough): "Before you roll dice during space combat, apply +X to the results of 1 of your ship's rolls, where X is the number of ship types you have in the combat." Applied as a -X to hitOn for the chosen unit type (same mathematical convention as every other die-modifier in this file) — X itself is computed by the caller (phases/spaceCombat.ts's own resolveSpaceCombatRound), since it needs a count of distinct ship TYPES this player has in the fight, which this function doesn't otherwise track as a single number. */
+  gravleashManeuversBonus?: { playerId: PlayerId; unitType: UnitType; bonusPerDie: number },
 ): CombatUnitEntry[] {
   const system = state.systems[systemId];
   if (!system) return [];
@@ -183,10 +187,22 @@ export function buildSpaceCombatEntries(
       const prophecyOfIxthBonus = stack.unitType === "fighter" && getLawOwner(state, "prophecy_of_ixth" as AgendaId) === playerId ? 1 : 0;
       const fighterPrototypeBonus = getFighterPrototypeHitOnBonus(state, playerId, stack.unitType);
       const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus;
+      const viscountBonus = viscountUnlennBonus && viscountUnlennBonus.playerId === playerId && viscountUnlennBonus.unitType === stack.unitType ? 1 : 0;
+      const totalDiceForStack = stack.count * diceCountPerUnit + viscountBonus;
+
+      // Letnev "Gravleash Maneuvers": the bonus only ever applies to exactly 1 of this player's own dice — split it off into its own entry (diceCount 1) with the boosted hitOn, leaving the rest of the stack's dice at the normal value.
+      const usesGravleash = gravleashManeuversBonus && gravleashManeuversBonus.playerId === playerId && gravleashManeuversBonus.unitType === stack.unitType && totalDiceForStack > 0;
+      if (usesGravleash) {
+        entries.push({ playerId, diceCount: 1, hitOn: hitOn - gravleashManeuversBonus!.bonusPerDie, unitType: stack.unitType });
+        if (totalDiceForStack > 1) {
+          entries.push({ playerId, diceCount: totalDiceForStack - 1, hitOn, unitType: stack.unitType });
+        }
+        continue;
+      }
 
       entries.push({
         playerId,
-        diceCount: stack.count * diceCountPerUnit,
+        diceCount: totalDiceForStack,
         hitOn,
         unitType: stack.unitType,
       });
@@ -435,22 +451,35 @@ export function applyHitAssignments(
   systemAnomalies: import("../types/enums").AnomalyType[] = [],
   /** RR "Metali Void Shielding" (relic): "each time hits are produced against 1 of your non-fighter ships, 1 of those ships may use SUSTAIN DAMAGE as if it had that ability" — true if the OWNING side of these `stacks` has this relic, letting exactly 1 flip bypass the normal ability check below (consumed the first time it's used within this single call; SPACE combat only in practice, since these stacks would be ground forces otherwise, but not explicitly gated on that here since a non-fighter SHIP is the only thing this could ever apply to anyway). */
   metaliVoidShieldingAvailable = false,
+  /** Letnev "Non-Euclidean Shielding" (faction tech): true if the OWNING side of these `stacks` has this tech — computed by the caller (who has the full Player object, unlike this function, which only receives factionId/ownedUnitUpgrades) and passed in directly. */
+  nonEuclideanShieldingAvailable = false,
 ): ApplyHitAssignmentsResult {
   const updated = stacks.map((s) => ({ ...s }));
   const unitsLeft = updated.reduce((sum, s) => sum + s.count, 0);
+  // Letnev "Non-Euclidean Shielding" (faction tech): "When 1 of your units
+  // uses SUSTAIN DAMAGE, cancel 2 hits instead of 1." Confirmed
+  // (yjmrobert.com/tirules/factions/f_letnev): mandatory (cannot cancel
+  // just 1 if 2+ are available), applies to ANY hits (Bombardment, Space
+  // Cannon too, not just normal combat), and can't retroactively apply to
+  // a PAST Sustain Damage use if more hits show up later. Structurally,
+  // this means "how many assignments are required" is no longer simply
+  // "1 per hit owed" — a single Non-Euclidean-Shielding flip can cover 2
+  // hits at once — so the strict upfront length check below is replaced
+  // with an accumulating "hits remaining" tally, checked at the end.
   // RR 67.6/38.2: if hits exceed the units left, every remaining unit is
   // destroyed/flipped and the extra hits are simply lost.
-  const required = Math.min(hitsOwed, unitsLeft);
-  if (assignments.length !== required) {
+  const maxAssignable = Math.min(hitsOwed, unitsLeft);
+  if (assignments.length > maxAssignable) {
     return {
       ok: false,
-      error: `${hitsOwed} hit(s) owed, ${unitsLeft} unit(s) left — expected ${required} assignment(s), got ${assignments.length}.`,
+      error: `${hitsOwed} hit(s) owed, ${unitsLeft} unit(s) left — at most ${maxAssignable} assignment(s) possible, got ${assignments.length}.`,
     };
   }
 
   const destroyed = new Map<UnitType, number>();
   const flipped = new Map<UnitType, number>();
   let metaliShieldingUsed = false;
+  let hitsRemaining = hitsOwed;
 
   for (const { unitType, outcome } of assignments) {
     const stack = updated.find((s) => s.unitType === unitType && s.count > 0);
@@ -471,13 +500,22 @@ export function applyHitAssignments(
       }
       stack.damagedCount += 1;
       flipped.set(unitType, (flipped.get(unitType) ?? 0) + 1);
+      // Letnev "Non-Euclidean Shielding": mandatory — cancels 2 hits with this ONE flip whenever 2+ are still owed, never just 1.
+      hitsRemaining -= nonEuclideanShieldingAvailable ? Math.min(2, hitsRemaining) : 1;
     } else {
       // Prefer removing an already-damaged unit first — it was one hit from
       // death anyway, so this preserves the stack's remaining sustain buffer.
       if (stack.damagedCount > 0) stack.damagedCount -= 1;
       stack.count -= 1;
       destroyed.set(unitType, (destroyed.get(unitType) ?? 0) + 1);
+      hitsRemaining -= 1;
     }
+  }
+
+  // Any hits still owed after every submitted assignment is only legal if there are truly no units left to soak them up (RR 67.6: excess hits beyond total units are simply lost) — otherwise the player under-submitted assignments.
+  const unitsStillLeft = updated.reduce((sum, s) => sum + s.count, 0);
+  if (hitsRemaining > 0 && unitsStillLeft > 0) {
+    return { ok: false, error: `${hitsRemaining} hit(s) still owed after these assignments, with ${unitsStillLeft} unit(s) still left to assign them to.` };
   }
 
   return { ok: true, stacks: updated.filter((s) => s.count > 0), destroyed, flipped };
@@ -702,6 +740,8 @@ export function buildSpaceCannonDefenseEntries(
 ): CombatUnitEntry[] {
   // "Disable": this attacker's opponents' PDS lose Space Cannon entirely for the rest of the invasion.
   if (state.pendingTacticalAction?.disablePlayerId === attackerId) return [];
+  // Letnev "L4 Disruptors" (faction tech): "During an invasion, units cannot use SPACE CANNON against your units." Same "attacker's opponents lose Space Cannon" shape as Disable above, just keyed off the attacker's own technology instead of a card in play.
+  if (state.players[attackerId]?.technologies.includes("l4_disruptors" as never)) return [];
   const player = state.players[defenderId];
   if (!player) return [];
   const stacks = (planet.unitsByPlayer[defenderId] ?? []) as UnitStack[];
