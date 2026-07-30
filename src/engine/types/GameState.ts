@@ -169,6 +169,8 @@ export interface Player {
   exhaustedRelics?: RelicId[];
   /** RR "The Silver Flame" (relic): "you cannot score public objectives" — a permanent, ongoing restriction once triggered (this project's own rules/relics.ts's own useSilverFlame is the only current source of this flag). */
   cannotScorePublicObjectives?: boolean;
+  /** Sol "Spec Ops II" (RESPAWN): count of destroyed Spec Ops infantry currently "on this card", waiting to be placed on a home-system planet at the start of this player's next turn (rules/sol.ts's own checkSpecOpsRespawn/placeRespawnedSpecOps). */
+  specOpsOnCard?: number;
   /** RR 35.9: purge 3 of the same type (Unknown fragments substitute for any one type) to gain a Relic. */
   relicFragments: { cultural: number; industrial: number; hazardous: number; unknown: number };
   /** Exploration cards with `keepInPlayArea` (e.g. "Enigmatic Device") — sit face-up in front of the player until purged, distinct from actionCards/promissoryNotes. */
@@ -287,6 +289,10 @@ export interface GameState {
   transactionsThisAgenda?: string[];
   /** TE "Lie in Wait": the 2 players whose transaction just triggered the after_transaction_resolved window above — banked here since the window's own `order` only lists potential REACTORS, not who they're reacting to. */
   pendingLieInWaitTargets?: [PlayerId, PlayerId];
+  /** Sol "Genesis" (flagship): "placing the infantry during the status phase is mandatory. After, the Sol player might need to remove an infantry or fighter to meet capacity limits" (confirmed, yjmrobert.com/tirules/factions/f_sol) — tracked here as a pending choice (which unit type to remove) rather than blocking the status phase transition; resolved via RESOLVE_GENESIS_CAPACITY_OVERFLOW. */
+  pendingGenesisCapacityOverflow?: { playerId: PlayerId; systemId: SystemId }[];
+  /** Sol "Military Support" (promissory note): "cannot be played twice in one timing window" (confirmed, yjmrobert.com/tirules/factions/f_sol) — tracks whether it's already been used during THIS specific active-player turn; reset whenever the active player changes (phases/actionPhase.ts's own advanceActivePlayer), same as transactionsThisTurn above. */
+  usedMilitarySupportForActivePlayerTurn?: boolean;
   /** TE The Fracture: set by phases/theFracture.ts's own setUpFractureOnEntry right when the Fracture comes into play, cleared once placeIngressTokens resolves the triggering player's own choice. synergyColors mirrors whatever that player's breakthrough synergy was AT THAT MOMENT (null if they have none), since that's what determines whether the 3-per-color or the 4-different-specialties path applies. */
   pendingFractureIngressChoice?: { playerId: PlayerId; synergyColors: [string, string] | null };
 

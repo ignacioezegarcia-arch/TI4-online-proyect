@@ -84,7 +84,7 @@ export interface RuleData {
   /** RR 90: only the color + prerequisites (data/technologies.json) — not the effect text. Prerequisites is a list of colors, one entry per required tech of that color (e.g. ["red","red"] = need 2 red techs already owned). */
   technologies: Record<TechId, { color: string | null; prerequisites: string[] }>;
   /** RR 34/TE breakthrough: commodities max, plus the pair of colors (if any) whose techs can substitute for each other when satisfying prerequisites — never both at once for the same requirement. */
-  factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null; startsWithBreakthroughUnlocked: boolean }>;
+  factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null; startsWithBreakthroughUnlocked: boolean; factionAbilityIds: string[] }>;
   /** RR 90/86: color + prerequisites for unit upgrade techs (data/unitUpgrades.json) — separate from `unitUpgrades` above (which holds COMBAT STATS once owned, and is still an unresolved gap per this project's own notes); this is just enough to validate RR 90.7 prerequisites before letting a player research one. Every unit upgrade (generic or faction-specific) uses this SAME color-count model — confirmed, no TI4 tech/unit-upgrade is ever gated behind owning one specific named tech instead. */
   unitUpgradeTechData: Record<UnitUpgradeId, { color: string | null; prerequisites: string[] }>;
   /** Every tech id that's a FACTION technology (data/factions/*.json's factionTechnologies) for any faction in this game, aggregated — needed for "own N faction techs"-style objectives, since Player.technologies doesn't distinguish faction vs. generic techs. */

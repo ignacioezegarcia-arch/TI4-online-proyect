@@ -140,6 +140,8 @@ export type GameAction =
        * taken as-is from a client-submitted action. RR 67.5 / 38.1.
        */
       diceRolls: number[];
+      /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Ground-combat-only (never applies to space combat's own use of this same action type) — see phases/invasion.ts's own resolveGroundCombatRound. */
+      evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" };
     }
   | {
       type: "ASSIGN_HITS";
@@ -156,6 +158,8 @@ export type GameAction =
        * for a worse hit later) rather than flip it now. RR 67.6 / 38.2.
        */
       assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
+      /** Sol "Spec Ops II" (RESPAWN, ground combat only): 1 pre-rolled die per Spec Ops infantry actually destroyed by this SAME assignment — trusted-RNG, same convention as every other roll. See phases/invasion.ts's own assignGroundCombatHits. */
+      specOpsRespawnDieRolls?: number[];
     }
   | {
       type: "BOMBARD";
@@ -442,6 +446,12 @@ export type GameAction =
   | { type: "USE_THE_ACROPOLIS"; playerId: PlayerId; target: { kind: "planet"; planetId: PlanetId } | { kind: "relic"; relicId: string } | { kind: "technology"; techId: TechId } | { kind: "leader"; leaderId: string } } // TE Emelpar's own legendary ability, "at the end of your turn" — usable only during the end_of_turn priority window — see phases/legendaryPlanets.ts
   | { type: "USE_THE_GALACTIC_COUNCIL"; playerId: PlayerId; discardedSecretObjectiveId: string } // TE Mecatol Rex's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
   | { type: "USE_JUPITER_BRAIN"; playerId: PlayerId } // TE Thunder's Edge's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
+  | { type: "USE_ORBITAL_DROP"; playerId: PlayerId; targetPlanetId: PlanetId } // Sol's own faction ability — see rules/sol.ts
+  | { type: "USE_ZS_THUNDERBOLT_M2_DEPLOY"; playerId: PlayerId; targetPlanetId: PlanetId; exhaustPlanetIdsForResources: PlanetId[] } // Sol's own mech's DEPLOY ability — see rules/sol.ts
+  | { type: "RESOLVE_GENESIS_CAPACITY_OVERFLOW"; playerId: PlayerId; systemId: SystemId; unitTypeToRemove: "infantry" | "fighter" } // Sol's own Genesis flagship's mandatory capacity fix — see rules/sol.ts
+  | { type: "USE_MILITARY_SUPPORT"; playerId: PlayerId; placeInfantry?: { targetPlanetId: PlanetId; count: number } } // Sol's own promissory note — see rules/sol.ts
+  | { type: "USE_CLAIRE_GIBSON"; playerId: PlayerId; targetPlanetId: PlanetId } // Sol's own commander — see rules/sol.ts
+  | { type: "USE_JACE_X"; playerId: PlayerId } // Sol's own hero — see rules/sol.ts
   | { type: "USE_STAR_FORGE"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Muaat's own base faction ability — see rules/muaat.ts
   | { type: "USE_THE_NUCLEUS"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Avernus's own legendary ability (Muaat's Breakthrough) — see rules/muaat.ts
   | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain
@@ -768,6 +778,7 @@ export type GameEvent =
   | { type: "RELIC_PURGED"; playerId: PlayerId; relicId: string }
   | { type: "PLANET_DESTROYED"; systemId: SystemId; planetId: PlanetId }
   | { type: "HEART_OF_IXTH_ADJUSTED_ROLL"; playerId: PlayerId; originalRoll: number; adjustedRoll: number }
+  | { type: "COMMAND_TOKENS_RETURNED_TO_REINFORCEMENTS"; playerId: PlayerId; count: number }
   | { type: "GAME_ENDED"; winnerId: PlayerId }
   | { type: "PLAYER_ELIMINATED"; playerId: PlayerId };
 
