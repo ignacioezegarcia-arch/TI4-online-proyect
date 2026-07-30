@@ -163,6 +163,7 @@ import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFl
 import { useStarForge, useTheNucleus, applyStellarGenesisOnGain } from "./rules/muaat";
 import { useOrbitalDrop, useZsThunderboltM2Deploy, resolveGenesisCapacityOverflow, useMilitarySupport, useClaireGibson, useJaceX } from "./rules/sol";
 import { useRearAdmiralFarran, useDunlainReaperDeploy, useDarktalonTreilla, useMunitionsReserves, resolveFleetCleanup, useWarFunding, useWarFundingOmega } from "./rules/letnev";
+import { useTekklarLegion, useExotriremeIISelfDestruct, useTro, useNorrSupremacy, useGhomSekkus, useShvalHarbinger } from "./rules/sardakk";
 import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective, getLawOwner } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
@@ -968,6 +969,24 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_WAR_FUNDING_OMEGA":
         result = useWarFundingOmega(state, action, rules);
+        break;
+      case "USE_TEKKLAR_LEGION":
+        result = useTekklarLegion(state, action);
+        break;
+      case "USE_EXOTRIREME_II_SELF_DESTRUCT":
+        result = useExotriremeIISelfDestruct(state, action);
+        break;
+      case "USE_TRO":
+        result = useTro(state, action, rules);
+        break;
+      case "USE_NORR_SUPREMACY":
+        result = useNorrSupremacy(state, action);
+        break;
+      case "USE_GHOM_SEKKUS":
+        result = useGhomSekkus(state, action, rules);
+        break;
+      case "USE_SHVAL_HARBINGER":
+        result = useShvalHarbinger(state, action);
         break;
       case "USE_STAR_FORGE":
         result = useStarForge(state, action, rules);
