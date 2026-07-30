@@ -62,7 +62,52 @@
       "effect": "You may exhaust this card and spend 2 resources when you research a technology; ignore all of that technology's prerequisites."
     }
   ],
-  "factionSpecificUnits": {
+  "units": {
+    "flagship": {
+      "name": "[0.1]",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 5,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "priority_targeting",
+          "name": "Priority Targeting",
+          "effect": "During a space combat, hits produced by this ship and by your dreadnoughts in this system must be assigned to non-fighter ships if able."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Annihilator",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "bombardment",
+          "name": "Bombardment",
+          "value": 8,
+          "diceCount": 1,
+          "effect": "BOMBARDMENT 8"
+        },
+        {
+          "id": "ground_bombardment",
+          "name": "Ground Bombardment",
+          "effect": "While not participating in ground combat, this unit can use its BOMBARDMENT ability on planets in its system as if it were a ship."
+        }
+      ]
+    },
     "dreadnought": {
       "name": "Super-Dreadnought",
       "versions": [
@@ -115,53 +160,6 @@
               "effect": "This unit cannot be destroyed by 'Direct Hit' action cards."
             }
           ]
-        }
-      ]
-    }
-  },
-  "units": {
-    "flagship": {
-      "name": "[0.1]",
-      "cost": 8,
-      "combat": 5,
-      "combatDiceCount": 2,
-      "move": 1,
-      "capacity": 5,
-      "abilities": [
-        {
-          "id": "sustain_damage",
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "id": "priority_targeting",
-          "name": "Priority Targeting",
-          "effect": "During a space combat, hits produced by this ship and by your dreadnoughts in this system must be assigned to non-fighter ships if able."
-        }
-      ]
-    },
-    "mech": {
-      "name": "Annihilator",
-      "cost": 2,
-      "combat": 6,
-      "deploy": null,
-      "abilities": [
-        {
-          "id": "sustain_damage",
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "id": "bombardment",
-          "name": "Bombardment",
-          "value": 8,
-          "diceCount": 1,
-          "effect": "BOMBARDMENT 8"
-        },
-        {
-          "id": "ground_bombardment",
-          "name": "Ground Bombardment",
-          "effect": "While not participating in ground combat, this unit can use its BOMBARDMENT ability on planets in its system as if it were a ship."
         }
       ]
     }

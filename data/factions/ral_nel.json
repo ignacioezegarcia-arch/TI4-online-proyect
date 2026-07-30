@@ -4,7 +4,10 @@
   "set": "thundersEdge",
   "_setNote": "Introduced in Thunder's Edge — available whenever rules/gameMode.ts's own hasThundersEdge(gameMode) is true.",
   "commodities": 4,
-  "homePlanets": ["Mez Lo Orz Pei Zsha", "Rep Lo Orz Oet"],
+  "homePlanets": [
+    "Mez Lo Orz Pei Zsha",
+    "Rep Lo Orz Oet"
+  ],
   "startingUnits": {
     "dreadnought": 1,
     "carrier": 1,
@@ -18,7 +21,10 @@
   "startingTechnologyChoice": {
     "count": 1,
     "source": "fixedColorNoPrerequisite",
-    "colors": ["red", "green"],
+    "colors": [
+      "red",
+      "green"
+    ],
     "note": "Choose 1 red OR green technology with no prerequisites."
   },
   "factionAbilities": [
@@ -50,12 +56,58 @@
       "id": "nanomachines",
       "name": "Nanomachines",
       "color": "red",
-      "prerequisites": ["red"],
+      "prerequisites": [
+        "red"
+      ],
       "effect": "ACTION: Exhaust this card to place 1 PDS on a planet you control. ACTION: Exhaust this card to repair all of your damaged units. ACTION: Exhaust this card and discard 1 action card to draw 1 action card.",
       "note": "3 separate exhaust-triggered component actions on the same card — only 1 of the 3 can be used per exhaustion, same as any other exhaust-gated tech ability."
     }
   ],
-  "factionSpecificUnits": {
+  "breakthrough": {
+    "name": "Data Skimmer",
+    "synergy": {
+      "colors": [
+        "green",
+        "yellow"
+      ]
+    },
+    "effect": "During the action phase, if you have not passed, when other players would discard action cards, they are placed on this card instead. When you pass, take 1 action card from this card and discard the rest."
+  },
+  "units": {
+    "flagship": {
+      "name": "Last Dispatch",
+      "cost": 8,
+      "combat": 8,
+      "combatDiceCount": 2,
+      "move": 2,
+      "capacity": 4,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Scorched Retreat",
+          "effect": "When this unit retreats, you may destroy 1 ship in the active system that does not have SUSTAIN DAMAGE."
+        }
+      ],
+      "faq": "If the Ral Nel player plays the action card Skilled Retreat, they cannot resolve Last Dispatch's own Scorched Retreat ability for that same movement (Skilled Retreat is not treated as \"this unit retreats\" the normal way, per Skilled Retreat's own confirmed ruling that it isn't a retreat at all)."
+    },
+    "mech": {
+      "name": "Alarum",
+      "cost": 2,
+      "combat": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Reinforcement Route",
+          "effect": "At the end of a round of combat on this planet, you may move up to 2 of your ground forces to this planet from planets in adjacent systems."
+        }
+      ]
+    },
     "destroyer": {
       "name": "Linkship",
       "note": "Ral Nel Destroyers can use the SPACE CANNON ability of structures they carry (via the Miniaturization faction ability) and are faster than regular destroyers.",
@@ -100,47 +152,6 @@
               "effect": "ANTI-FIGHTER BARRAGE 6 (x3)"
             }
           ]
-        }
-      ]
-    }
-  },
-  "breakthrough": {
-    "name": "Data Skimmer",
-    "synergy": { "colors": ["green", "yellow"] },
-    "effect": "During the action phase, if you have not passed, when other players would discard action cards, they are placed on this card instead. When you pass, take 1 action card from this card and discard the rest."
-  },
-  "units": {
-    "flagship": {
-      "name": "Last Dispatch",
-      "cost": 8,
-      "combat": 8,
-      "combatDiceCount": 2,
-      "move": 2,
-      "capacity": 4,
-      "abilities": [
-        {
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "name": "Scorched Retreat",
-          "effect": "When this unit retreats, you may destroy 1 ship in the active system that does not have SUSTAIN DAMAGE."
-        }
-      ],
-      "faq": "If the Ral Nel player plays the action card Skilled Retreat, they cannot resolve Last Dispatch's own Scorched Retreat ability for that same movement (Skilled Retreat is not treated as \"this unit retreats\" the normal way, per Skilled Retreat's own confirmed ruling that it isn't a retreat at all)."
-    },
-    "mech": {
-      "name": "Alarum",
-      "cost": 2,
-      "combat": 6,
-      "abilities": [
-        {
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "name": "Reinforcement Route",
-          "effect": "At the end of a round of combat on this planet, you may move up to 2 of your ground forces to this planet from planets in adjacent systems."
         }
       ]
     }

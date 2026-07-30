@@ -4,7 +4,10 @@
   "set": "thundersEdge",
   "_setNote": "Introduced in Thunder's Edge — available whenever rules/gameMode.ts's own hasThundersEdge(gameMode) is true.",
   "commodities": 1,
-  "homePlanets": ["Ordinian", "Revelation"],
+  "homePlanets": [
+    "Ordinian",
+    "Revelation"
+  ],
   "_homePlanetsNote": "Revelation is listed in source material as \"Revelation (space station)\" — flagged as possibly a non-standard map object rather than a normal planet; not fully resolved here, worth double-checking against the actual Thunder's Edge tile/map data before this is consumed by anything assuming a normal planet shape. Ordinian is a legendary planet — see its own ability card under factionSpecificComponents below.",
   "startingUnits": {
     "dreadnought": 1,
@@ -18,7 +21,10 @@
   "startingTechnologyChoice": {
     "count": 1,
     "source": "fixedColorNoPrerequisite",
-    "colors": ["blue", "yellow"],
+    "colors": [
+      "blue",
+      "yellow"
+    ],
     "note": "Choose 1 blue OR yellow technology with no prerequisites."
   },
   "factionAbilities": [
@@ -75,66 +81,20 @@
       "id": "proxima_targeting_vi",
       "name": "Proxima Targeting VI",
       "color": "red",
-      "prerequisites": ["red"],
+      "prerequisites": [
+        "red"
+      ],
       "effect": "Cancel 1 hit produced by BOMBARDMENT rolls made against your ground forces for each of your galvanized units present. At the start of a round of ground combat, you may resolve BOMBARDMENT 8 (x3) against your opponent's ground forces; if you do, make an identical roll against your own ground forces."
     }
   ],
-  "factionSpecificUnits": {
-    "spaceDock": {
-      "note": "Both levels also grant \"up to 3 fighters in this system do not count against your ships' capacity\" and Production X (i.e. Production equal to the stated formula, not a fixed die-roll ability) — the resource-value increase each level grants gets tracked with a physical Spacedock Card (see factionSpecificComponents above) alongside the planet card.",
-      "versions": [
-        {
-          "level": 1,
-          "name": "4X41C \"HELIOS\" V1",
-          "prerequisites": [],
-          "abilities": [
-            {
-              "name": "Amplified Production",
-              "effect": "This unit's PRODUCTION value is equal to 2 more than the resource value of this planet."
-            },
-            {
-              "name": "Resource Amplification",
-              "effect": "The resource value of this planet is increased by 1."
-            },
-            {
-              "name": "Fighter Bay",
-              "effect": "Up to 3 fighters in this system do not count against your ships' capacity."
-            },
-            {
-              "name": "Production",
-              "effect": "PRODUCTION X"
-            }
-          ]
-        },
-        {
-          "level": 2,
-          "name": "4X41C \"HELIOS\" V2",
-          "prerequisites": ["yellow", "yellow"],
-          "abilities": [
-            {
-              "name": "Amplified Production",
-              "effect": "This unit's PRODUCTION value is equal to 4 more than the resource value of this planet."
-            },
-            {
-              "name": "Resource Amplification",
-              "effect": "The resource value of this planet is increased by 2."
-            },
-            {
-              "name": "Fighter Bay",
-              "effect": "Up to 3 fighters in this system do not count against your ships' capacity."
-            },
-            {
-              "name": "Production",
-              "effect": "PRODUCTION X"
-            }
-          ]
-        }
-      ]
-    }
-  },
   "breakthrough": {
     "name": "The Icon",
-    "synergy": { "colors": ["red", "yellow"] },
+    "synergy": {
+      "colors": [
+        "red",
+        "yellow"
+      ]
+    },
     "effect": "When you produce ships, you may exhaust this card to place those ships in a system that contains one of your command tokens, at least one of your ground forces, and no other player's ships."
   },
   "units": {
@@ -173,6 +133,60 @@
         {
           "name": "Last Stand",
           "effect": "When this unit is destroyed, if it was galvanized, galvanize up to 3 of your infantry in its system."
+        }
+      ]
+    },
+    "space_dock": {
+      "note": "Both levels also grant \"up to 3 fighters in this system do not count against your ships' capacity\" and Production X (i.e. Production equal to the stated formula, not a fixed die-roll ability) — the resource-value increase each level grants gets tracked with a physical Spacedock Card (see factionSpecificComponents above) alongside the planet card.",
+      "versions": [
+        {
+          "level": 1,
+          "name": "4X41C \"HELIOS\" V1",
+          "prerequisites": [],
+          "abilities": [
+            {
+              "name": "Amplified Production",
+              "effect": "This unit's PRODUCTION value is equal to 2 more than the resource value of this planet."
+            },
+            {
+              "name": "Resource Amplification",
+              "effect": "The resource value of this planet is increased by 1."
+            },
+            {
+              "name": "Fighter Bay",
+              "effect": "Up to 3 fighters in this system do not count against your ships' capacity."
+            },
+            {
+              "name": "Production",
+              "effect": "PRODUCTION X"
+            }
+          ]
+        },
+        {
+          "level": 2,
+          "name": "4X41C \"HELIOS\" V2",
+          "prerequisites": [
+            "yellow",
+            "yellow"
+          ],
+          "abilities": [
+            {
+              "name": "Amplified Production",
+              "effect": "This unit's PRODUCTION value is equal to 4 more than the resource value of this planet."
+            },
+            {
+              "name": "Resource Amplification",
+              "effect": "The resource value of this planet is increased by 2."
+            },
+            {
+              "name": "Fighter Bay",
+              "effect": "Up to 3 fighters in this system do not count against your ships' capacity."
+            },
+            {
+              "name": "Production",
+              "effect": "PRODUCTION X"
+            }
+          ]
         }
       ]
     }

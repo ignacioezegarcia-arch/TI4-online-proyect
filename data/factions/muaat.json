@@ -3,14 +3,18 @@
   "name": "The Embers of Muaat",
   "set": "base",
   "commodities": 4,
-  "homePlanets": ["Muaat"],
+  "homePlanets": [
+    "Muaat"
+  ],
   "startingUnits": {
     "warSun": 1,
     "fighter": 2,
     "infantry": 4,
     "spaceDock": 1
   },
-  "startingTechnologies": ["plasma_scoring"],
+  "startingTechnologies": [
+    "plasma_scoring"
+  ],
   "factionAbilities": [
     {
       "id": "star_forge",
@@ -40,7 +44,9 @@
       "id": "magmus_reactor",
       "name": "Magmus Reactor",
       "color": "red",
-      "prerequisites": ["red"],
+      "prerequisites": [
+        "red"
+      ],
       "versions": [
         {
           "version": "original",
@@ -55,42 +61,6 @@
       ]
     }
   ],
-  "factionSpecificUnits": {
-    "warSun": {
-      "name": "Prototype War Sun",
-      "versions": [
-        {
-          "level": 1,
-          "name": "Prototype War Sun I",
-          "cost": 12,
-          "combat": 3,
-          "combatDiceCount": 3,
-          "move": 1,
-          "capacity": 6,
-          "abilities": [
-            {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
-            {"id": "bombardment", "name": "Bombardment", "value": 3, "diceCount": 3, "effect": "BOMBARDMENT 3 (x3)"},
-            {"id": "planetary_shield_removal", "name": "Planetary Shield Removal", "effect": "Other players' units in this system lose PLANETARY SHIELD."}
-          ],
-          "prerequisites": []
-        },
-        {
-          "level": 2,
-          "name": "Prototype War Sun II",
-          "cost": 10,
-          "combat": 3,
-          "combatDiceCount": 3,
-          "move": 3,
-          "capacity": 6,
-          "abilities": [
-            {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
-            {"id": "bombardment", "name": "Bombardment", "value": 3, "diceCount": 3, "effect": "BOMBARDMENT 3 (x3)"},
-            {"id": "planetary_shield_removal", "name": "Planetary Shield Removal", "effect": "Other players' units in this system lose PLANETARY SHIELD."}
-          ]
-        }
-      ]
-    }
-  },
   "factionSpecificComponents": [
     {
       "type": "planet_card",
@@ -120,8 +90,16 @@
       "move": 1,
       "capacity": 3,
       "abilities": [
-        {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
-        {"id": "inferno_produce_cruiser", "name": "Forge Cruiser", "effect": "ACTION: Spend 1 token from your strategy pool to place 1 cruiser in this unit's system."}
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "inferno_produce_cruiser",
+          "name": "Forge Cruiser",
+          "effect": "ACTION: Spend 1 token from your strategy pool to place 1 cruiser in this unit's system."
+        }
       ]
     },
     "mech": {
@@ -130,14 +108,87 @@
       "combat": 6,
       "deploy": null,
       "abilities": [
-        {"id": "sustain_damage", "name": "Sustain Damage", "effect": "SUSTAIN DAMAGE"},
-        {"id": "ember_colossus_infantry", "name": "Star Forge Spawn", "effect": "When you use your STAR FORGE faction ability in this system or an adjacent system, you may place 1 infantry from your reinforcements with this unit."}
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "ember_colossus_infantry",
+          "name": "Star Forge Spawn",
+          "effect": "When you use your STAR FORGE faction ability in this system or an adjacent system, you may place 1 infantry from your reinforcements with this unit."
+        }
+      ]
+    },
+    "war_sun": {
+      "name": "Prototype War Sun",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Prototype War Sun I",
+          "cost": 12,
+          "combat": 3,
+          "combatDiceCount": 3,
+          "move": 1,
+          "capacity": 6,
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "bombardment",
+              "name": "Bombardment",
+              "value": 3,
+              "diceCount": 3,
+              "effect": "BOMBARDMENT 3 (x3)"
+            },
+            {
+              "id": "planetary_shield_removal",
+              "name": "Planetary Shield Removal",
+              "effect": "Other players' units in this system lose PLANETARY SHIELD."
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Prototype War Sun II",
+          "cost": 10,
+          "combat": 3,
+          "combatDiceCount": 3,
+          "move": 3,
+          "capacity": 6,
+          "abilities": [
+            {
+              "id": "sustain_damage",
+              "name": "Sustain Damage",
+              "effect": "SUSTAIN DAMAGE"
+            },
+            {
+              "id": "bombardment",
+              "name": "Bombardment",
+              "value": 3,
+              "diceCount": 3,
+              "effect": "BOMBARDMENT 3 (x3)"
+            },
+            {
+              "id": "planetary_shield_removal",
+              "name": "Planetary Shield Removal",
+              "effect": "Other players' units in this system lose PLANETARY SHIELD."
+            }
+          ]
+        }
       ]
     }
   },
   "breakthrough": {
     "synergy": {
-      "colors": ["red", "yellow"],
+      "colors": [
+        "red",
+        "yellow"
+      ],
       "description": "Tus tecnologías rojas pueden usarse como amarillas para prerrequisitos, y viceversa (no ambas a la vez)."
     },
     "ability": {

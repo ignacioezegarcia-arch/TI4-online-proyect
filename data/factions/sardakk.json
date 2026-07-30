@@ -46,7 +46,45 @@
       "effect": "After making combat rolls during a round of ground combat, if your opponent produced 1 or more hits, you produce 1 additional hit."
     }
   ],
-  "factionSpecificUnits": {
+  "units": {
+    "flagship": {
+      "name": "C'Morran N'orr",
+      "cost": 8,
+      "combat": 6,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "cmorran_fleet_bonus",
+          "name": "Fleet Combat Bonus",
+          "effect": "Apply +1 to the result of each of your other ships' combat rolls in this system."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Valkyrie Exoskeleton",
+      "cost": 2,
+      "combat": 6,
+      "deploy": null,
+      "abilities": [
+        {
+          "id": "sustain_damage",
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "id": "valkyrie_retaliation",
+          "name": "Retaliation Strike",
+          "effect": "After this unit uses its SUSTAIN DAMAGE ability during Ground Combat, it produces 1 hit against your opponent's ground forces on this planet."
+        }
+      ]
+    },
     "dreadnought": {
       "name": "Exotrireme",
       "versions": [
@@ -104,46 +142,6 @@
               "effect": "After a round of space combat, you may destroy this unit to destroy up to 2 ships in this system."
             }
           ]
-        }
-      ]
-    }
-  },
-  "units": {
-    "flagship": {
-      "name": "C'Morran N'orr",
-      "cost": 8,
-      "combat": 6,
-      "combatDiceCount": 2,
-      "move": 1,
-      "capacity": 3,
-      "abilities": [
-        {
-          "id": "sustain_damage",
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "id": "cmorran_fleet_bonus",
-          "name": "Fleet Combat Bonus",
-          "effect": "Apply +1 to the result of each of your other ships' combat rolls in this system."
-        }
-      ]
-    },
-    "mech": {
-      "name": "Valkyrie Exoskeleton",
-      "cost": 2,
-      "combat": 6,
-      "deploy": null,
-      "abilities": [
-        {
-          "id": "sustain_damage",
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "id": "valkyrie_retaliation",
-          "name": "Retaliation Strike",
-          "effect": "After this unit uses its SUSTAIN DAMAGE ability during Ground Combat, it produces 1 hit against your opponent's ground forces on this planet."
         }
       ]
     }

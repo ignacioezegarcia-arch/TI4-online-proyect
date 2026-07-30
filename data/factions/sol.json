@@ -41,7 +41,37 @@
       }
     ]
   },
-  "factionSpecificUnits": {
+  "units": {
+    "flagship": {
+      "name": "Genesis",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 12,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Infantry Spawn",
+          "effect": "At the end of the status phase, place 1 infantry from your reinforcements in this system's space area."
+        }
+      ]
+    },
+    "mech": {
+      "name": "ZS Thunderbolt M2",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "After you use your ORBITAL DROP faction ability, you may spend 3 resources to place 1 mech on that planet.",
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        }
+      ]
+    },
     "infantry": {
       "name": "Spec Ops",
       "versions": [
@@ -95,38 +125,6 @@
               "effect": "SUSTAIN DAMAGE"
             }
           ]
-        }
-      ]
-    }
-  },
-  "units": {
-    "flagship": {
-      "name": "Genesis",
-      "cost": 8,
-      "combat": 5,
-      "combatDiceCount": 2,
-      "move": 1,
-      "capacity": 12,
-      "abilities": [
-        {
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "name": "Infantry Spawn",
-          "effect": "At the end of the status phase, place 1 infantry from your reinforcements in this system's space area."
-        }
-      ]
-    },
-    "mech": {
-      "name": "ZS Thunderbolt M2",
-      "cost": 2,
-      "combat": 6,
-      "deploy": "After you use your ORBITAL DROP faction ability, you may spend 3 resources to place 1 mech on that planet.",
-      "abilities": [
-        {
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
         }
       ]
     }

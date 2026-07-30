@@ -52,8 +52,40 @@
       "effect": "Other players cannot activate asteroid fields that contain 1 or more of your ships. At the start of your turn during the action phase, you may produce 1 unit in a system that contains at least 1 of your units that has Production."
     }
   ],
-  "factionSpecificUnits": {
-    "spaceDock": {
+  "units": {
+    "flagship": {
+      "name": "Son of Ragh",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Anti-Fighter Barrage",
+          "value": 6,
+          "diceCount": 4,
+          "effect": "ANTI-FIGHTER BARRAGE 6 (x4)"
+        }
+      ]
+    },
+    "mech": {
+      "name": "Scavenger Zeta",
+      "cost": 2,
+      "combat": 6,
+      "deploy": "After you gain control of a planet, you may spend 1 trade good to place 1 mech on that planet.",
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        }
+      ]
+    },
+    "space_dock": {
       "name": "Floating Factory",
       "notes": "Saar Space Docks are placed in the space area of their system instead of on a planet. They can move as ships and have capacity. They also have a set Production value.",
       "versions": [
@@ -91,40 +123,6 @@
               "effect": "This unit is placed in a space area instead of on a planet. This unit can move and retreat as if it were a ship. If this unit is blockaded, it is destroyed."
             }
           ]
-        }
-      ]
-    }
-  },
-  "units": {
-    "flagship": {
-      "name": "Son of Ragh",
-      "cost": 8,
-      "combat": 5,
-      "combatDiceCount": 2,
-      "move": 1,
-      "capacity": 3,
-      "abilities": [
-        {
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
-        },
-        {
-          "name": "Anti-Fighter Barrage",
-          "value": 6,
-          "diceCount": 4,
-          "effect": "ANTI-FIGHTER BARRAGE 6 (x4)"
-        }
-      ]
-    },
-    "mech": {
-      "name": "Scavenger Zeta",
-      "cost": 2,
-      "combat": 6,
-      "deploy": "After you gain control of a planet, you may spend 1 trade good to place 1 mech on that planet.",
-      "abilities": [
-        {
-          "name": "Sustain Damage",
-          "effect": "SUSTAIN DAMAGE"
         }
       ]
     }

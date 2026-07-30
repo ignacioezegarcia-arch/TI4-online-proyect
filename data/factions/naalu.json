@@ -65,45 +65,6 @@
       "effect": "After another player activates a system that contains 1 or more of your ships, that player removes 1 token from their fleet pool and returns it to their reinforcements."
     }
   ],
-  "factionSpecificUnits": {
-    "fighter": {
-      "name": "Hybrid Crystal Fighter",
-      "versions": [
-        {
-          "level": 1,
-          "name": "Hybrid Crystal Fighter I",
-          "cost": 1,
-          "producesQuantity": 2,
-          "combat": 8,
-          "move": null,
-          "capacity": 0,
-          "abilities": [],
-          "prerequisites": []
-        },
-        {
-          "level": 2,
-          "name": "Hybrid Crystal Fighter II",
-          "cost": 1,
-          "producesQuantity": 2,
-          "combat": 7,
-          "move": 2,
-          "capacity": 0,
-          "abilities": [
-            {
-              "id": "self_propelled",
-              "name": "Self Propelled",
-              "effect": "This unit may move without being transported."
-            },
-            {
-              "id": "half_fleet_count",
-              "name": "Half Fleet Count",
-              "effect": "Each fighter in excess of your ships' capacity counts as 1/2 of a ship against your fleet pool."
-            }
-          ]
-        }
-      ]
-    }
-  },
   "units": {
     "flagship": {
       "name": "Matriarch",
@@ -172,6 +133,43 @@
               "id": "sustain_damage",
               "name": "Sustain Damage",
               "effect": "SUSTAIN DAMAGE"
+            }
+          ]
+        }
+      ]
+    },
+    "fighter": {
+      "name": "Hybrid Crystal Fighter",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Hybrid Crystal Fighter I",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 8,
+          "move": null,
+          "capacity": 0,
+          "abilities": [],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Hybrid Crystal Fighter II",
+          "cost": 1,
+          "producesQuantity": 2,
+          "combat": 7,
+          "move": 2,
+          "capacity": 0,
+          "abilities": [
+            {
+              "id": "self_propelled",
+              "name": "Self Propelled",
+              "effect": "This unit may move without being transported."
+            },
+            {
+              "id": "half_fleet_count",
+              "name": "Half Fleet Count",
+              "effect": "Each fighter in excess of your ships' capacity counts as 1/2 of a ship against your fleet pool."
             }
           ]
         }
