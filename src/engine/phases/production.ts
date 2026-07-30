@@ -390,6 +390,7 @@ export function finishTacticalAction(
     return { ok: false, error: `RR 78: a tactical action can only be finished from the "production" step, currently at "${pending.step}".` };
   }
 
-  const nextState = maybeAdvanceActivePlayer({ ...state, pendingTacticalAction: null }, action.playerId, rules);
+  // Sardakk N'orr "T'ro" (agent): "At the end of a player's tactical action" — tracked here so useTro (rules/sardakk.ts) has something concrete to validate against, since it benefits the OTHER player (whoever's action just ended), not N'orr themselves.
+  const nextState = maybeAdvanceActivePlayer({ ...state, pendingTacticalAction: null, lastCompletedTacticalAction: { playerId: action.playerId, systemId: pending.systemId } }, action.playerId, rules);
   return { ok: true, state: nextState, events: [] };
 }

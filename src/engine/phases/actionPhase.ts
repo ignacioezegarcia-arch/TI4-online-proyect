@@ -892,7 +892,7 @@ export function startNewRound(state: GameState, rules: RuleData): GameState {
       const overLimitSystemIds = Object.entries(state.systems)
         .filter(([, sys]) => (sys.spaceUnitsByPlayer[id as PlayerId] ?? []).filter((s) => s.unitType !== "fighter" && SHIP_TYPES.includes(s.unitType)).reduce((sum, s) => sum + s.count, 0) > player.commandTokens.fleet + (hasAbility(player, asAbilityId("armada")) ? 2 : 0))
         .map(([systemId]) => systemId as SystemId);
-      const purgedPlayer = purgeHero({ ...player, darktalonTreillaActive: undefined }, asLeaderId("darktalon_treilla"));
+      const purgedPlayer = purgeHero({ ...player, darktalonTreillaActive: undefined }, asLeaderId("letnev_hero"));
       players[id as PlayerId] = { ...purgedPlayer, hasPassed: false, strategyCards: [], pendingFleetCleanupSystemIds: overLimitSystemIds.length > 0 ? overLimitSystemIds : undefined };
       continue;
     }

@@ -580,19 +580,35 @@ export function finishInvasionCommits(
     return { ok: false, error: "RR 44.2: a ground combat is already in progress." };
   }
 
+  // Sardakk N'orr "Sh'val, Harbinger — TEKKLAR CONDITIONING" (hero): "after
+  // you commit ground forces to land on planets, purge this card and
+  // return each of your ships in the active system to your
+  // reinforcements." Confirmed (tirules2.com/F_norr): applied right here,
+  // as commits are finalized (not waiting on any ensuing combat to
+  // resolve first) — this project's own simplification for "after you
+  // commit ground forces" as a whole completed action.
+  let workingState = state;
+  if (pending.shvalHarbingerActive) {
+    const player = workingState.players[action.playerId];
+    const updatedPlayer: Player = { ...player, leaders: player.leaders.filter((l) => l.leaderId !== ("sardakk_hero" as never)) };
+    const system = workingState.systems[pending.systemId];
+    const updatedSystem = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: [] } };
+    workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: updatedPlayer }, systems: { ...workingState.systems, [pending.systemId]: updatedSystem } };
+  }
+
   const queue = pending.remainingInvasionPlanetIds ?? [];
   if (queue.length === 0) {
     // Nothing contested — straight to Production, no combat order to choose.
     return {
       ok: true,
-      state: { ...state, pendingTacticalAction: { playerId: pending.playerId, systemId: pending.systemId, step: "production" } },
+      state: { ...workingState, pendingTacticalAction: { playerId: pending.playerId, systemId: pending.systemId, step: "production" } },
       events: [],
     };
   }
 
   return {
     ok: true,
-    state: { ...state, pendingTacticalAction: { ...pending, invasionCommitsFinished: true } },
+    state: { ...workingState, pendingTacticalAction: { ...pending, invasionCommitsFinished: true } },
     events: [],
   };
 }
@@ -947,7 +963,7 @@ export function resolveGroundCombatRound(
   let workingState = state;
   if (action.evelynDelouisBonus) {
     const evelynOwner = workingState.players[action.evelynDelouisBonus.playerId];
-    const evelynEntry = evelynOwner?.leaders.find((l) => l.leaderId === ("evelyn_delouis" as never));
+    const evelynEntry = evelynOwner?.leaders.find((l) => l.leaderId === ("sol_agent" as never));
     if (!evelynEntry) return { ok: false, error: "That player doesn't have Evelyn DeLouis." };
     if (evelynEntry.exhausted) return { ok: false, error: "Evelyn DeLouis is already exhausted." };
     if (!combatants.includes(action.evelynDelouisBonus.playerId)) return { ok: false, error: "That player isn't a combatant in this ground combat." };
@@ -955,14 +971,14 @@ export function resolveGroundCombatRound(
       ...workingState,
       players: {
         ...workingState.players,
-        [action.evelynDelouisBonus.playerId]: { ...evelynOwner, leaders: evelynOwner.leaders.map((l) => (l.leaderId === ("evelyn_delouis" as never) ? { ...l, exhausted: true } : l)) },
+        [action.evelynDelouisBonus.playerId]: { ...evelynOwner, leaders: evelynOwner.leaders.map((l) => (l.leaderId === ("sol_agent" as never) ? { ...l, exhausted: true } : l)) },
       },
     };
   }
 
   let entries;
   try {
-    entries = buildGroundCombatEntries(workingState, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined, pending.groundCombatParticipantIds, action.evelynDelouisBonus);
+    entries = buildGroundCombatEntries(workingState, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined, pending.groundCombatParticipantIds, action.evelynDelouisBonus, pending.tekklarLegionHolderIdThisCombat);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -978,6 +994,21 @@ export function resolveGroundCombatRound(
   const pendingHits: Partial<Record<PlayerId, number>> = {};
   if (result.hitsScoredByPlayer[a]) pendingHits[b] = result.hitsScoredByPlayer[a];
   if (result.hitsScoredByPlayer[b]) pendingHits[a] = result.hitsScoredByPlayer[b];
+
+  // Sardakk N'orr "Valkyrie Particle Weave" (faction tech): "After making
+  // combat rolls during a round of ground combat, if your opponent
+  // produced 1 or more hits, you produce 1 additional hit." Confirmed
+  // (tirules2.com/F_norr): mandatory (not "may"); added to whatever hits
+  // were already produced in this SAME Roll Dice step, before any
+  // cancellation — modeled here as simply adding to pendingHits directly,
+  // the earliest point that's true; N'orr producing 0 hits themselves
+  // doesn't block this (only the OPPONENT's own hit count matters).
+  for (const [selfId, opponentId] of [[a, b], [b, a]] as [PlayerId, PlayerId][]) {
+    const selfPlayer = workingState.players[selfId];
+    if (selfPlayer?.technologies.includes("valkyrie_particle_weave" as never) && (result.hitsScoredByPlayer[opponentId] ?? 0) > 0) {
+      pendingHits[opponentId] = (pendingHits[opponentId] ?? 0) + 1;
+    }
+  }
 
   const round = pending.combatRound ?? 1;
   const updatedPending = maybeQueueCrownOfThalnosReroll(workingState, { ...pending, combatRound: round, pendingHits }, result.missedDiceByPlayerAndType);
@@ -1166,7 +1197,20 @@ export function assignGroundCombatHits(
     nextState = checkSpecOpsRespawn(nextState, action.playerId, destroyedInfantryCount, action.specOpsRespawnDieRolls, rules);
   }
 
-  if (Object.keys(remainingPendingHits).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
+  // Sardakk N'orr "Valkyrie Exoskeleton" (mech, Retaliation Strike): "After this unit uses its SUSTAIN DAMAGE ability during Ground Combat, it produces 1 hit against your opponent's ground forces on this planet." Confirmed (tirules2.com/F_norr): mandatory — 1 hit per mech that actually flipped this round, added to the OPPONENT's own pendingHits for this same combat (they'll need their own ASSIGN_HITS to resolve it, same as any other pending hit).
+  const flippedMechs = result.flipped.get("mech") ?? 0;
+  if (flippedMechs > 0 && player.factionId === ("sardakk" as never)) {
+    const opponentId = playersWithGroundForces(planet).find((id) => id !== action.playerId);
+    if (opponentId) {
+      const updatedPending = nextState.pendingTacticalAction!;
+      nextState = {
+        ...nextState,
+        pendingTacticalAction: { ...updatedPending, pendingHits: { ...updatedPending.pendingHits, [opponentId]: (updatedPending.pendingHits?.[opponentId] ?? 0) + flippedMechs } },
+      };
+    }
+  }
+
+  if (Object.keys(nextState.pendingTacticalAction!.pendingHits ?? {}).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
     const wrap = wrapUpGroundCombat(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }

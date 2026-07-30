@@ -467,7 +467,7 @@ export function resolveSpaceCombatRound(
   let workingState = state;
   if (action.viscountUnlennBonus) {
     const unlennOwner = workingState.players[action.viscountUnlennBonus.playerId];
-    const unlennEntry = unlennOwner?.leaders.find((l) => l.leaderId === ("viscount_unlenn" as never));
+    const unlennEntry = unlennOwner?.leaders.find((l) => l.leaderId === ("letnev_agent" as never));
     if (!unlennEntry) return { ok: false, error: "That player doesn't have Viscount Unlenn." };
     if (unlennEntry.exhausted) return { ok: false, error: "Viscount Unlenn is already exhausted." };
     if (!combatants.includes(action.viscountUnlennBonus.playerId)) return { ok: false, error: "That player isn't a combatant in this space combat." };
@@ -475,7 +475,7 @@ export function resolveSpaceCombatRound(
       ...workingState,
       players: {
         ...workingState.players,
-        [action.viscountUnlennBonus.playerId]: { ...unlennOwner, leaders: unlennOwner.leaders.map((l) => (l.leaderId === ("viscount_unlenn" as never) ? { ...l, exhausted: true } : l)) },
+        [action.viscountUnlennBonus.playerId]: { ...unlennOwner, leaders: unlennOwner.leaders.map((l) => (l.leaderId === ("letnev_agent" as never) ? { ...l, exhausted: true } : l)) },
       },
     };
   }
