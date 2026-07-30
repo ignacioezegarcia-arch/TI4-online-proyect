@@ -162,6 +162,7 @@ import {
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy, useDokNPicsSalvageYardPlay, useTheAcropolis, useTheGalacticCouncil, useJupiterBrain } from "./phases/legendaryPlanets";
 import { useStarForge, useTheNucleus, applyStellarGenesisOnGain } from "./rules/muaat";
 import { useOrbitalDrop, useZsThunderboltM2Deploy, resolveGenesisCapacityOverflow, useMilitarySupport, useClaireGibson, useJaceX } from "./rules/sol";
+import { useRearAdmiralFarran, useDunlainReaperDeploy, useDarktalonTreilla, useMunitionsReserves, resolveFleetCleanup, useWarFunding, useWarFundingOmega } from "./rules/letnev";
 import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective, getLawOwner } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
@@ -946,6 +947,27 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_JACE_X":
         result = useJaceX(state, action);
+        break;
+      case "USE_REAR_ADMIRAL_FARRAN":
+        result = useRearAdmiralFarran(state, action, rules);
+        break;
+      case "USE_DUNLAIN_REAPER_DEPLOY":
+        result = useDunlainReaperDeploy(state, action, rules);
+        break;
+      case "USE_DARKTALON_TREILLA":
+        result = useDarktalonTreilla(state, action);
+        break;
+      case "USE_MUNITIONS_RESERVES":
+        result = useMunitionsReserves(state, action, rules);
+        break;
+      case "RESOLVE_FLEET_CLEANUP":
+        result = resolveFleetCleanup(state, action, rules);
+        break;
+      case "USE_WAR_FUNDING":
+        result = useWarFunding(state, action, rules);
+        break;
+      case "USE_WAR_FUNDING_OMEGA":
+        result = useWarFundingOmega(state, action, rules);
         break;
       case "USE_STAR_FORGE":
         result = useStarForge(state, action, rules);
