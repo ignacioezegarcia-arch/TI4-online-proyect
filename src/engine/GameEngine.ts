@@ -161,6 +161,7 @@ import {
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy, useDokNPicsSalvageYardPlay, useTheAcropolis, useTheGalacticCouncil, useJupiterBrain } from "./phases/legendaryPlanets";
 import { useStarForge, useTheNucleus, applyStellarGenesisOnGain } from "./rules/muaat";
+import { useOrbitalDrop, useZsThunderboltM2Deploy, resolveGenesisCapacityOverflow, useMilitarySupport, useClaireGibson, useJaceX } from "./rules/sol";
 import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective, getLawOwner } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
@@ -359,7 +360,7 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         result = produceUnits(state, action, rules);
         break;
       case "FINISH_TACTICAL_ACTION":
-        result = finishTacticalAction(state, action);
+        result = finishTacticalAction(state, action, rules);
         break;
       case "SCORE_OBJECTIVE":
         result = scoreObjective(state, action, rules);
@@ -928,6 +929,24 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       case "USE_JUPITER_BRAIN":
         result = useJupiterBrain(state, action);
         break;
+      case "USE_ORBITAL_DROP":
+        result = useOrbitalDrop(state, action);
+        break;
+      case "USE_ZS_THUNDERBOLT_M2_DEPLOY":
+        result = useZsThunderboltM2Deploy(state, action, rules);
+        break;
+      case "RESOLVE_GENESIS_CAPACITY_OVERFLOW":
+        result = resolveGenesisCapacityOverflow(state, action);
+        break;
+      case "USE_MILITARY_SUPPORT":
+        result = useMilitarySupport(state, action);
+        break;
+      case "USE_CLAIRE_GIBSON":
+        result = useClaireGibson(state, action, rules);
+        break;
+      case "USE_JACE_X":
+        result = useJaceX(state, action);
+        break;
       case "USE_STAR_FORGE":
         result = useStarForge(state, action, rules);
         break;
@@ -1066,7 +1085,7 @@ export const GameEngine = {
         result = { ok: true, state: openInvasionStartWindowIfNeeded(dispatchResult.state), events: dispatchResult.events ?? [] };
       } else if (state.pendingPriorityWindow?.kind === "end_of_turn") {
         // TE "Crisis"/"Puppets on a String": once every eligible player has declined (or acted), proceed to the SAME advanceActivePlayer call maybeAdvanceActivePlayer would have made directly.
-        result = { ok: true, state: finishEndOfTurn(dispatchResult.state), events: dispatchResult.events ?? [] };
+        result = { ok: true, state: finishEndOfTurn(dispatchResult.state, rules), events: dispatchResult.events ?? [] };
       }
     }
 
