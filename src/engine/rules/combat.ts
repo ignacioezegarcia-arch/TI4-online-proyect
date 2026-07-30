@@ -218,6 +218,8 @@ export function buildGroundCombatEntries(
    * 2 real combatants on its own.
    */
   participantIds?: [PlayerId, PlayerId],
+  /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Confirmed (yjmrobert.com/tirules/factions/f_sol): "only applies to combat rolls" — a flat +1 die for the CASTER's own chosen unit type's stack, not a multiplier, and never applicable to any OTHER roll type (Bombardment-style abilities some units have) since this function only ever builds normal combat-round entries in the first place. */
+  evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" },
 ): CombatUnitEntry[] {
   const playerIds = participantIds ?? playersWithGroundForces(planet);
   if (playerIds.length !== 2) {
@@ -244,7 +246,8 @@ export function buildGroundCombatEntries(
       // half of this version's text.
       const diceMultiplier =
         usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier, hitOn: stats.combat - moraleBoostBonus, unitType: stack.unitType });
+      const evelynBonus = evelynDelouisBonus && evelynDelouisBonus.playerId === playerId && evelynDelouisBonus.unitType === stack.unitType ? 1 : 0;
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus, unitType: stack.unitType });
     }
   }
   return entries;
