@@ -1,5 +1,5 @@
 import { GameState, Player, SystemState, PlanetState } from "../types/GameState";
-import { PlayerId, FactionId, SystemId, PlanetId, TechId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId, asLeaderId, asFactionId, NEUTRAL_PLAYER_ID } from "../types/ids";
+import { PlayerId, FactionId, SystemId, PlanetId, TechId, asSystemId, asPlanetId, asAgendaId, asObjectiveId, asActionCardId, asExplorationCardId, asRelicId, asTechId, asStrategyCardId, asLeaderId, asFactionId, asAbilityId, NEUTRAL_PLAYER_ID } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { GameMode, UnitType, AnomalyType, WormholeType } from "../types/enums";
 import { generateMap, fisherYatesShuffle, PlaceableTile } from "./mapGeneration";
@@ -267,7 +267,8 @@ export function createGame(input: CreateGameInput): GameState {
       relicFragments: { cultural: 0, industrial: 0, hazardous: 0, unknown: 0 },
       explorationCardsInPlayArea: [],
       actionCardsDiscardedCount: 0,
-      abilityIds: [],
+      // FIX: this used to be hardcoded empty for every player of every faction — hasAbility(player, id) (rules/abilities.ts) checks THIS list, so every faction-ability gate anywhere in this project (Coexist's own "can_choose_coexist" included) silently always returned false until this fix. Populated from the faction's own static factionAbilityIds (RuleData.factions[...]), not something that changes over the course of play (breakthrough-granted synergy abilities are tracked via Player.hasBreakthrough + RuleData.factions[...].breakthroughSynergy instead, a separate mechanism already built).
+      abilityIds: (rules.factions[factionId]?.factionAbilityIds ?? []).map(asAbilityId),
       capturedUnits: [],
       capturedGenericUnits: { infantry: 0, fighter: 0 },
     };
