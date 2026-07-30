@@ -40,8 +40,9 @@ import {
 interface RawFactionFile {
   id: string;
   commodities?: number;
-  breakthrough?: { synergy?: { colors?: [string, string] } };
+  breakthrough?: { synergy?: { colors?: [string, string] }; startsWithBreakthroughUnlocked?: boolean };
   factionTechnologies?: { id: string }[];
+  factionAbilities?: { id: string; name: string; effect: string }[];
   promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
   promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
   startingUnits?: Record<string, number>;
@@ -52,10 +53,6 @@ interface RawFactionFile {
     hero: { name: string; unlock: string; ability: string };
   };
   units?: Record<string, Partial<RawUnitEntry> & { name?: string; versions?: (Partial<RawUnitEntry> & { level: number; color?: string; prerequisites?: string[] })[] }>;
-  // factionSpecificUnits intentionally not consumed yet — its `versions[]`
-  // entries use the same schema as units.json, but wiring "which version
-  // is currently active" needs researched-tech tracking on Player that
-  // isn't built yet either.
 }
 
 /**
@@ -67,7 +64,7 @@ export async function loadRuleData(factionIds: string[], hasThundersEdgeMode = f
   const baseUnitsById = new Map<string, RawUnitEntry>(unitsFile.units.map((u: RawUnitEntry) => [u.id, u]));
 
   const factionUnits: Record<FactionId, FactionUnitStats> = {};
-  const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null }> = {};
+  const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null; startsWithBreakthroughUnlocked: boolean; factionAbilityIds: string[] }> = {};
   const usedFactionFiles: RawFactionFile[] = [];
 
   for (const rawFactionId of factionIds) {
@@ -79,6 +76,9 @@ export async function loadRuleData(factionIds: string[], hasThundersEdgeMode = f
     factions[asFactionId(rawFactionId)] = {
       commoditiesMax: factionFile.commodities ?? 0,
       breakthroughSynergy: synergyColors ? [synergyColors[0], synergyColors[1]] : null,
+      startsWithBreakthroughUnlocked: Boolean(factionFile.breakthrough?.startsWithBreakthroughUnlocked),
+      // FIX: previously missing entirely here (this Edge Function's own copy had drifted out of sync with src/lib/loadRuleDataBrowser.ts — no startsWithBreakthroughUnlocked at all, and no ability-id list for hasAbility(), which was never populated ANYWHERE for ANY faction until this same pass).
+      factionAbilityIds: (factionFile.factionAbilities ?? []).map((a) => a.id),
     };
 
     const baseUnits: Record<string, ReturnType<typeof unitEntryToStats> | undefined> = {};
