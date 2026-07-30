@@ -244,7 +244,7 @@ export function assignBombardmentHits(
   // TE NEUTRAL UNITS: same fixed-priority-order reasoning as everywhere else this project computes hit assignments for the neutral pseudo-player.
   const bombardAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
 
-  const result = applyHitAssignments(state, stacks, bombardAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
+  const result = applyHitAssignments(state, stacks, bombardAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, undefined, player.technologies.includes("non_euclidean_shielding" as never));
   if (!result.ok) return { ok: false, error: `RR 44.1: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -886,7 +886,7 @@ export function assignSpaceCannonDefenseHits(
   // TE NEUTRAL UNITS: same fixed-priority-order reasoning as everywhere else this project computes hit assignments for the neutral pseudo-player.
   const scdAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
 
-  const result = applyHitAssignments(state, stacks, scdAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
+  const result = applyHitAssignments(state, stacks, scdAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, undefined, player.technologies.includes("non_euclidean_shielding" as never));
   if (!result.ok) return { ok: false, error: `RR 44: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -1128,7 +1128,7 @@ export function assignGroundCombatHits(
   // actions themselves) may have passed in.
   const groundAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
 
-  const result = applyHitAssignments(state, stacks, groundAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
+  const result = applyHitAssignments(state, stacks, groundAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, undefined, player.technologies.includes("non_euclidean_shielding" as never));
   if (!result.ok) return { ok: false, error: `RR 38.2: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -1193,7 +1193,9 @@ function checkMagenDefenseGridEligibility(state: GameState, rules: RuleData, def
   // Grid, which depends on it) is negated entirely — previously unchecked.
   if (player.exhaustedTechnologies.includes(techId)) return null;
   const attackerHasWarSunInSystem = (state.systems[systemId]?.spaceUnitsByPlayer[attackerId] ?? []).some((s) => s.unitType === "war_sun" && s.count > 0);
-  if (attackerHasWarSunInSystem) return null;
+  // Letnev "Arc Secundus" (flagship): "Other players' units in this system lose PLANETARY SHIELD." Confirmed (yjmrobert.com/tirules/factions/f_letnev): if this results in NO unit on the planet having Planetary Shield, the base Magen Defense Grid can't be used there either — same negation shape as the war sun above, and likewise has "no effect on Magen Defense Grid Ω or ΩΩ" (both already return earlier, before this base-only branch is ever reached).
+  const attackerHasArcSecundusInSystem = (state.systems[systemId]?.spaceUnitsByPlayer[attackerId] ?? []).some((s) => s.unitType === "flagship" && s.count > 0 && state.players[attackerId]?.factionId === ("letnev" as never));
+  if (attackerHasWarSunInSystem || attackerHasArcSecundusInSystem) return null;
   const hasPlanetaryShieldUnit = (planet.unitsByPlayer[defenderId] ?? []).some((s) => {
     if (s.count <= 0) return false;
     const stats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
@@ -1285,6 +1287,8 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
       combatRound: (pending.combatRound ?? 1) + 1,
       pendingHits: {},
       groundCombatAttackerBlockedThisRound: false,
+      // Letnev "Dunlain Reaper" (mech, DEPLOY): "once per timing window" — resets each new round, letting a fresh one be deployed.
+      usedDunlainReaperDeployThisRound: false,
     },
   };
   return { state: openGroundCombatRoundStartWindowIfNeeded(nextState), events };

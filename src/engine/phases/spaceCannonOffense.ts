@@ -166,7 +166,7 @@ export function assignSpaceCannonOffenseHits(
     }
   }
 
-  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules);
+  const result = applyHitAssignments(state, stacks, action.assignments, hitsOwed, player.factionId, player.unitUpgrades, rules, undefined, undefined, player.technologies.includes("non_euclidean_shielding" as never));
   if (!result.ok) return { ok: false, error: `RR 77: ${result.error}` };
 
   const events: GameEvent[] = [

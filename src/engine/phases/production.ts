@@ -3,6 +3,7 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
 import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
+import { getMaxNonFighterShips } from "../rules/letnev";
 import { getEffectivePlanetStats } from "../rules/planetStats";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { hasEntropicScar } from "../rules/anomalies";
@@ -279,8 +280,9 @@ export function executeProduction(
   // prompts for which excess ship to remove).
   const existingNonFighterShips = (system.spaceUnitsByPlayer[playerId] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter").reduce((sum, s) => sum + s.count, 0);
   const newNonFighterShips = resolvedUnits.filter((u) => SHIP_TYPES.includes(u.unitType) && u.unitType !== "fighter").reduce((sum, u) => sum + u.count, 0);
-  if (existingNonFighterShips + newNonFighterShips > player.commandTokens.fleet) {
-    return { ok: false, error: `RR 37.1: producing these ships would leave ${existingNonFighterShips + newNonFighterShips} non-fighter ships in ${systemId}, exceeding this player's fleet pool (${player.commandTokens.fleet}).` };
+  const maxNonFighterShips = getMaxNonFighterShips(player);
+  if (existingNonFighterShips + newNonFighterShips > maxNonFighterShips) {
+    return { ok: false, error: `RR 37.1: producing these ships would leave ${existingNonFighterShips + newNonFighterShips} non-fighter ships in ${systemId}, exceeding this player's fleet pool (${maxNonFighterShips}).` };
   }
 
   // RR 16.3: newly-produced fighters land in the space area (ground

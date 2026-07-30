@@ -31,17 +31,37 @@ export function openSpaceCombatWonWindowIfNeeded(state: GameState, winnerId: Pla
 export function openCombatRoundStartWindowIfNeeded(state: GameState): GameState {
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "spaceCombat" || pending.combatRound === undefined) return state;
+
+  // Letnev "Arc Secundus" (flagship, Auto-Repair): "At the start of each
+  // space combat round, repair this ship." Confirmed (yjmrobert.com/tirules/factions/f_letnev):
+  // mandatory, automatic (not a player choice) — "only uses its repair
+  // ability during combats it is participating in" (checked via presence
+  // in THIS system specifically) and "not repaired at the end of combat"
+  // (this hook only ever fires at a round's own START, never at the end).
+  let nextState = state;
+  for (const [ownerId, stacks] of Object.entries(state.systems[pending.systemId]?.spaceUnitsByPlayer ?? {})) {
+    const flagshipStack = (stacks ?? []).find((s) => s.unitType === "flagship" && s.count > 0);
+    if (!flagshipStack || flagshipStack.damagedCount <= 0) continue;
+    const owner = state.players[ownerId as PlayerId];
+    if (owner?.factionId !== ("letnev" as never)) continue;
+    const updatedStacks = (stacks ?? []).map((s) => (s === flagshipStack ? { ...s, damagedCount: 0 } : s));
+    nextState = {
+      ...nextState,
+      systems: { ...nextState.systems, [pending.systemId]: { ...nextState.systems[pending.systemId], spaceUnitsByPlayer: { ...nextState.systems[pending.systemId].spaceUnitsByPlayer, [ownerId]: updatedStacks } } },
+    };
+  }
+
   // Only Assault Cannon (mandatory, not a "wish to resolve" ability — see
   // its own doc comment above) gates this; AFB no longer does — RR: round
   // 1's "start of combat"/"start of combat round" window is BEFORE AFB,
   // so `afbPendingPlayers` being populated at the same time `combatRound`
   // is set is the NORMAL case this should still open for, not skip.
-  if (pending.assaultCannonPendingPlayer) return state;
-  if (state.pendingPriorityWindow) return state;
-  const participants = playersWithShipsInSystem(state, pending.systemId);
-  const order = actionPhaseWindowOrder(state, pending.playerId, participants);
-  if (order.length === 0) return state;
-  return { ...state, pendingPriorityWindow: { kind: "combat_round_start", order, currentIndex: 0, consecutivePasses: 0 } };
+  if (pending.assaultCannonPendingPlayer) return nextState;
+  if (nextState.pendingPriorityWindow) return nextState;
+  const participants = playersWithShipsInSystem(nextState, pending.systemId);
+  const order = actionPhaseWindowOrder(nextState, pending.playerId, participants);
+  if (order.length === 0) return nextState;
+  return { ...nextState, pendingPriorityWindow: { kind: "combat_round_start", order, currentIndex: 0, consecutivePasses: 0 } };
 }
 
 /**
@@ -419,7 +439,7 @@ export function announceRetreat(
 
 export function resolveSpaceCombatRound(
   state: GameState,
-  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[] },
+  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[]; viscountUnlennBonus?: { playerId: PlayerId; unitType: UnitType }; gravleashManeuversUnitType?: UnitType },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -443,9 +463,36 @@ export function resolveSpaceCombatRound(
     return { ok: false, error: "RR 67.5: only a player with ships in this combat can submit its dice roll." };
   }
 
+  // Letnev "Viscount Unlenn" (agent): validated + exhausted here, right before this round's own dice entries get built, since her bonus die needs to already be reflected in them.
+  let workingState = state;
+  if (action.viscountUnlennBonus) {
+    const unlennOwner = workingState.players[action.viscountUnlennBonus.playerId];
+    const unlennEntry = unlennOwner?.leaders.find((l) => l.leaderId === ("viscount_unlenn" as never));
+    if (!unlennEntry) return { ok: false, error: "That player doesn't have Viscount Unlenn." };
+    if (unlennEntry.exhausted) return { ok: false, error: "Viscount Unlenn is already exhausted." };
+    if (!combatants.includes(action.viscountUnlennBonus.playerId)) return { ok: false, error: "That player isn't a combatant in this space combat." };
+    workingState = {
+      ...workingState,
+      players: {
+        ...workingState.players,
+        [action.viscountUnlennBonus.playerId]: { ...unlennOwner, leaders: unlennOwner.leaders.map((l) => (l.leaderId === ("viscount_unlenn" as never) ? { ...l, exhausted: true } : l)) },
+      },
+    };
+  }
+
   let entries;
   try {
-    entries = buildSpaceCombatEntries(state, rules, systemId, pending.playerId);
+    let gravleashManeuversBonus: { playerId: PlayerId; unitType: UnitType; bonusPerDie: number } | undefined;
+    if (action.gravleashManeuversUnitType) {
+      const casterPlayer = workingState.players[action.playerId];
+      if (!casterPlayer?.hasBreakthrough || casterPlayer.factionId !== ("letnev" as never)) {
+        return { ok: false, error: "This player doesn't have Gravleash Maneuvers." };
+      }
+      // Letnev "Gravleash Maneuvers": "X is the number of ship types you have in the combat" — every DISTINCT ship type this player has present in this system, regardless of whether that type even rolls dice (e.g. a space dock isn't a ship at all and wouldn't count, but every SHIP type present, including fighters, does).
+      const distinctShipTypes = new Set((workingState.systems[systemId]?.spaceUnitsByPlayer[action.playerId] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0).map((s) => s.unitType));
+      gravleashManeuversBonus = { playerId: action.playerId, unitType: action.gravleashManeuversUnitType, bonusPerDie: distinctShipTypes.size };
+    }
+    entries = buildSpaceCombatEntries(workingState, rules, systemId, pending.playerId, action.viscountUnlennBonus, gravleashManeuversBonus);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -465,8 +512,9 @@ export function resolveSpaceCombatRound(
   if (result.hitsScoredByPlayer[b]) pendingHits[a] = result.hitsScoredByPlayer[b];
 
   const round = pending.combatRound ?? 1;
-  const updatedPending = maybeQueueCrownOfThalnosReroll(state, { ...pending, combatRound: round, pendingHits }, result.missedDiceByPlayerAndType);
-  let nextState: GameState = { ...state, pendingTacticalAction: updatedPending };
+  const updatedPending = maybeQueueCrownOfThalnosReroll(workingState, { ...pending, combatRound: round, pendingHits }, result.missedDiceByPlayerAndType);
+  // Letnev "Munitions Reserves": the same missed-dice data Crown of Thalnos just used above, stashed here too so useMunitionsReserves (rules/letnev.ts) has something to check against — gating (Letnev ownership, cost, once-per-round) happens over there, not here.
+  let nextState: GameState = { ...workingState, pendingTacticalAction: { ...updatedPending, munitionsReservesMissedDiceByPlayer: result.missedDiceByPlayerAndType } };
 
   const events: GameEvent[] = [
     { type: "COMBAT_ROUND_RESOLVED", systemId, round, hitsScoredByPlayer: result.hitsScoredByPlayer },
@@ -505,7 +553,7 @@ export function assignHits(
   // TE NEUTRAL UNITS: see phases/invasion.ts's own assignGroundCombatHits for the identical fixed-priority-order reasoning — same mechanic, space combat side.
   const spaceAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
 
-  const result = applyHitAssignments(state, stacks, spaceAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, player.relics.includes("metali_void_shielding" as never));
+  const result = applyHitAssignments(state, stacks, spaceAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, player.relics.includes("metali_void_shielding" as never), player.technologies.includes("non_euclidean_shielding" as never));
   if (!result.ok) return { ok: false, error: `RR 67.6: ${result.error}` };
 
   const events: GameEvent[] = [
@@ -698,6 +746,10 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
       retreating: [],
       // RR "Intercept" (yjmrobert.com/tirules/components/c_action_cards): "During the NEXT round of combat, the targeted player may declare another retreat" — the block is scoped to the round it was played in, not the rest of combat.
       interceptedPlayerId: undefined,
+      // Letnev "Munitions Reserves": "may only be triggered once per round" — resets each new round, same pattern as Dunlain Reaper Deploy's own once-per-round flag.
+      usedMunitionsReservesThisRound: false,
+      // Letnev "War Funding"/"War Funding Ω": same "not again until the next round of combat" reset.
+      usedWarFundingThisRoundBy: undefined,
     },
   };
   return { state: openCombatRoundStartWindowIfNeeded(nextState), events };

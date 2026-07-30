@@ -13,6 +13,7 @@ import { computeSpaceCombatEntry, openCombatRoundStartWindowIfNeeded } from "./s
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { findControlledLegendaryPlanet, exhaustLegendaryAbility } from "./legendaryPlanets";
+import { getMaxNonFighterShips } from "../rules/letnev";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -184,6 +185,18 @@ export function moveShips(
     }
   }
   let warSunPassedThroughAvernusSystem = false;
+  // Letnev "Gravleash Maneuvers" (breakthrough): "your non-fighter ships' move values are equal to the highest move value amongst moving ships in the system they started in." Confirmed (yjmrobert.com/tirules/factions/f_letnev): (1) a ship boosted by an ability like Gravity Drive raises the others to match the BOOSTED value, not just its own printed one; (2) a present Fighter II's own move value counts too, even though fighters themselves aren't "non-fighter ships" and so never get raised by this ability themselves. Computed as a pre-pass here (BASE move values + Gravity Drive's own +1, the two contributors this project's own confirmed rulings call out) grouped by fromSystemId, since the main validation loop below processes one move at a time and wouldn't otherwise know about a DIFFERENT move's own value.
+  const gravleashMaxMoveByOrigin = new Map<SystemId, number>();
+  if (player.hasBreakthrough && player.factionId === ("letnev" as never)) {
+    for (const move of action.moves) {
+      const moveStats = getUnitStats(rules, player.factionId, move.unitType, player.unitUpgrades);
+      if (moveStats?.move == null) continue;
+      let ownValue = moveStats.move;
+      if (action.gravityDriveBoostFromSystemId === move.fromSystemId && player.technologies.includes(asTechId("gravity_drive"))) ownValue += 1;
+      const current = gravleashMaxMoveByOrigin.get(move.fromSystemId) ?? 0;
+      if (ownValue > current) gravleashMaxMoveByOrigin.set(move.fromSystemId, ownValue);
+    }
+  }
   // RR 84.1: each move's own final effective move value (after Gravity Drive/Flank Speed/Ionian Fuel Refinery bonuses), kept around for the cargo-pickup pass-through check below — a cargo pickup at a mid-path hop is only legal if SOME ship making this move can actually reach that hop within its OWN move budget on the way to activeSystemId.
   const moveEffectiveValues: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; effectiveMove: number }[] = [];
 
@@ -230,6 +243,11 @@ export function moveShips(
       workingState = exhaustLegendaryAbility(workingState, found.systemId, asPlanetId("tempesta"));
     }
 
+    // Letnev "Gravleash Maneuvers": applied LAST (after Gravity Drive/Flank Speed/Ionian Fuel Refinery above), and only to non-fighter ships — a fighter's own move value is never raised by this ability, even though a Fighter II's OWN value is one of the things that can raise OTHER ships.
+    if (move.unitType !== "fighter") {
+      const gravleashMax = gravleashMaxMoveByOrigin.get(move.fromSystemId);
+      if (gravleashMax !== undefined && gravleashMax > effectiveMove) effectiveMove = gravleashMax;
+    }
     moveEffectiveValues.push({ fromSystemId: move.fromSystemId, unitType: move.unitType, effectiveMove });
 
     // RR "Dominus Orb" (relic): bypasses the reachability check entirely for this move if its source system has this player's own command token.
@@ -391,8 +409,9 @@ export function moveShips(
   // Warfare's own token redistribution shrinking the pool AFTER ships are
   // already parked there, which this check doesn't — and can't — cover).
   const nonFighterShipsAfterMove = (workingState.systems[activeSystemId]?.spaceUnitsByPlayer[player.id] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter").reduce((sum, s) => sum + s.count, 0);
-  if (nonFighterShipsAfterMove > player.commandTokens.fleet) {
-    return { ok: false, error: `RR 37.1: this move would leave ${nonFighterShipsAfterMove} non-fighter ships in ${activeSystemId}, exceeding this player's fleet pool (${player.commandTokens.fleet}).` };
+  const maxNonFighterShips = getMaxNonFighterShips(player);
+  if (nonFighterShipsAfterMove > maxNonFighterShips) {
+    return { ok: false, error: `RR 37.1: this move would leave ${nonFighterShipsAfterMove} non-fighter ships in ${activeSystemId}, exceeding this player's fleet pool (${maxNonFighterShips}).` };
   }
 
   // RR 16.3: this player's combined fighters + ground forces sitting in

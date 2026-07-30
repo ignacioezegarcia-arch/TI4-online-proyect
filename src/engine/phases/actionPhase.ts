@@ -11,7 +11,7 @@ import { getLawOwner } from "./agendaEffects";
 import { maybeGainCrownOfEmphidiaVictoryPoint } from "../rules/relics";
 import { hasAbility } from "../rules/abilities";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
-import { maybeUnlockHero } from "../rules/leaders";
+import { maybeUnlockHero, purgeHero } from "../rules/leaders";
 import { placeRespawnedSpecOps } from "../rules/sol";
 import { use4X41DHyperionVI, useMaxisCentralControl, useDokNPicsSalvageYardStore, useAeurexMechanica } from "./legendaryPlanets";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
@@ -887,6 +887,15 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
 export function startNewRound(state: GameState, rules: RuleData): GameState {
   const players: GameState["players"] = {};
   for (const [id, player] of Object.entries(state.players)) {
+    // Letnev "Darktalon Treilla — DARK MATTER AFFINITY" (hero): "At the end of that game round, purge this card." Confirmed (yjmrobert.com/tirules/factions/f_letnev): "the game round ends after the agenda phase (or the status phase if the custodians token is yet to be removed from Mecatol Rex)" — exactly this function's own call site. "The Letnev player might need to remove ships from the board to satisfy fleet pool limits" once the bypass ends — flagged via pendingFleetCleanupSystemIds, resolved by the PLAYER'S OWN choice of which ships via rules/letnev.ts's own resolveFleetCleanup (RESOLVE_FLEET_CLEANUP action).
+    if (player.darktalonTreillaActive) {
+      const overLimitSystemIds = Object.entries(state.systems)
+        .filter(([, sys]) => (sys.spaceUnitsByPlayer[id as PlayerId] ?? []).filter((s) => s.unitType !== "fighter" && SHIP_TYPES.includes(s.unitType)).reduce((sum, s) => sum + s.count, 0) > player.commandTokens.fleet + (hasAbility(player, asAbilityId("armada")) ? 2 : 0))
+        .map(([systemId]) => systemId as SystemId);
+      const purgedPlayer = purgeHero({ ...player, darktalonTreillaActive: undefined }, asLeaderId("darktalon_treilla"));
+      players[id as PlayerId] = { ...purgedPlayer, hasPassed: false, strategyCards: [], pendingFleetCleanupSystemIds: overLimitSystemIds.length > 0 ? overLimitSystemIds : undefined };
+      continue;
+    }
     // RR "Political Stability": this player keeps their strategy card(s) — they don't return, and this player skips picking a NEW one this upcoming strategy phase instead (see phases/strategyPhase.ts's own isPlayersStrategyTurnInternal for where that skip is enforced).
     if (player.politicalStabilityKeepCards) {
       players[id as PlayerId] = { ...player, hasPassed: false, politicalStabilityKeepCards: false, skipsNextStrategyPick: true };
