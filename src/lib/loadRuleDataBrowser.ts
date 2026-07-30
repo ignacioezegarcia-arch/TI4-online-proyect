@@ -83,11 +83,11 @@ export function loadRuleDataBrowser(factionIds: string[], hasThundersEdgeMode = 
   );
 
   const factionUnits: Record<FactionId, FactionUnitStats> = {};
-  const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null; startsWithBreakthroughUnlocked: boolean }> = {};
+  const factions: Record<FactionId, { commoditiesMax: number; breakthroughSynergy: [string, string] | null; startsWithBreakthroughUnlocked: boolean; factionAbilityIds: string[] }> = {};
   const usedFactionFiles: (Parameters<typeof buildFactionPromissoryNotesLookup>[0][number] &
     Parameters<typeof buildStartingDataLookup>[0][number] &
     Parameters<typeof buildFactionLeadersLookup>[0][number] &
-    Parameters<typeof buildFactionUnitUpgradesFromVersions>[0][number] & { id: string; factionTechnologies?: { id: string }[] })[] = [];
+    Parameters<typeof buildFactionUnitUpgradesFromVersions>[0][number] & { id: string; factionTechnologies?: { id: string }[]; factionAbilities?: { id: string }[] })[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile = findFactionFile(rawFactionId);
@@ -97,6 +97,8 @@ export function loadRuleDataBrowser(factionIds: string[], hasThundersEdgeMode = 
       commoditiesMax: factionFile.commodities ?? 0,
       breakthroughSynergy: synergyColors ? [synergyColors[0], synergyColors[1]] : null,
       startsWithBreakthroughUnlocked: Boolean(factionFile.breakthrough?.startsWithBreakthroughUnlocked),
+      // FIX: this project's own hasAbility(player, id) checks player.abilityIds — which was NEVER populated anywhere, for ANY faction, meaning every faction-ability gate silently failed since the day it was written (Coexist's own "can_choose_coexist" included). createGame.ts now reads this list to actually populate player.abilityIds at setup.
+      factionAbilityIds: (factionFile.factionAbilities ?? []).map((a) => a.id),
     };
 
     const baseUnits: Record<string, ReturnType<typeof unitEntryToStats> | undefined> = {};
