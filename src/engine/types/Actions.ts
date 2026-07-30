@@ -142,6 +142,10 @@ export type GameAction =
       diceRolls: number[];
       /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Ground-combat-only (never applies to space combat's own use of this same action type) — see phases/invasion.ts's own resolveGroundCombatRound. */
       evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" };
+      /** Letnev "Viscount Unlenn" (agent): same idea as Evelyn DeLouis above, but for ships/space combat — see phases/spaceCombat.ts's own resolveSpaceCombatRound. */
+      viscountUnlennBonus?: { playerId: PlayerId; unitType: UnitType };
+      /** Letnev "Gravleash Maneuvers" (breakthrough): "apply +X to the results of 1 of your ship's rolls, where X is the number of ship types you have in the combat" — the CALLER just names which unit type gets the boosted die; X itself is computed server-side from the actual board state. Space-combat-only. */
+      gravleashManeuversUnitType?: UnitType;
     }
   | {
       type: "ASSIGN_HITS";
@@ -452,6 +456,19 @@ export type GameAction =
   | { type: "USE_MILITARY_SUPPORT"; playerId: PlayerId; placeInfantry?: { targetPlanetId: PlanetId; count: number } } // Sol's own promissory note — see rules/sol.ts
   | { type: "USE_CLAIRE_GIBSON"; playerId: PlayerId; targetPlanetId: PlanetId } // Sol's own commander — see rules/sol.ts
   | { type: "USE_JACE_X"; playerId: PlayerId } // Sol's own hero — see rules/sol.ts
+  | { type: "USE_REAR_ADMIRAL_FARRAN"; playerId: PlayerId } // Letnev's own commander — see rules/letnev.ts
+  | { type: "USE_DUNLAIN_REAPER_DEPLOY"; playerId: PlayerId; targetPlanetId: PlanetId; exhaustPlanetIdsForResources: PlanetId[] } // Letnev's own mech's DEPLOY ability — see rules/letnev.ts
+  | { type: "USE_DARKTALON_TREILLA"; playerId: PlayerId } // Letnev's own hero — see rules/letnev.ts
+  | { type: "USE_MUNITIONS_RESERVES"; playerId: PlayerId; rerolls: { unitType: UnitType; newRolls: number[] }[] } // Letnev's own faction ability — see rules/letnev.ts
+  | { type: "RESOLVE_FLEET_CLEANUP"; playerId: PlayerId; systemId: SystemId; removals: { unitType: UnitType; count: number }[] } // Letnev's own Darktalon Treilla end-of-round consequence — see rules/letnev.ts
+  | { type: "USE_WAR_FUNDING"; playerId: PlayerId; rerolls: { unitType: UnitType; newRolls: number[] }[] } // Letnev's own promissory note — see rules/letnev.ts
+  | {
+      type: "USE_WAR_FUNDING_OMEGA";
+      playerId: PlayerId;
+      opponentId: PlayerId;
+      opponentRerolls: { unitType: UnitType; newRolls: number[] }[];
+      ownRerolls: { unitType: UnitType; newRolls: number[] }[];
+    } // Letnev's own promissory note (Codex) — see rules/letnev.ts
   | { type: "USE_STAR_FORGE"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Muaat's own base faction ability — see rules/muaat.ts
   | { type: "USE_THE_NUCLEUS"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Avernus's own legendary ability (Muaat's Breakthrough) — see rules/muaat.ts
   | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain

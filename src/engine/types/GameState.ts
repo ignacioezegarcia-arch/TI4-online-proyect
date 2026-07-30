@@ -171,6 +171,10 @@ export interface Player {
   cannotScorePublicObjectives?: boolean;
   /** Sol "Spec Ops II" (RESPAWN): count of destroyed Spec Ops infantry currently "on this card", waiting to be placed on a home-system planet at the start of this player's next turn (rules/sol.ts's own checkSpecOpsRespawn/placeRespawnedSpecOps). */
   specOpsOnCard?: number;
+  /** Letnev "Darktalon Treilla — DARK MATTER AFFINITY" (hero): active for the rest of THIS game round once used, then purged. See rules/letnev.ts's own getMaxNonFighterShips. */
+  darktalonTreillaActive?: boolean;
+  /** Letnev "Darktalon Treilla — DARK MATTER AFFINITY": set once her bypass ends and this player is left over their own fleet-supply limit somewhere — resolved via rules/letnev.ts's own resolveFleetCleanup (RESOLVE_FLEET_CLEANUP), the player's own choice of which ships to remove. */
+  pendingFleetCleanupSystemIds?: SystemId[];
   /** RR 35.9: purge 3 of the same type (Unknown fragments substitute for any one type) to gain a Relic. */
   relicFragments: { cultural: number; industrial: number; hazardous: number; unknown: number };
   /** Exploration cards with `keepInPlayArea` (e.g. "Enigmatic Device") — sit face-up in front of the player until purged, distinct from actionCards/promissoryNotes. */
@@ -746,6 +750,8 @@ export interface PendingTacticalAction {
   magenDefenseGridPending?: boolean;
   /** Set once the defender actually USES Magen Defense Grid (base version) — the attacker in `pendingTacticalAction.playerId` can't roll dice for round 1; see rules/combat.ts's buildGroundCombatEntries. */
   groundCombatAttackerBlockedThisRound?: boolean;
+  /** Letnev "Dunlain Reaper" (mech, DEPLOY): "once per timing window" — resets at the start of each new ground combat round (rules/letnev.ts's own useDunlainReaperDeploy). */
+  usedDunlainReaperDeployThisRound?: boolean;
   /**
    * RR "Magen Defense Grid" ΩΩ (Codex 4, everywhere except base-only
    * games): NOT optional and doesn't exhaust anything — if the defender
@@ -790,6 +796,11 @@ export interface PendingTacticalAction {
    */
   crownOfThalnosPendingPlayers?: PlayerId[];
   crownOfThalnosMissedDiceByPlayer?: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>>;
+  /** Letnev "Munitions Reserves" (faction ability, SPACE combat only — unlike Crown of Thalnos, which applies to any combat round): same missed-dice-count tracking, but requires actually spending 2 trade goods (not free) and can only be used once per round. Tracked here (not reusing crownOfThalnosMissedDiceByPlayer directly) since eligibility/cost differ even though the underlying reroll mechanic is identical. */
+  munitionsReservesMissedDiceByPlayer?: Partial<Record<PlayerId, Partial<Record<UnitType, number>>>>;
+  usedMunitionsReservesThisRound?: boolean;
+  /** Letnev "War Funding"/"War Funding Ω" (promissory notes): "cannot play it again until the next round of combat" — tracked per-holder (not a flat boolean, since different players could hold/play it across different rounds), reset each new space combat round. */
+  usedWarFundingThisRoundBy?: PlayerId;
   /**
    * RR 16.3/78.10a: right when space combat ends, if the WINNER's
    * fighters + ground forces sitting in the system's space area now
