@@ -1,11 +1,12 @@
 import { GameState, Player, PlanetState, UnitStack } from "../types/GameState";
-import { PlayerId, SystemId, FactionId, UnitUpgradeId, AgendaId, asTechId } from "../types/ids";
+import { PlayerId, SystemId, FactionId, UnitUpgradeId, AgendaId, asTechId, asAbilityId } from "../types/ids";
 import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus, hasEntropicScar } from "./anomalies";
 import { getAdjacentSystems } from "./adjacency";
 import { usesCodex4Version } from "./gameMode";
 import { getEffectiveUnitAbilities, getLawOwner } from "../phases/agendaEffects";
+import { hasAbility } from "./abilities";
 
 /**
  * RR 61 (space combat) / RR 38 (ground combat) — presence queries.
@@ -186,7 +187,11 @@ export function buildSpaceCombatEntries(
       // agendas/techs, e.g. Antimass Deflectors).
       const prophecyOfIxthBonus = stack.unitType === "fighter" && getLawOwner(state, "prophecy_of_ixth" as AgendaId) === playerId ? 1 : 0;
       const fighterPrototypeBonus = getFighterPrototypeHitOnBonus(state, playerId, stack.unitType);
-      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus;
+      // Sardakk N'orr "UNRELENTING" (faction ability, passive): "+1 to the result of each of your unit's combat rolls." Confirmed (tirules2.com/F_norr): does NOT affect AFB, Bombardment, or Space Cannon rolls — this function only ever builds NORMAL combat-round entries, so that scoping is automatic just by living here.
+      const unrelentingBonus = hasAbility(player, asAbilityId("unrelenting")) ? 1 : 0;
+      // Sardakk N'orr "C'Morran N'orr" (flagship, Fleet Combat Bonus): "+1 to the result of each of your OTHER ships' combat rolls in this system." Same AFB/Bombardment/Space Cannon exclusion as UNRELENTING above. Never applies to the flagship's own roll (only "other" ships).
+      const hasCMorranNorrInSystem = stack.unitType !== "flagship" && (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.unitType === "flagship" && s.count > 0) && player.factionId === ("sardakk" as never);
+      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus - unrelentingBonus - (hasCMorranNorrInSystem ? 1 : 0);
       const viscountBonus = viscountUnlennBonus && viscountUnlennBonus.playerId === playerId && viscountUnlennBonus.unitType === stack.unitType ? 1 : 0;
       const totalDiceForStack = stack.count * diceCountPerUnit + viscountBonus;
 
@@ -236,6 +241,8 @@ export function buildGroundCombatEntries(
   participantIds?: [PlayerId, PlayerId],
   /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Confirmed (yjmrobert.com/tirules/factions/f_sol): "only applies to combat rolls" — a flat +1 die for the CASTER's own chosen unit type's stack, not a multiplier, and never applicable to any OTHER roll type (Bombardment-style abilities some units have) since this function only ever builds normal combat-round entries in the first place. */
   evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" },
+  /** Sardakk N'orr "Tekklar Legion" (promissory note): "At the start of an invasion combat: apply +1 to the result of each of your unit's combat rolls during this combat. If your opponent is the N'orr player, apply -1 to the result of each of their unit's combat rolls during this combat." Confirmed (tirules2.com/F_norr): same AFB/Bombardment/Space Cannon exclusion as UNRELENTING/C'Morran N'orr (this function only ever builds normal ground-combat entries). */
+  tekklarLegionHolderId?: PlayerId,
 ): CombatUnitEntry[] {
   const playerIds = participantIds ?? playersWithGroundForces(planet);
   if (playerIds.length !== 2) {
@@ -263,7 +270,11 @@ export function buildGroundCombatEntries(
       const diceMultiplier =
         usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
       const evelynBonus = evelynDelouisBonus && evelynDelouisBonus.playerId === playerId && evelynDelouisBonus.unitType === stack.unitType ? 1 : 0;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus, unitType: stack.unitType });
+      // Sardakk N'orr "UNRELENTING" (faction ability, passive): "+1 to the result of each of your unit's combat rolls." Confirmed: does NOT affect AFB/Bombardment/Space Cannon — automatic here, since this function only ever builds normal ground-combat entries.
+      const unrelentingBonus = hasAbility(player, asAbilityId("unrelenting")) ? 1 : 0;
+      // Sardakk N'orr "Tekklar Legion" (promissory note): +1 for the holder, -1 for their opponent specifically if that opponent is the N'orr player.
+      const tekklarLegionBonus = tekklarLegionHolderId === playerId ? 1 : tekklarLegionHolderId !== undefined && player.factionId === ("sardakk" as never) ? -1 : 0;
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus - unrelentingBonus - tekklarLegionBonus, unitType: stack.unitType });
     }
   }
   return entries;

@@ -57,7 +57,7 @@ export function getMaxNonFighterShips(player: Player): number {
  */
 export function useRearAdmiralFarran(state: GameState, action: { type: "USE_REAR_ADMIRAL_FARRAN"; playerId: PlayerId }, rules: RuleData): ActionResult {
   const player = state.players[action.playerId];
-  const commanderEntry = player.leaders.find((l) => l.leaderId === ("rear_admiral_farran" as never));
+  const commanderEntry = player.leaders.find((l) => l.leaderId === ("letnev_commander" as never));
   if (!commanderEntry) return { ok: false, error: "This player doesn't have Rear Admiral Farran." };
 
   let workingState = state;
@@ -72,7 +72,7 @@ export function useRearAdmiralFarran(state: GameState, action: { type: "USE_REAR
       (sys) => (sys.spaceUnitsByPlayer[action.playerId] ?? []).filter((s) => s.unitType !== "fighter" && SHIP_TYPES.includes(s.unitType)).reduce((sum, s) => sum + s.count, 0) > maxShips,
     );
     if (isOverLimitAnywhere) return { ok: false, error: "This player must first remove ships to meet their own fleet-supply limit before unlocking Rear Admiral Farran." };
-    workingState = { ...state, players: { ...state.players, [action.playerId]: unlockCommander(player, asLeaderId("rear_admiral_farran")) } };
+    workingState = { ...state, players: { ...state.players, [action.playerId]: unlockCommander(player, asLeaderId("letnev_commander")) } };
   }
 
   const finalPlayer = workingState.players[action.playerId];
@@ -169,7 +169,7 @@ export function useDunlainReaperDeploy(
  */
 export function useDarktalonTreilla(state: GameState, action: { type: "USE_DARKTALON_TREILLA"; playerId: PlayerId } ): ActionResult {
   const player = state.players[action.playerId];
-  const heroEntry = player.leaders.find((l) => l.leaderId === ("darktalon_treilla" as never));
+  const heroEntry = player.leaders.find((l) => l.leaderId === ("letnev_hero" as never));
   if (!heroEntry || heroEntry.locked) return { ok: false, error: "This player doesn't have an unlocked Darktalon Treilla." };
   if (player.darktalonTreillaActive) return { ok: false, error: "Darktalon Treilla is already active this round." };
 

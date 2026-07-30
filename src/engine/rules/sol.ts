@@ -214,7 +214,7 @@ export function useMilitarySupport(
  */
 export function useClaireGibson(state: GameState, action: { type: "USE_CLAIRE_GIBSON"; playerId: PlayerId; targetPlanetId: PlanetId }, rules: RuleData): ActionResult {
   const player = state.players[action.playerId];
-  const commanderEntry = player.leaders.find((l) => l.leaderId === ("claire_gibson" as never));
+  const commanderEntry = player.leaders.find((l) => l.leaderId === ("sol_commander" as never));
   if (!commanderEntry) return { ok: false, error: "This player doesn't have Claire Gibson." };
 
   // Sol "Claire Gibson" unlock: "control planets that have a combined total of at least 12 resources." Faction-specific (deferred by rules/leaders.ts's own generic plumbing) — checked here, auto-unlocking permanently the moment it's first met.
@@ -225,7 +225,7 @@ export function useClaireGibson(state: GameState, action: { type: "USE_CLAIRE_GI
       .filter((p) => p.controllerId === action.playerId)
       .reduce((sum, p) => sum + (rules.planets[p.planetId]?.resources ?? 0), 0);
     if (combinedResources < 12) return { ok: false, error: "This player doesn't have an unlocked Claire Gibson." };
-    workingState = { ...state, players: { ...state.players, [action.playerId]: unlockCommander(player, asLeaderId("claire_gibson")) } };
+    workingState = { ...state, players: { ...state.players, [action.playerId]: unlockCommander(player, asLeaderId("sol_commander")) } };
   }
 
   const pending = workingState.pendingTacticalAction;
@@ -257,11 +257,11 @@ export function useClaireGibson(state: GameState, action: { type: "USE_CLAIRE_GI
  */
 export function useJaceX(state: GameState, action: { type: "USE_JACE_X"; playerId: PlayerId }): ActionResult {
   const player = state.players[action.playerId];
-  const heroEntry = player.leaders.find((l) => l.leaderId === ("jace_x" as never));
+  const heroEntry = player.leaders.find((l) => l.leaderId === ("sol_hero" as never));
   if (!heroEntry || heroEntry.locked) return { ok: false, error: "This player doesn't have an unlocked Jace X." };
 
   const returnedCount = player.commandTokens.onBoard.length;
-  const updatedPlayer: Player = purgeHero({ ...player, commandTokens: { ...player.commandTokens, onBoard: [] } }, asLeaderId("jace_x"));
+  const updatedPlayer: Player = purgeHero({ ...player, commandTokens: { ...player.commandTokens, onBoard: [] } }, asLeaderId("sol_hero"));
   return {
     ok: true,
     state: { ...state, players: { ...state.players, [action.playerId]: updatedPlayer } },
