@@ -140,10 +140,11 @@ export type GameAction =
        * taken as-is from a client-submitted action. RR 67.5 / 38.1.
        */
       diceRolls: number[];
-      /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Ground-combat-only (never applies to space combat's own use of this same action type) — see phases/invasion.ts's own resolveGroundCombatRound. */
-      evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" };
+      /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Ground-combat-only (never applies to space combat's own use of this same action type) — see phases/invasion.ts's own resolveGroundCombatRound. ownerId (whoever holds Evelyn — need not be a combatant) is separate from targetPlayerId (whose unit actually benefits, must be a combatant) — an agent's ability can benefit ANY player, not just its own owner. */
+      evelynDelouisBonus?: { ownerId: PlayerId; targetPlayerId: PlayerId; unitType: "infantry" | "mech" };
       /** Letnev "Viscount Unlenn" (agent): same idea as Evelyn DeLouis above, but for ships/space combat — see phases/spaceCombat.ts's own resolveSpaceCombatRound. */
-      viscountUnlennBonus?: { playerId: PlayerId; unitType: UnitType };
+      /** Letnev "Viscount Unlenn" (agent): same idea as Evelyn DeLouis above, but for ships/space combat — see phases/spaceCombat.ts's own resolveSpaceCombatRound. ownerId/targetPlayerId separated the same way (an agent's ability can benefit ANY player, not just its own owner). */
+      viscountUnlennBonus?: { ownerId: PlayerId; targetPlayerId: PlayerId; unitType: UnitType };
       /** Letnev "Gravleash Maneuvers" (breakthrough): "apply +X to the results of 1 of your ship's rolls, where X is the number of ship types you have in the combat" — the CALLER just names which unit type gets the boosted die; X itself is computed server-side from the actual board state. Space-combat-only. */
       gravleashManeuversUnitType?: UnitType;
     }
@@ -175,6 +176,8 @@ export type GameAction =
       plasmaScoringUnitType?: UnitType;
       /** TE COEXIST: which defender this roll targets, required when the target planet has more than 1 defending player (a coexisting pair) — each gets bombarded with their own separate roll. Optional/ignored when there's exactly 1 defender. */
       targetPlayerId?: PlayerId;
+      /** Jol-Nar "Ta Zern" (commander, passive): applied inline right after this same bombardment's own initial roll resolves — see phases/invasion.ts's own bombard for the full doc comment, including its own single-target scope limit. */
+      taZernRerolls?: { unitType: UnitType; newRolls: number[] }[];
     }
   | {
       type: "ASSIGN_BOMBARDMENT_HITS";
@@ -475,6 +478,9 @@ export type GameAction =
   | { type: "USE_NORR_SUPREMACY"; playerId: PlayerId; commandTokenPool: "tactic" | "fleet" | "strategy" } // Sardakk N'orr's own Breakthrough — see rules/sardakk.ts
   | { type: "USE_GHOM_SEKKUS"; playerId: PlayerId; targetPlanetId: PlanetId; sources: { planetId: PlanetId; unitType: "infantry" | "mech" }[] } // Sardakk N'orr's own commander — see rules/sardakk.ts
   | { type: "USE_SHVAL_HARBINGER"; playerId: PlayerId } // Sardakk N'orr's own hero — see rules/sardakk.ts
+  | { type: "USE_RESEARCH_AGREEMENT"; playerId: PlayerId; techId: TechId } // Jol-Nar's own promissory note — see rules/jolnar.ts
+  | { type: "USE_SPATIAL_CONDUIT_CYLINDER"; playerId: PlayerId } // Jol-Nar's own faction tech — see rules/jolnar.ts
+  | { type: "USE_RIN_GENETIC_MEMORY"; playerId: PlayerId; replacements: { oldTechId: TechId; newTechId: TechId }[] } // Jol-Nar's own hero — see rules/jolnar.ts
   | { type: "USE_STAR_FORGE"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Muaat's own base faction ability — see rules/muaat.ts
   | { type: "USE_THE_NUCLEUS"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Avernus's own legendary ability (Muaat's Breakthrough) — see rules/muaat.ts
   | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain
@@ -491,6 +497,12 @@ export type GameAction =
       useResearchTeamAttachmentPlanetId?: PlanetId;
       /** RR 90.13-90.15: exhaust any number of controlled tech-specialty planets (a base-game mechanic, not PoK-specific) — each ignores 1 prerequisite of its own matching color, stackable with Research Team above. A planet already exhausted (including via exhaustPlanetIdsForResources above) can't be reused here. */
       exhaustPlanetIdsForTechSpecialty?: PlanetId[];
+      /** Jol-Nar "ANALYTICAL" (faction ability, passive): "When you research a technology that is not a unit upgrade technology, you may ignore 1 prerequisite." The player's own choice of which color to ignore. */
+      useAnalyticalIgnoreColor?: string;
+      /** Jol-Nar "Doctor Sucaban" (agent): reduces this research's own resource cost by 1 per infantry removed this way — see phases/technology.ts's own researchTechnology for the full doc comment. */
+      docSucabanRemovedInfantry?: { planetId: PlanetId; count: number }[];
+      /** Jol-Nar "Specialized Compounds" (Breakthrough): exhaust this tech-specialty planet instead of paying resources — see phases/technology.ts's own researchTechnology for the full doc comment. */
+      specializedCompoundsPlanetId?: PlanetId;
     } // RR 90
   | {
       type: "RESEARCH_UNIT_UPGRADE";

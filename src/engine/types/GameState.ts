@@ -758,6 +758,8 @@ export interface PendingTacticalAction {
   tekklarLegionHolderIdThisCombat?: PlayerId;
   /** Sardakk N'orr "Sh'val, Harbinger — TEKKLAR CONDITIONING" (hero): set once used, right after movement — skips Space Cannon Offense/Space Combat/Bombardment entirely, straight to Commit Ground Forces. Purge + return-ships-to-reinforcements happens once commits finish (phases/invasion.ts's own finishInvasionCommits). */
   shvalHarbingerActive?: boolean;
+  /** Jol-Nar "Spatial Conduit Cylinder" (faction tech): set once used, for the rest of THIS system activation only — see rules/adjacency.ts's own getAdjacentSystems. */
+  spatialConduitCylinderActive?: { playerId: PlayerId; systemId: SystemId };
   /**
    * RR "Magen Defense Grid" ΩΩ (Codex 4, everywhere except base-only
    * games): NOT optional and doesn't exhaust anything — if the defender
