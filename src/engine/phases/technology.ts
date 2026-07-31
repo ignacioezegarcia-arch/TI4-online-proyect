@@ -1,9 +1,10 @@
 import { GameState, Player, PlanetState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, TechId, UnitUpgradeId, PlanetId, AgendaId, asTechId } from "../types/ids";
+import { PlayerId, TechId, UnitUpgradeId, PlanetId, AgendaId, asTechId, asAbilityId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { maybeQueueAntiIntellectualRevolutionDestruction, isLawActiveWithOutcome } from "./agendaEffects";
 import { hasQuantumcoreUniversalSynergy } from "../rules/relics";
+import { hasAbility } from "../rules/abilities";
 
 /**
  * RR 90 TECHNOLOGY. There's no general "spend resources, research anything"
@@ -33,6 +34,12 @@ export function researchTechnology(
   useResearchTeamAttachmentPlanetId?: PlanetId,
   /** RR 90.13-90.15: exhaust any number of controlled planets that have a technology specialty (a base-game mechanic, not PoK-specific) — each one ignores exactly 1 prerequisite of ITS OWN matching color, same "ignore 1, not the whole list" shape as Research Team/AI Development Algorithm, but stackable across multiple planets in a single research. A planet already exhausted (including for resources — this is the SAME exhausted state, not a separate one) cannot be used this way. */
   exhaustPlanetIdsForTechSpecialty?: PlanetId[],
+  /** Jol-Nar "ANALYTICAL" (faction ability, passive): "When you research a technology that is not a unit upgrade technology, you may ignore 1 prerequisite." The player's own choice of WHICH color to ignore (the card doesn't specify) — no exhaust/cost, just requires this player to actually own the ability. */
+  useAnalyticalIgnoreColor?: string,
+  /** Jol-Nar "Doctor Sucaban" (agent): "When a player spends resources to research: you may exhaust this card to allow that player to remove any number of their infantry from the game board. For each unit removed, reduce the resources spent by 1." Confirmed (tirules2.com/F_jol_nar): if the researching player has Infantry II, units removed this way do NOT roll for resurrection. The RESEARCHING player (not necessarily Jol-Nar) lists which of their own infantry to remove; Doctor Sucaban's own exhaustion is handled by the caller (this function only applies the discount + removal, trusting the caller already validated/exhausted the agent). */
+  docSucabanRemovedInfantry?: { planetId: PlanetId; count: number }[],
+  /** Jol-Nar "Specialized Compounds" (Breakthrough ability): "When researching using the Technology strategy card, you may exhaust 1 tech-specialty planet you control instead of spending resources; that technology must match the exhausted planet's specialty." Confirmed (tirules2.com/F_jol_nar): (1) can't be used for unit upgrades — not applicable to this function at all, since it's only ever called for non-unit-upgrade research; (2) even a tech with 0 (or fully ignored) prerequisites must still match the planet's OWN specialty color to qualify — checked directly against rules.technologies[techId].color, independent of the prerequisite check above; (3) the SAME planet can't both pay via this AND be used to ignore a prerequisite (via exhaustPlanetIdsForTechSpecialty above) in the same research — checked by rejecting overlap. */
+  specializedCompoundsPlanetId?: PlanetId,
 ): ActionResult {
   const player = state.players[playerId];
   if (!player) return { ok: false, error: "Unknown player." };
@@ -41,7 +48,63 @@ export function researchTechnology(
   }
 
   let workingState = state;
+  let effectiveCost = cost;
+  if (specializedCompoundsPlanetId) {
+    if ((exhaustPlanetIdsForTechSpecialty ?? []).includes(specializedCompoundsPlanetId)) {
+      return { ok: false, error: "Specialized Compounds: this planet can't also be used to ignore a prerequisite in the same research." };
+    }
+    let found: { systemId: import("../types/ids").SystemId; system: import("../types/GameState").SystemState; planet: PlanetState } | null = null;
+    for (const [systemId, system] of Object.entries(workingState.systems)) {
+      const planet = system.planets.find((p) => p.planetId === specializedCompoundsPlanetId);
+      if (planet) {
+        found = { systemId: systemId as import("../types/ids").SystemId, system, planet };
+        break;
+      }
+    }
+    if (!found || found.planet.controllerId !== playerId || found.planet.exhausted) {
+      return { ok: false, error: "Cannot exhaust that planet for Specialized Compounds." };
+    }
+    const specialties = rules.planets[specializedCompoundsPlanetId]?.techSpecialties ?? [];
+    const techColor = rules.technologies[techId]?.color;
+    if (!techColor || !specialties.includes(techColor)) {
+      return { ok: false, error: `Specialized Compounds: ${techId} must match the exhausted planet's own specialty (${specialties.join("/") || "none"}).` };
+    }
+    const updatedPlanet: PlanetState = { ...found.planet, exhausted: true };
+    workingState = { ...workingState, systems: { ...workingState.systems, [found.systemId]: { ...found.system, planets: found.system.planets.map((p) => (p.planetId === specializedCompoundsPlanetId ? updatedPlanet : p)) } } };
+    effectiveCost = 0;
+  }
+  if (docSucabanRemovedInfantry && docSucabanRemovedInfantry.length > 0) {
+    const jolNarPlayerId = Object.values(workingState.players).find((p) => p.factionId === ("jolnar" as never))?.id;
+    const jolNarPlayer = jolNarPlayerId ? workingState.players[jolNarPlayerId] : undefined;
+    const agentEntry = jolNarPlayer?.leaders.find((l) => l.leaderId === ("jolnar_agent" as never));
+    if (!agentEntry) return { ok: false, error: "No Jol-Nar player with Doctor Sucaban in this game." };
+    if (agentEntry.exhausted) return { ok: false, error: "Doctor Sucaban is already exhausted." };
+    workingState = { ...workingState, players: { ...workingState.players, [jolNarPlayerId!]: { ...jolNarPlayer!, leaders: jolNarPlayer!.leaders.map((l) => (l.leaderId === ("jolnar_agent" as never) ? { ...l, exhausted: true } : l)) } } };
+
+    let removedCount = 0;
+    for (const { planetId, count } of docSucabanRemovedInfantry) {
+      let found: { systemId: import("../types/ids").SystemId; system: import("../types/GameState").SystemState; planet: PlanetState } | null = null;
+      for (const [systemId, system] of Object.entries(workingState.systems)) {
+        const planet = system.planets.find((p) => p.planetId === planetId);
+        if (planet) {
+          found = { systemId: systemId as import("../types/ids").SystemId, system, planet };
+          break;
+        }
+      }
+      if (!found) return { ok: false, error: `No planet ${planetId}.` };
+      const stack = (found.planet.unitsByPlayer[playerId] ?? []).find((s) => s.unitType === "infantry" && s.count > 0);
+      if (!stack || stack.count < count) return { ok: false, error: `This player doesn't have ${count} infantry on ${planetId}.` };
+      const updatedPlanet: PlanetState = { ...found.planet, unitsByPlayer: { ...found.planet.unitsByPlayer, [playerId]: (found.planet.unitsByPlayer[playerId] ?? []).map((s) => (s === stack ? { ...s, count: s.count - count } : s)).filter((s) => s.count > 0) } };
+      workingState = { ...workingState, systems: { ...workingState.systems, [found.systemId]: { ...found.system, planets: found.system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } } };
+      removedCount += count;
+    }
+    effectiveCost = Math.max(0, effectiveCost - removedCount);
+  }
   const ignoreColors: string[] = [];
+  if (useAnalyticalIgnoreColor) {
+    if (!hasAbility(player, asAbilityId("analytical"))) return { ok: false, error: "This player doesn't have ANALYTICAL." };
+    ignoreColors.push(useAnalyticalIgnoreColor);
+  }
   if (useResearchTeamAttachmentPlanetId) {
     const teamResult = useResearchTeamAttachment(workingState, playerId, useResearchTeamAttachmentPlanetId, rules);
     if (!teamResult.ok) return teamResult;
@@ -58,7 +121,7 @@ export function researchTechnology(
   const prereqCheck = checkTechPrerequisites(workingState, playerId, techId, rules, ignoreColors);
   if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
 
-  const spend = spendForCost(workingState, playerId, cost, exhaustPlanetIdsForResources, rules);
+  const spend = spendForCost(workingState, playerId, effectiveCost, exhaustPlanetIdsForResources, rules);
   if (!spend.ok) return spend;
 
   const updatedPlayer: Player = { ...spend.state.players[playerId], technologies: [...player.technologies, techId] };

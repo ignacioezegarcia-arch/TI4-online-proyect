@@ -439,7 +439,7 @@ export function announceRetreat(
 
 export function resolveSpaceCombatRound(
   state: GameState,
-  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[]; viscountUnlennBonus?: { playerId: PlayerId; unitType: UnitType }; gravleashManeuversUnitType?: UnitType },
+  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[]; viscountUnlennBonus?: { ownerId: PlayerId; targetPlayerId: PlayerId; unitType: UnitType }; gravleashManeuversUnitType?: UnitType },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -463,19 +463,19 @@ export function resolveSpaceCombatRound(
     return { ok: false, error: "RR 67.5: only a player with ships in this combat can submit its dice roll." };
   }
 
-  // Letnev "Viscount Unlenn" (agent): validated + exhausted here, right before this round's own dice entries get built, since her bonus die needs to already be reflected in them.
+  // Letnev "Viscount Unlenn" (agent): validated + exhausted here, right before this round's own dice entries get built, since her bonus die needs to already be reflected in them. FIXED: the owner (whoever holds Viscount Unlenn) need NOT be a combatant themselves — only the TARGET (whose unit actually gets the bonus die) must be.
   let workingState = state;
   if (action.viscountUnlennBonus) {
-    const unlennOwner = workingState.players[action.viscountUnlennBonus.playerId];
+    const unlennOwner = workingState.players[action.viscountUnlennBonus.ownerId];
     const unlennEntry = unlennOwner?.leaders.find((l) => l.leaderId === ("letnev_agent" as never));
     if (!unlennEntry) return { ok: false, error: "That player doesn't have Viscount Unlenn." };
     if (unlennEntry.exhausted) return { ok: false, error: "Viscount Unlenn is already exhausted." };
-    if (!combatants.includes(action.viscountUnlennBonus.playerId)) return { ok: false, error: "That player isn't a combatant in this space combat." };
+    if (!combatants.includes(action.viscountUnlennBonus.targetPlayerId)) return { ok: false, error: "That target isn't a combatant in this space combat." };
     workingState = {
       ...workingState,
       players: {
         ...workingState.players,
-        [action.viscountUnlennBonus.playerId]: { ...unlennOwner, leaders: unlennOwner.leaders.map((l) => (l.leaderId === ("letnev_agent" as never) ? { ...l, exhausted: true } : l)) },
+        [action.viscountUnlennBonus.ownerId]: { ...unlennOwner, leaders: unlennOwner.leaders.map((l) => (l.leaderId === ("letnev_agent" as never) ? { ...l, exhausted: true } : l)) },
       },
     };
   }
@@ -492,7 +492,14 @@ export function resolveSpaceCombatRound(
       const distinctShipTypes = new Set((workingState.systems[systemId]?.spaceUnitsByPlayer[action.playerId] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0).map((s) => s.unitType));
       gravleashManeuversBonus = { playerId: action.playerId, unitType: action.gravleashManeuversUnitType, bonusPerDie: distinctShipTypes.size };
     }
-    entries = buildSpaceCombatEntries(workingState, rules, systemId, pending.playerId, action.viscountUnlennBonus, gravleashManeuversBonus);
+    entries = buildSpaceCombatEntries(
+      workingState,
+      rules,
+      systemId,
+      pending.playerId,
+      action.viscountUnlennBonus && { targetPlayerId: action.viscountUnlennBonus.targetPlayerId, unitType: action.viscountUnlennBonus.unitType },
+      gravleashManeuversBonus,
+    );
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

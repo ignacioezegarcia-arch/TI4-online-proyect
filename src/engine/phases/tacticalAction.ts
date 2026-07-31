@@ -87,10 +87,28 @@ export function activateSystem(
     ? { ...state.systems, [action.systemId]: { ...activatedSystem, planets: updatedPlanets } }
     : state.systems;
 
+  // Jol-Nar "E-Res Siphons" (faction tech): "After another player
+  // activates a system that contains 1 or more of your ships, gain 4
+  // trade goods." Confirmed (tirules2.com/F_jol_nar): triggers
+  // regardless of hostile intent — just presence — but ONLY for an
+  // actual tactical-action system activation (not other ways a command
+  // token could land in a system, like Diplomacy's own primary ability,
+  // which never calls this function at all).
+  let players = state.players;
+  if (activatedSystem) {
+    for (const [ownerId, stacks] of Object.entries(activatedSystem.spaceUnitsByPlayer)) {
+      if (ownerId === action.playerId) continue;
+      const ownerPlayer = players[ownerId as PlayerId];
+      if (!ownerPlayer?.technologies.includes("e_res_siphons" as never)) continue;
+      if (!(stacks ?? []).some((s) => s.count > 0)) continue;
+      players = { ...players, [ownerId]: { ...ownerPlayer, tradeGoods: ownerPlayer.tradeGoods + 4 } };
+    }
+  }
+
   const nextState: GameState = {
     ...state,
     systems: systemsWithMagenDefenseGridInfantry,
-    players: { ...state.players, [player.id]: updatedPlayer },
+    players: { ...players, [player.id]: updatedPlayer },
     pendingTacticalAction: {
       playerId: action.playerId,
       systemId: action.systemId,

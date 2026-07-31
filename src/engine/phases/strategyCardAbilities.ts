@@ -1,7 +1,8 @@
 import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, SystemId, PlanetId, TechId, UnitUpgradeId, ObjectiveId, AgendaId, StrategyCardId } from "../types/ids";
+import { PlayerId, SystemId, PlanetId, TechId, UnitUpgradeId, ObjectiveId, AgendaId, StrategyCardId, asAbilityId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
+import { hasAbility } from "../rules/abilities";
 import { isAdjacent } from "../rules/adjacency";
 import { executeProduction } from "./production";
 import { researchTechnology, researchUnitUpgrade } from "./technology";
@@ -433,6 +434,18 @@ export function resolveStrategySecondaryEffect(
       return executeProduction(working, action.playerId, systemId, planetId, units, rules, undefined, true);
     }
     case "technology": {
+      // Jol-Nar "BRILLIANT" (faction ability, passive): "When you spend a command token to resolve the secondary ability of the 'Technology' strategy card, you may resolve the primary ability instead." Same free-tech + optional-paid-2nd-tech shape as the primary handler above, just triggered from the secondary's own payload/cost context.
+      if (hasAbility(player, asAbilityId("brilliant")) && p.useBrilliant) {
+        const freeTechId = p.techId as TechId;
+        const paidTechId = p.brilliantPaidTechId as TechId | undefined;
+        const paidSpendIds = (p.brilliantExhaustPlanetIdsForPaid as PlanetId[]) ?? [];
+        const free = researchTechnology(working, action.playerId, freeTechId, 0, [], rules);
+        if (!free.ok) return free;
+        if (!paidTechId) return free;
+        const ministerOfSciencesOwnerId = getLawOwner(free.state, "minister_of_sciences" as AgendaId);
+        const paidCost = ministerOfSciencesOwnerId === action.playerId ? 0 : 6;
+        return researchTechnology(free.state, action.playerId, paidTechId, paidCost, paidSpendIds, rules);
+      }
       const techId = p.techId as TechId;
       const spendIds = (p.exhaustPlanetIds as PlanetId[]) ?? [];
       // RR "Minister of Sciences": see the primary handler's own note — same free-research treatment for the owner here.

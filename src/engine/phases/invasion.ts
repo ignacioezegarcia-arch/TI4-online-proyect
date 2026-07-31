@@ -80,6 +80,8 @@ export function bombard(
      * otherwise.
      */
     targetPlayerIdByUnitType?: Partial<Record<import("../types/enums").UnitType, PlayerId>>;
+    /** Jol-Nar "Ta Zern" (commander, passive): "After you roll dice for a unit ability, you may reroll any of those dice." Applied INLINE, right after this bombardment's own initial roll resolves (same "reroll = reroll missed, in every practical sense" reasoning as every other reroll ability here) — bundled into the SAME action rather than a separate follow-up, since (unlike Crown of Thalnos's own reroll, which has a real subsequent decision point via a priority window) Bombardment's hits get counted and applied in one shot with nothing to interrupt in between. */
+    taZernRerolls?: { unitType: import("../types/enums").UnitType; newRolls: number[] }[];
   },
   rules: RuleData,
 ): ActionResult {
@@ -176,6 +178,22 @@ export function bombard(
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
     hitsByTarget[target] = result.hitsScoredByPlayer[action.playerId] ?? 0;
+
+    // Jol-Nar "Ta Zern" (commander, passive): applied inline, right here, against THIS target's own missed dice specifically. KNOWN SCOPE LIMIT: only supported for the single-target case (the overwhelming majority of bombardments) — with 2+ coexisting defenders targeted differently per unit type, this project doesn't currently disambiguate which target a rerolled die's own bonus hit should go to, so Ta Zern simply isn't offered there (this specific narrower case, not silently mishandled).
+    if (action.taZernRerolls && new Set(entryTargets).size === 1) {
+      const player = state.players[action.playerId];
+      const commanderEntry = player?.leaders.find((l) => l.leaderId === ("jolnar_commander" as never));
+      if (!commanderEntry || commanderEntry.locked) return { ok: false, error: "This player doesn't have an unlocked Ta Zern." };
+      for (const { unitType, newRolls } of action.taZernRerolls) {
+        const availableMisses = result.missedDiceByPlayerAndType[action.playerId]?.[unitType] ?? 0;
+        if (newRolls.length > availableMisses) {
+          return { ok: false, error: `Ta Zern: tried to reroll ${newRolls.length} ${unitType} dice, only ${availableMisses} missed.` };
+        }
+        const matchingEntry = targetEntries.find((e) => e.unitType === unitType);
+        if (!matchingEntry) return { ok: false, error: `This player has no ${unitType} in this bombardment.` };
+        hitsByTarget[target] += newRolls.filter((r) => r >= matchingEntry.hitOn).length;
+      }
+    }
   }
 
   // "Bunker"/"Blitz" timing: this invasion step has now definitively started, whether or not this roll scores a hit.
@@ -932,7 +950,7 @@ export function assignSpaceCannonDefenseHits(
 
 export function resolveGroundCombatRound(
   state: GameState,
-  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[]; evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" } },
+  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[]; evelynDelouisBonus?: { ownerId: PlayerId; targetPlayerId: PlayerId; unitType: "infantry" | "mech" } },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -959,26 +977,34 @@ export function resolveGroundCombatRound(
     return { ok: false, error: "RR 38.1: only a player with ground forces in this combat can submit its dice roll." };
   }
 
-  // Sol "Evelyn DeLouis" (agent): validated + exhausted here, right before the round's own dice entries get built, since her bonus die needs to already be reflected in them.
+  // Sol "Evelyn DeLouis" (agent): validated + exhausted here, right before the round's own dice entries get built, since her bonus die needs to already be reflected in them. FIXED: the owner (whoever holds Evelyn) need NOT be a combatant themselves — an agent's ability can be used to benefit ANY player, including one who isn't the owner and isn't even fighting here; only the TARGET (whose unit actually gets the bonus die) must be a combatant.
   let workingState = state;
   if (action.evelynDelouisBonus) {
-    const evelynOwner = workingState.players[action.evelynDelouisBonus.playerId];
+    const evelynOwner = workingState.players[action.evelynDelouisBonus.ownerId];
     const evelynEntry = evelynOwner?.leaders.find((l) => l.leaderId === ("sol_agent" as never));
     if (!evelynEntry) return { ok: false, error: "That player doesn't have Evelyn DeLouis." };
     if (evelynEntry.exhausted) return { ok: false, error: "Evelyn DeLouis is already exhausted." };
-    if (!combatants.includes(action.evelynDelouisBonus.playerId)) return { ok: false, error: "That player isn't a combatant in this ground combat." };
+    if (!combatants.includes(action.evelynDelouisBonus.targetPlayerId)) return { ok: false, error: "That target isn't a combatant in this ground combat." };
     workingState = {
       ...workingState,
       players: {
         ...workingState.players,
-        [action.evelynDelouisBonus.playerId]: { ...evelynOwner, leaders: evelynOwner.leaders.map((l) => (l.leaderId === ("sol_agent" as never) ? { ...l, exhausted: true } : l)) },
+        [action.evelynDelouisBonus.ownerId]: { ...evelynOwner, leaders: evelynOwner.leaders.map((l) => (l.leaderId === ("sol_agent" as never) ? { ...l, exhausted: true } : l)) },
       },
     };
   }
 
   let entries;
   try {
-    entries = buildGroundCombatEntries(workingState, rules, planet, pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined, pending.groundCombatParticipantIds, action.evelynDelouisBonus, pending.tekklarLegionHolderIdThisCombat);
+    entries = buildGroundCombatEntries(
+      workingState,
+      rules,
+      planet,
+      pending.groundCombatAttackerBlockedThisRound ? pending.playerId : undefined,
+      pending.groundCombatParticipantIds,
+      action.evelynDelouisBonus && { targetPlayerId: action.evelynDelouisBonus.targetPlayerId, unitType: action.evelynDelouisBonus.unitType },
+      pending.tekklarLegionHolderIdThisCombat,
+    );
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
