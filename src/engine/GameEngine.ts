@@ -164,6 +164,7 @@ import { useStarForge, useTheNucleus, applyStellarGenesisOnGain } from "./rules/
 import { useOrbitalDrop, useZsThunderboltM2Deploy, resolveGenesisCapacityOverflow, useMilitarySupport, useClaireGibson, useJaceX } from "./rules/sol";
 import { useRearAdmiralFarran, useDunlainReaperDeploy, useDarktalonTreilla, useMunitionsReserves, resolveFleetCleanup, useWarFunding, useWarFundingOmega } from "./rules/letnev";
 import { useTekklarLegion, useExotriremeIISelfDestruct, useTro, useNorrSupremacy, useGhomSekkus, useShvalHarbinger } from "./rules/sardakk";
+import { useResearchAgreement, useSpatialConduitCylinder, useRinGeneticMemory } from "./rules/jolnar";
 import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective, getLawOwner } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
@@ -386,7 +387,7 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         result = resolveStrategySecondary(state, action, rules);
         break;
       case "RESEARCH_TECHNOLOGY":
-        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId, action.exhaustPlanetIdsForTechSpecialty);
+        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId, action.exhaustPlanetIdsForTechSpecialty, action.useAnalyticalIgnoreColor, action.docSucabanRemovedInfantry, action.specializedCompoundsPlanetId);
         break;
       case "RESEARCH_UNIT_UPGRADE":
         result = researchUnitUpgrade(
@@ -987,6 +988,15 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_SHVAL_HARBINGER":
         result = useShvalHarbinger(state, action);
+        break;
+      case "USE_RESEARCH_AGREEMENT":
+        result = useResearchAgreement(state, action, rules);
+        break;
+      case "USE_SPATIAL_CONDUIT_CYLINDER":
+        result = useSpatialConduitCylinder(state, action);
+        break;
+      case "USE_RIN_GENETIC_MEMORY":
+        result = useRinGeneticMemory(state, action, rules);
         break;
       case "USE_STAR_FORGE":
         result = useStarForge(state, action, rules);
