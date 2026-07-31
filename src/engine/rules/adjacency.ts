@@ -1,5 +1,5 @@
 import { GameState } from "../types/GameState";
-import { SystemId, asSystemId, AgendaId } from "../types/ids";
+import { SystemId, asSystemId, AgendaId, PlayerId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { isLawActiveWithOutcome } from "../phases/agendaEffects";
 
@@ -26,7 +26,13 @@ import { isLawActiveWithOutcome } from "../phases/agendaEffects";
  * a reasonable, flagged simplification rather than threading `rules`
  * through every single caller for one edge case.
  */
-export function getAdjacentSystems(state: GameState, systemId: SystemId, rules?: RuleData): SystemId[] {
+export function getAdjacentSystems(
+  state: GameState,
+  systemId: SystemId,
+  rules?: RuleData,
+  /** Jol-Nar "Spatial Conduit Cylinder" (faction tech, exhaustable): "Exhaust after you activate a system that contains 1 or more of your units; that system is treated as adjacent to all other systems that contain 1 or more of your units during this system activation." Confirmed (tirules2.com/F_jol_nar): gravity-rift removal rolls still apply, and ships can still pass THROUGH intermediate systems en route (this is an adjacency override for the purposes of things that check adjacency directly, not a teleport that removes movement mechanics entirely). Player-specific — unlike every OTHER adjacency source in this function, this one only ever applies for the ONE player who activated it, checked via this optional param (defaults to not applying at all, for every call site that doesn't pass it). */
+  forPlayerId?: PlayerId,
+): SystemId[] {
   const physical = state.boardAdjacency[systemId] ?? [];
   const thisSystem = state.systems[systemId];
   const bySystemWormholes = thisSystem?.wormholes ?? [];
@@ -108,7 +114,16 @@ export function getAdjacentSystems(state: GameState, systemId: SystemId, rules?:
       .map((sys) => sys.systemId);
   }
 
-  return Array.from(new Set([...physical, ...wormholeLinked, ...breachLinked, ...fractureLinked]));
+  // Jol-Nar "Spatial Conduit Cylinder": only relevant if THIS is the specific system the specific player activated it in, this same tactical action.
+  let spatialConduitLinked: SystemId[] = [];
+  const conduitState = state.pendingTacticalAction?.spatialConduitCylinderActive;
+  if (forPlayerId && conduitState && conduitState.playerId === forPlayerId && conduitState.systemId === systemId) {
+    spatialConduitLinked = Object.entries(state.systems)
+      .filter(([sysId, sys]) => sysId !== systemId && (sys.spaceUnitsByPlayer[forPlayerId] ?? []).some((s) => s.count > 0))
+      .map(([sysId]) => sysId as SystemId);
+  }
+
+  return Array.from(new Set([...physical, ...wormholeLinked, ...breachLinked, ...fractureLinked, ...spatialConduitLinked]));
 }
 
 export function isAdjacent(state: GameState, a: SystemId, b: SystemId, rules?: RuleData): boolean {

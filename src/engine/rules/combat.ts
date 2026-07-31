@@ -74,6 +74,8 @@ export interface CombatUnitEntry {
   hitOn: number;
   /** RR "The Crown of Thalnos": which unit type this entry's dice belong to — every entry built by buildSpaceCombatEntries/buildGroundCombatEntries already corresponds to exactly ONE (player, unitType) pair (stacks are already split by type), so this is populated there. Optional/undefined for entries where per-type tracking doesn't matter (bombardment, Space Cannon, AFB — none of those are ever rerollable). */
   unitType?: UnitType;
+  /** Jol-Nar "J.N.S. Hylarim" (flagship, Bonus Hits): true only for THIS specific player's own flagship entry, when they're actually Jol-Nar — computed at entry-build time (buildSpaceCombatEntries) since resolveCombatRound itself has no faction context to check this against a bare unitType === "flagship", which would otherwise wrongly apply to every OTHER faction's flagship too. */
+  hylarimBonusHits?: boolean;
 }
 
 export interface CombatRoundResult {
@@ -101,6 +103,10 @@ export function resolveCombatRound(entries: CombatUnitEntry[], diceRolls: number
         const byType = missedDiceByPlayerAndType[entry.playerId] ?? {};
         byType[entry.unitType] = (byType[entry.unitType] ?? 0) + 1;
         missedDiceByPlayerAndType[entry.playerId] = byType;
+      }
+      // Jol-Nar "J.N.S. Hylarim" (flagship, Bonus Hits): "each result of 9 or 10, before applying modifiers, produces 2 additional hits." Checked against the RAW `roll` value directly (not entry.hitOn, which already has modifiers baked in) — on top of whatever the normal hit/miss check above already produced, not instead of it.
+      if (entry.hylarimBonusHits && roll >= 9) {
+        hitsScoredByPlayer[entry.playerId] = (hitsScoredByPlayer[entry.playerId] ?? 0) + 2;
       }
     }
   }
@@ -152,7 +158,8 @@ export function buildSpaceCombatEntries(
   systemId: SystemId,
   activePlayerId: PlayerId,
   /** Letnev "Viscount Unlenn" (agent): "you may exhaust this card to choose 1 ship in the active system; that ship rolls 1 additional die during this combat round." Confirmed (yjmrobert.com/tirules/factions/f_letnev): "only applies to combat rolls" (not AFB) and "the extra die is mandatory for the chosen unit" — a flat +1, same shape as Sol's Evelyn DeLouis but for ships/space combat instead of ground forces/ground combat. */
-  viscountUnlennBonus?: { playerId: PlayerId; unitType: UnitType },
+  /** Letnev "Viscount Unlenn" (agent): "you may exhaust this card to choose 1 ship in the active system; that ship rolls 1 additional die during this combat round." Confirmed (yjmrobert.com/tirules/factions/f_letnev): "only applies to combat rolls" (not AFB) and "the extra die is mandatory for the chosen unit" — a flat +1, same shape as Sol's Evelyn DeLouis but for ships/space combat instead of ground forces/ground combat. FIXED: separated ownership (who holds Viscount Unlenn, need not be a combatant) from the target beneficiary (whose unit gets the bonus, must be a combatant) — an agent's ability can benefit ANY player. */
+  viscountUnlennBonus?: { targetPlayerId: PlayerId; unitType: UnitType },
   /** Letnev "Gravleash Maneuvers" (breakthrough): "Before you roll dice during space combat, apply +X to the results of 1 of your ship's rolls, where X is the number of ship types you have in the combat." Applied as a -X to hitOn for the chosen unit type (same mathematical convention as every other die-modifier in this file) — X itself is computed by the caller (phases/spaceCombat.ts's own resolveSpaceCombatRound), since it needs a count of distinct ship TYPES this player has in the fight, which this function doesn't otherwise track as a single number. */
   gravleashManeuversBonus?: { playerId: PlayerId; unitType: UnitType; bonusPerDie: number },
 ): CombatUnitEntry[] {
@@ -189,18 +196,21 @@ export function buildSpaceCombatEntries(
       const fighterPrototypeBonus = getFighterPrototypeHitOnBonus(state, playerId, stack.unitType);
       // Sardakk N'orr "UNRELENTING" (faction ability, passive): "+1 to the result of each of your unit's combat rolls." Confirmed (tirules2.com/F_norr): does NOT affect AFB, Bombardment, or Space Cannon rolls — this function only ever builds NORMAL combat-round entries, so that scoping is automatic just by living here.
       const unrelentingBonus = hasAbility(player, asAbilityId("unrelenting")) ? 1 : 0;
+      // Jol-Nar "FRAGILE" (faction ability, passive, mandatory): "-1 to the result of each of your unit's combat rolls." Confirmed (tirules2.com/F_jol_nar): same AFB/Bombardment/Space Cannon exclusion as UNRELENTING, and mandatory (not "may") — automatic here since it's a flat modifier, not a player choice at all.
+      const fragileBonus = hasAbility(player, asAbilityId("fragile")) ? -1 : 0;
       // Sardakk N'orr "C'Morran N'orr" (flagship, Fleet Combat Bonus): "+1 to the result of each of your OTHER ships' combat rolls in this system." Same AFB/Bombardment/Space Cannon exclusion as UNRELENTING above. Never applies to the flagship's own roll (only "other" ships).
       const hasCMorranNorrInSystem = stack.unitType !== "flagship" && (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.unitType === "flagship" && s.count > 0) && player.factionId === ("sardakk" as never);
-      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus - unrelentingBonus - (hasCMorranNorrInSystem ? 1 : 0);
-      const viscountBonus = viscountUnlennBonus && viscountUnlennBonus.playerId === playerId && viscountUnlennBonus.unitType === stack.unitType ? 1 : 0;
+      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus - unrelentingBonus - fragileBonus - (hasCMorranNorrInSystem ? 1 : 0);
+      const viscountBonus = viscountUnlennBonus && viscountUnlennBonus.targetPlayerId === playerId && viscountUnlennBonus.unitType === stack.unitType ? 1 : 0;
       const totalDiceForStack = stack.count * diceCountPerUnit + viscountBonus;
+      const hylarimBonusHits = stack.unitType === "flagship" && player.factionId === ("jolnar" as never);
 
       // Letnev "Gravleash Maneuvers": the bonus only ever applies to exactly 1 of this player's own dice — split it off into its own entry (diceCount 1) with the boosted hitOn, leaving the rest of the stack's dice at the normal value.
       const usesGravleash = gravleashManeuversBonus && gravleashManeuversBonus.playerId === playerId && gravleashManeuversBonus.unitType === stack.unitType && totalDiceForStack > 0;
       if (usesGravleash) {
-        entries.push({ playerId, diceCount: 1, hitOn: hitOn - gravleashManeuversBonus!.bonusPerDie, unitType: stack.unitType });
+        entries.push({ playerId, diceCount: 1, hitOn: hitOn - gravleashManeuversBonus!.bonusPerDie, unitType: stack.unitType, hylarimBonusHits });
         if (totalDiceForStack > 1) {
-          entries.push({ playerId, diceCount: totalDiceForStack - 1, hitOn, unitType: stack.unitType });
+          entries.push({ playerId, diceCount: totalDiceForStack - 1, hitOn, unitType: stack.unitType, hylarimBonusHits });
         }
         continue;
       }
@@ -210,6 +220,7 @@ export function buildSpaceCombatEntries(
         diceCount: totalDiceForStack,
         hitOn,
         unitType: stack.unitType,
+        hylarimBonusHits,
       });
     }
   }
@@ -240,7 +251,8 @@ export function buildGroundCombatEntries(
    */
   participantIds?: [PlayerId, PlayerId],
   /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Confirmed (yjmrobert.com/tirules/factions/f_sol): "only applies to combat rolls" — a flat +1 die for the CASTER's own chosen unit type's stack, not a multiplier, and never applicable to any OTHER roll type (Bombardment-style abilities some units have) since this function only ever builds normal combat-round entries in the first place. */
-  evelynDelouisBonus?: { playerId: PlayerId; unitType: "infantry" | "mech" },
+  /** Sol "Evelyn DeLouis" (agent): "you may exhaust this card to choose 1 ground force in the active system; that ground force rolls 1 additional die during that combat round." Confirmed (yjmrobert.com/tirules/factions/f_sol): "only applies to combat rolls" (not AFB) and "the extra die is mandatory for the chosen unit" — a flat +1. FIXED: previously conflated "who owns Evelyn" with "whose unit gets the bonus" into a single playerId field, meaning the agent could only ever boost its OWNER's own unit — the card text has NO such restriction ("1 ground force in the active system", not "1 of your own"); an agent's own ability can be used to benefit ANY player, including handing the benefit to someone else entirely (an ally, a favor, etc.) — the owner just decides whether to use it at all. targetPlayerId/unitType now identify the BENEFICIARY separately from ownership (checked at the call site in phases/invasion.ts's own resolveGroundCombatRound). */
+  evelynDelouisBonus?: { targetPlayerId: PlayerId; unitType: "infantry" | "mech" },
   /** Sardakk N'orr "Tekklar Legion" (promissory note): "At the start of an invasion combat: apply +1 to the result of each of your unit's combat rolls during this combat. If your opponent is the N'orr player, apply -1 to the result of each of their unit's combat rolls during this combat." Confirmed (tirules2.com/F_norr): same AFB/Bombardment/Space Cannon exclusion as UNRELENTING/C'Morran N'orr (this function only ever builds normal ground-combat entries). */
   tekklarLegionHolderId?: PlayerId,
 ): CombatUnitEntry[] {
@@ -269,12 +281,15 @@ export function buildGroundCombatEntries(
       // half of this version's text.
       const diceMultiplier =
         usesCodex4Version(state.mode) && player.technologies.includes(asTechId("x89_bacterial_weapon")) ? 2 : 1;
-      const evelynBonus = evelynDelouisBonus && evelynDelouisBonus.playerId === playerId && evelynDelouisBonus.unitType === stack.unitType ? 1 : 0;
+      const evelynBonus = evelynDelouisBonus && evelynDelouisBonus.targetPlayerId === playerId && evelynDelouisBonus.unitType === stack.unitType ? 1 : 0;
       // Sardakk N'orr "UNRELENTING" (faction ability, passive): "+1 to the result of each of your unit's combat rolls." Confirmed: does NOT affect AFB/Bombardment/Space Cannon — automatic here, since this function only ever builds normal ground-combat entries.
       const unrelentingBonus = hasAbility(player, asAbilityId("unrelenting")) ? 1 : 0;
+      // Jol-Nar "FRAGILE" (faction ability, passive, mandatory): "-1 to the result of each of your unit's combat rolls." Jol-Nar's own "Shield Paling" mech grants "Fragile Immunity" to INFANTRY specifically on the SAME planet — confirmed (tirules2.com/F_jol_nar): "the Shield Paling itself is still affected by FRAGILE" (only infantry are exempt, never the mech itself).
+      const hasShieldPalingOnPlanet = stack.unitType === "infantry" && (planet.unitsByPlayer[playerId] ?? []).some((s) => s.unitType === "mech" && s.count > 0) && player.factionId === ("jolnar" as never);
+      const fragileBonus = hasAbility(player, asAbilityId("fragile")) && !hasShieldPalingOnPlanet ? -1 : 0;
       // Sardakk N'orr "Tekklar Legion" (promissory note): +1 for the holder, -1 for their opponent specifically if that opponent is the N'orr player.
       const tekklarLegionBonus = tekklarLegionHolderId === playerId ? 1 : tekklarLegionHolderId !== undefined && player.factionId === ("sardakk" as never) ? -1 : 0;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus - unrelentingBonus - tekklarLegionBonus, unitType: stack.unitType });
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus - unrelentingBonus - fragileBonus - tekklarLegionBonus, unitType: stack.unitType });
     }
   }
   return entries;

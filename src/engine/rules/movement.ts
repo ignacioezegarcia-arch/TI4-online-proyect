@@ -107,7 +107,7 @@ export function canShipReachSystem(
       const budget = maxBudget + (current.riftUsed ? 1 : 0);
       if (current.hops >= budget) continue;
 
-      for (const neighborId of getAdjacentSystems(state, current.systemId, rules)) {
+      for (const neighborId of getAdjacentSystems(state, current.systemId, rules, playerId)) {
         const hops = current.hops + 1;
         if (hops > budget) continue;
 
