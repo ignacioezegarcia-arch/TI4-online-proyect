@@ -228,6 +228,7 @@ export function buildExplorationCardsLookup(explorationCardsFile: {
         techSpecialtyBonus?: string;
         fallbackResourceBonus?: number;
         fallbackInfluenceBonus?: number;
+        purge?: boolean;
       }[];
     }
   >;
@@ -245,6 +246,7 @@ export function buildExplorationCardsLookup(explorationCardsFile: {
       techSpecialtyBonus?: string;
       fallbackResourceBonus?: number;
       fallbackInfluenceBonus?: number;
+      purge?: boolean;
     }
   > = {};
   for (const [deckName, deck] of Object.entries(explorationCardsFile.decks)) {
@@ -260,6 +262,7 @@ export function buildExplorationCardsLookup(explorationCardsFile: {
         techSpecialtyBonus: c.techSpecialtyBonus,
         fallbackResourceBonus: c.fallbackResourceBonus,
         fallbackInfluenceBonus: c.fallbackInfluenceBonus,
+        purge: c.purge,
       };
     }
   }
