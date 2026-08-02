@@ -7,7 +7,7 @@ import { applyHitAssignments, getMoraleBoostHitOnBonus } from "../rules/combat";
 import { getLawOwner, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { researchTechnology } from "./technology";
 import { getAdjacentSystems, arePlayersNeighbors } from "../rules/adjacency";
-import { drawExplorationCard, applyExplorationCard } from "./exploration";
+import { drawExplorationCard, applyExplorationCard, ExplorationCardChoice } from "./exploration";
 import { revealAgenda, continueAgendaPhaseAfterElectionReaction } from "./agendaPhase";
 import { drawActionCard } from "./actionCards";
 import { advanceActivePlayer } from "./actionPhase";
@@ -983,7 +983,7 @@ export function playDivertFunding(
 }
 
 /** RR "Exploration Probe": explore a frontier token in or adjacent to a system containing this player's ships — same underlying draw/apply as phases/exploration.ts's own exploreFrontier, but WITHOUT that function's Dark Energy Tap gate (this card is its own, independent trigger) and with an "in or adjacent" target instead of "the currently-activated system". */
-export function playExplorationProbe(state: GameState, action: { type: "PLAY_EXPLORATION_PROBE"; playerId: PlayerId; systemId: SystemId }, rules: RuleData): ActionResult {
+export function playExplorationProbe(state: GameState, action: { type: "PLAY_EXPLORATION_PROBE"; playerId: PlayerId; systemId: SystemId; choice?: ExplorationCardChoice }, rules: RuleData): ActionResult {
   const played = playCard(state, action.playerId, "exploration_probe");
   if (!played.ok) return played;
 
@@ -1007,11 +1007,11 @@ export function playExplorationProbe(state: GameState, action: { type: "PLAY_EXP
   const drawResult = drawExplorationCard(deck, discardPile);
   if (drawResult.drawn) {
     const cardId = drawResult.drawn;
-    const result = applyExplorationCard(nextState, action.playerId, action.systemId, null, cardId, rules);
+    const result = applyExplorationCard(nextState, action.playerId, action.systemId, null, cardId, rules, action.choice);
     nextState = result.state;
     events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: "frontier" });
     const card = rules.explorationCards[cardId];
-    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea;
+    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea && !card?.purge;
     nextState = {
       ...nextState,
       explorationDecks: { ...nextState.explorationDecks!, frontier: drawResult.deck },

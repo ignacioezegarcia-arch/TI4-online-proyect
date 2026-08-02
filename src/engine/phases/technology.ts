@@ -5,6 +5,7 @@ import { RuleData } from "../types/RuleData";
 import { maybeQueueAntiIntellectualRevolutionDestruction, isLawActiveWithOutcome } from "./agendaEffects";
 import { hasQuantumcoreUniversalSynergy } from "../rules/relics";
 import { hasAbility } from "../rules/abilities";
+import { hasCodex, hasThundersEdge } from "../rules/gameMode";
 
 /**
  * RR 90 TECHNOLOGY. There's no general "spend resources, research anything"
@@ -346,14 +347,75 @@ function checkPrerequisitesAgainst(
 }
 
 /** Pays `cost` from exhausting the given planets for resources, falling back to trade goods for any shortfall. Shared by both functions above. */
-function spendForCost(
+/**
+ * Shared resource-payment logic — spends from specific exhausted
+ * planets first (RR 26), falling back to trade goods for the rest.
+ * Originally research-only; now also used by phases/production.ts's own
+ * executeProduction (previously that function spent from a flat,
+ * never-properly-maintained player.resourcesAvailable cache instead of
+ * real per-planet exhaustion — see that function's own doc comment,
+ * which used to flag this as a known scope cut). Exported so BOTH
+ * consumers share the exact same Archon's Gift/Xxekir Grom Ω handling
+ * rather than duplicating (and risking drifting) that logic twice.
+ */
+export function spendForCost(
   state: GameState,
   playerId: PlayerId,
   cost: number,
   exhaustPlanetIdsForResources: PlanetId[],
   rules: RuleData,
+  /**
+   * Generalized "treat influence as resources for every planet exhausted
+   * in THIS call" override, independent of the player's own permanent
+   * Xxcha-specific abilities below. Needed because Xxcha's own Archon's
+   * Gift/Xxekir Grom Ω aren't the ONLY sources of this exact mechanic —
+   * e.g. the "Freelancers" exploration card ("you may spend influence as
+   * if it were resources to produce THIS unit") grants it to ANY
+   * faction, but only for that one specific production, not
+   * permanently. Rather than hardcoding a second faction check for every
+   * future source of this same effect, callers can just pass this
+   * directly. `true` behaves like Archon's Gift (max of the two per
+   * planet); Xxekir Grom Ω's own SUMMED behavior remains its own
+   * player-level check below, since no other known source combines
+   * rather than maxes.
+   */
+  treatInfluenceAsResourcesForThisCall = false,
 ): ActionResult {
   if (cost <= 0) return { ok: true, state, events: [] };
+
+  // Xxcha "Archon's Gift" (Breakthrough ability): "You can spend
+  // influence as if it were resources. You can spend resources as if it
+  // were influence." Confirmed (yjmrobert.com/tirules/factions/f_xxcha):
+  // a single source (a planet) contributes as ONE OR THE OTHER, never
+  // split between both — modeled here as simply taking whichever of the
+  // 2 values is higher for each exhausted planet, since this player is
+  // free to declare it as resources regardless of which is actually
+  // printed higher. This function is shared by BOTH research
+  // (phases/technology.ts) and production (phases/production.ts), so
+  // this fungibility now applies to both, not just research.
+  const archonsGiftActive =
+    treatInfluenceAsResourcesForThisCall ||
+    (state.players[playerId]?.hasBreakthrough && state.players[playerId]?.factionId === ("xxcha" as never));
+  // Xxcha "Xxekir Grom — POLITICAL DATA NEXUS Ω" (hero, Codex version,
+  // passive — unlike the ΩΩ Thunder's Edge version, which is a single-
+  // use purged ACTION): "When you exhaust planets, combine the values of
+  // their resources and influence. Treat the combined value as if it
+  // were both resources and influence." Confirmed
+  // (yjmrobert.com/tirules/factions/f_xxcha): combined value spent as
+  // EITHER resources or influence, never both/split (same shape as
+  // Archon's Gift, just SUMMED instead of maxed) — "only changes
+  // spendable influence/resources, not the value for other purposes"
+  // (production limit, Integrated Economy, Elder Qanoj's own unlock,
+  // Amass Wealth/Hoard Raw Materials objectives, Mining Initiative,
+  // Uprising — none of those touch spendForCost, so unaffected here).
+  // Only active if this player's own unlocked hero IS Ω specifically —
+  // gated by game mode (Thunder's Edge supersedes with ΩΩ instead).
+  const xxekirGromOmegaActive = (() => {
+    const p = state.players[playerId];
+    if (!p || p.factionId !== ("xxcha" as never) || hasThundersEdge(state.mode) || !hasCodex(state.mode)) return false;
+    const heroEntry = p.leaders.find((l) => l.leaderId === ("xxcha_hero" as never));
+    return !!heroEntry && !heroEntry.locked;
+  })();
 
   let resources = 0;
   let nextState = state;
@@ -364,7 +426,7 @@ function spendForCost(
     if (planet.exhausted) return { ok: false, error: `${planetId} is already exhausted.` };
     const data = rules.planets[planetId];
     if (!data) return { ok: false, error: `No static data for ${planetId}.` };
-    resources += data.resources;
+    resources += xxekirGromOmegaActive ? data.resources + data.influence : archonsGiftActive ? Math.max(data.resources, data.influence) : data.resources;
     const [systemId, system] = entry!;
     nextState = {
       ...nextState,

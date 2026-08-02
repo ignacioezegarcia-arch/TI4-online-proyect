@@ -177,7 +177,17 @@ export function getEffectiveProducesQuantity(state: GameState, unitType: UnitTyp
 
 /** RR "Demilitarized Zone": is this planet currently under this agenda's own permanent restriction (units cannot land, be produced, or be placed there)? Checked at every "place a unit on a planet" call site this project has. */
 export function isDemilitarizedZone(planet: { attachmentIds: string[] }): boolean {
-  return planet.attachmentIds.includes("demilitarized_zone");
+  // 2 SEPARATE sources of this same restriction, with 2 DIFFERENT
+  // underlying ids: the agenda "Demilitarized Zone" (data/agendas.json's
+  // own id, "demilitarized_zone") and the CULTURAL exploration card of
+  // the same name (data/explorationCards.json's own id,
+  // "demilitarized_zone_explore" — deliberately suffixed to avoid
+  // colliding with the agenda's own id when both exist as separate
+  // entries in rules.explorationCards/rules lookups). Previously only
+  // the agenda's own id was checked here — a planet that got this
+  // restriction via the EXPLORATION CARD specifically was silently never
+  // actually restricted at all.
+  return planet.attachmentIds.includes("demilitarized_zone") || planet.attachmentIds.includes("demilitarized_zone_explore");
 }
 
 // ---------------------------------------------------------------------

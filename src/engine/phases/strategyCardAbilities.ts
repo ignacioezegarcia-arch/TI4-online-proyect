@@ -357,8 +357,9 @@ export function resolveStrategySecondaryEffect(
   skipCost?: boolean,
 ): ActionResult {
   // Leadership's secondary is the one explicit exception to the "costs 1 strategy token" rule.
+  // Hacan "MASTERS OF TRADE" (faction ability, passive): "You do not have to spend a command token to resolve the secondary ability of the 'Trade' strategy card." A second, similarly-scoped exception — only for "trade" specifically, only for a player who actually has this ability.
   let charged = player;
-  if (action.cardId !== "leadership" && !skipCost) {
+  if (action.cardId !== "leadership" && !skipCost && !(action.cardId === "trade" && hasAbility(player, asAbilityId("masters_of_trade")))) {
     const charge = chargeSecondaryToken(player);
     if (!charge.ok) return charge;
     charged = charge.player;
@@ -421,6 +422,7 @@ export function resolveStrategySecondaryEffect(
       const systemId = p.systemId as SystemId;
       const planetId = p.planetId as PlanetId;
       const units = p.units as { unitType: import("../types/enums").UnitType; count: number }[];
+      const exhaustPlanetIdsForResources = p.exhaustPlanetIdsForResources as PlanetId[] | undefined;
       // RR 99.3: this secondary is specifically restricted to a space dock
       // in the player's OWN home system — not any system they happen to
       // control a producer in. Previously unchecked entirely.
@@ -431,7 +433,7 @@ export function resolveStrategySecondaryEffect(
         ([pid, stacks]) => pid !== action.playerId && (stacks ?? []).some((s) => s.count > 0),
       );
       if (enemyShipsPresent) return { ok: false, error: "RR: that system contains another player's ships." };
-      return executeProduction(working, action.playerId, systemId, planetId, units, rules, undefined, true);
+      return executeProduction(working, action.playerId, systemId, planetId, units, rules, undefined, true, undefined, exhaustPlanetIdsForResources);
     }
     case "technology": {
       // Jol-Nar "BRILLIANT" (faction ability, passive): "When you spend a command token to resolve the secondary ability of the 'Technology' strategy card, you may resolve the primary ability instead." Same free-tech + optional-paid-2nd-tech shape as the primary handler above, just triggered from the secondary's own payload/cost context.

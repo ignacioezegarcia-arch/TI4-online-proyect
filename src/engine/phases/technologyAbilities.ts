@@ -6,7 +6,7 @@ import { RuleData, getUnitStats } from "../types/RuleData";
 import { getEffectivePlanetStats } from "../rules/planetStats";
 import { isLawActiveWithOutcome, isDemilitarizedZone } from "./agendaEffects";
 import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
-import { applyExplorationCard, drawExplorationCard } from "./exploration";
+import { applyExplorationCard, drawExplorationCard, ExplorationCardChoice } from "./exploration";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 import { executeProduction } from "./production";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
@@ -481,7 +481,7 @@ export function useTransitDiodes(
 /** RR "Scanlink Drone Network": when activating a system, explore 1 planet there that has this player's own units on it — independent of RR 35's normal "just gained control" trigger, and independent of whether it's already been explored. Not exhaustable — repeatable every tactical action. */
 export function useScanlinkDroneNetwork(
   state: GameState,
-  action: { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" },
+  action: { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous"; choice?: ExplorationCardChoice },
   rules: RuleData,
 ): ActionResult {
   if (!hasPoKContent(state.mode)) {
@@ -524,11 +524,11 @@ export function useScanlinkDroneNetwork(
   const drawResult = drawExplorationCard(deck, discardPile);
   if (drawResult.drawn) {
     const cardId = drawResult.drawn;
-    const result = applyExplorationCard(nextState, action.playerId, systemId, action.planetId, cardId, rules);
+    const result = applyExplorationCard(nextState, action.playerId, systemId, action.planetId, cardId, rules, action.choice);
     nextState = result.state;
     events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: trait });
     const card = rules.explorationCards[cardId];
-    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea;
+    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea && !card?.purge;
     nextState = {
       ...nextState,
       explorationDecks: { ...nextState.explorationDecks!, [trait]: drawResult.deck },
@@ -543,7 +543,7 @@ export function useScanlinkDroneNetwork(
 /** RR "Sling Relay": a component action (uses this player's whole turn, same as X-89 Bacterial Weapon) — exhaust, produce 1 ship in ANY system containing 1 of this player's space docks, paying its normal cost against that dock's own Production limit (same mechanics as PRODUCE_UNITS/executeProduction — this just isn't restricted to the player's currently-activated system). */
 export function useSlingRelay(
   state: GameState,
-  action: { type: "USE_SLING_RELAY"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; unitType: UnitType; count: number },
+  action: { type: "USE_SLING_RELAY"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; unitType: UnitType; count: number; exhaustPlanetIdsForResources?: PlanetId[] },
   rules: RuleData,
 ): ActionResult {
   if (state.phase !== "action") return { ok: false, error: "RR: this component action only applies during the action phase." };
@@ -554,7 +554,7 @@ export function useSlingRelay(
   const techCheck = ownsReadiedTech(player, "sling_relay");
   if (!techCheck.ok) return techCheck;
 
-  const productionResult = executeProduction(state, action.playerId, action.systemId, action.planetId, [{ unitType: action.unitType, count: action.count }], rules);
+  const productionResult = executeProduction(state, action.playerId, action.systemId, action.planetId, [{ unitType: action.unitType, count: action.count }], rules, undefined, undefined, undefined, action.exhaustPlanetIdsForResources);
   if (!productionResult.ok) return productionResult;
 
   let nextState = productionResult.state;

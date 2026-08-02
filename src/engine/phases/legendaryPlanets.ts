@@ -259,7 +259,7 @@ export function use4X41DHyperionVI(
  */
 export function useMaxisCentralControl(
   state: GameState,
-  action: { type: "USE_MAXIS_CENTRAL_CONTROL"; playerId: PlayerId; targetPlanetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" },
+  action: { type: "USE_MAXIS_CENTRAL_CONTROL"; playerId: PlayerId; targetPlanetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous"; explorationChoice?: import("./exploration").ExplorationCardChoice },
   rules: RuleData,
 ): ActionResult {
   const found = findControlledLegendaryPlanet(state, action.playerId, asPlanetId("faunus"));
@@ -280,7 +280,7 @@ export function useMaxisCentralControl(
   if (hasAnyUnits) return { ok: false, error: "That planet must contain no units." };
   if (targetFound.planet.attachmentIds.length > 0) return { ok: false, error: "That planet must have no attachments." };
 
-  const controlResult = setPlanetController(state, targetFound.systemId, action.targetPlanetId, action.playerId, rules, action.chosenTrait);
+  const controlResult = setPlanetController(state, targetFound.systemId, action.targetPlanetId, action.playerId, rules, action.chosenTrait, action.explorationChoice);
   const nextState = exhaustLegendaryAbility(controlResult.state, found.systemId, asPlanetId("faunus"));
   return { ok: true, state: nextState, events: [...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId: targetFound.systemId, planetId: action.targetPlanetId, playerId: action.playerId }] };
 }

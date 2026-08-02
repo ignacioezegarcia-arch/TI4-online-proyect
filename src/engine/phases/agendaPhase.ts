@@ -3,6 +3,8 @@ import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, AgendaId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
+import { getElderQanojVoteBonus } from "../rules/xxcha";
+import { hasCodex, hasThundersEdge } from "../rules/gameMode";
 import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { applyDirectiveResolutionSideEffects } from "./directiveEffects";
 import { applyAgendaPredictionRewards } from "./actionCardEffects";
@@ -150,6 +152,8 @@ export function castVotes(
     exhaustPlanetIds: PlanetId[];
     /** RR "Predictive Intelligence": exhaust that tech (if owned and readied) to cast 3 additional votes for this outcome — conditionally exhausted for real once the agenda resolves (see resolveAgendaVote), only if this outcome doesn't end up winning. */
     usePredictiveIntelligenceBonus?: boolean;
+    /** Hacan "Gila the Silvertongue" (commander, passive): spend any number of trade goods, cast 2 additional votes each — see this function's own doc comment for the full ruling. */
+    useGilaTradeGoodsSpent?: number;
   },
   rules: RuleData,
 ): ActionResult {
@@ -205,8 +209,17 @@ export function castVotes(
     if (planet.isSpaceStation) return { ok: false, error: "TE SPACE STATIONS: a space station's influence cannot be used to cast votes." };
     const planetData = rules.planets[planetId];
     if (!planetData) return { ok: false, error: `No static influence data for ${planetId}.` };
-    votes += planetData.influence;
+    // Xxcha "Xxekir Grom — POLITICAL DATA NEXUS Ω": "the resource value of a planet will be added to its influence value when the Xxcha player casts votes." Same unlock/game-mode gating as its own spendForCost version (phases/technology.ts).
+    const xxekirGromOmegaActiveForVotes = (() => {
+      const p = state.players[action.playerId];
+      if (!p || p.factionId !== ("xxcha" as never) || hasThundersEdge(state.mode) || !hasCodex(state.mode)) return false;
+      const heroEntry = p.leaders.find((l) => l.leaderId === ("xxcha_hero" as never));
+      return !!heroEntry && !heroEntry.locked;
+    })();
+    votes += planetData.influence + (xxekirGromOmegaActiveForVotes ? planetData.resources : 0);
   }
+  // Xxcha "Elder Qanoj" (commander, passive): "each planet you exhaust to cast votes provides 1 additional vote" — confirmed even a 0-influence planet counts.
+  votes += getElderQanojVoteBonus(state, action.playerId, action.exhaustPlanetIds.length);
 
   let nextState: GameState = state;
   for (const planetId of action.exhaustPlanetIds) {
@@ -222,6 +235,24 @@ export function castVotes(
     predictiveIntelligenceBonusUsedBy = { ...predictiveIntelligenceBonusUsedBy, [action.playerId]: action.outcome };
   }
 
+  // Hacan "Gila the Silvertongue" (commander, passive): "When you cast
+  // votes: you may spend any number of trade goods; cast 2 additional
+  // votes for each trade good spent." Confirmed (tirules2.com/F_hacan):
+  // additional votes must be for the SAME outcome as this player's other
+  // votes (automatic here, since this is all one CAST_VOTES call for one
+  // outcome) — "if the player abstains or casts 0 votes, they cannot
+  // cast additional ones" (checked via votes > 0, using whatever the
+  // count is BEFORE this bonus, i.e. real planet-influence votes cast).
+  let nextPlayers = state.players;
+  if (action.useGilaTradeGoodsSpent && action.useGilaTradeGoodsSpent > 0) {
+    const commanderEntry = player.leaders.find((l) => l.leaderId === ("hacan_commander" as never));
+    if (!commanderEntry || commanderEntry.locked) return { ok: false, error: "This player doesn't have an unlocked Gila the Silvertongue." };
+    if (votes <= 0) return { ok: false, error: "Gila the Silvertongue: cannot cast additional votes when casting 0 votes for this outcome." };
+    if (player.tradeGoods < action.useGilaTradeGoodsSpent) return { ok: false, error: "Not enough trade goods." };
+    votes += action.useGilaTradeGoodsSpent * 2;
+    nextPlayers = { ...nextPlayers, [action.playerId]: { ...player, tradeGoods: player.tradeGoods - action.useGilaTradeGoodsSpent } };
+  }
+
   const existingForOutcome = pending.votesByOutcome[action.outcome] ?? [];
   const updatedVote: PendingAgendaVote = {
     ...pending,
@@ -229,7 +260,7 @@ export function castVotes(
     votesByOutcome: { ...pending.votesByOutcome, [action.outcome]: [...existingForOutcome, { playerId: action.playerId, votes }] },
     predictiveIntelligenceBonusUsedBy,
   };
-  nextState = { ...nextState, pendingAgendaVote: updatedVote };
+  nextState = { ...nextState, players: nextPlayers, pendingAgendaVote: updatedVote };
 
   const events: GameEvent[] = [{ type: "VOTES_CAST", playerId: action.playerId, outcome: action.outcome, votes }];
   return openAfterYouCastVotesWindow(nextState, action.playerId, events);

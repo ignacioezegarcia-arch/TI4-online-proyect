@@ -7,7 +7,7 @@ import { usesCodex4Version, hasPoKContent } from "../rules/gameMode";
 import { isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeTransferShardOfTheThroneOnControlGain, maybeQueueCrownOfThalnosReroll } from "../rules/relics";
 import { checkSpecOpsRespawn } from "../rules/sol";
-import { applyExplorationCard } from "./exploration";
+import { applyExplorationCard, ExplorationCardChoice } from "./exploration";
 import {
   playersWithGroundForces,
   buildBombardmentEntries,
@@ -347,7 +347,7 @@ function openGroundCombatRoundStartWindowIfNeeded(state: GameState): GameState {
 
 export function commitGroundForces(
   state: GameState,
-  action: { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; units: { unitType: UnitType; count: number }[]; coexist?: boolean; chosenTrait?: "cultural" | "industrial" | "hazardous" },
+  action: { type: "COMMIT_GROUND_FORCES"; playerId: PlayerId; targetPlanetId: PlanetId; units: { unitType: UnitType; count: number }[]; coexist?: boolean; chosenTrait?: "cultural" | "industrial" | "hazardous"; explorationChoice?: ExplorationCardChoice },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -475,6 +475,7 @@ export function commitGroundForces(
           ...nextState.pendingTacticalAction!,
           remainingInvasionPlanetIds: [...(pending.remainingInvasionPlanetIds ?? []), action.targetPlanetId],
           ...(action.chosenTrait ? { dualTraitChoices: { ...pending.dualTraitChoices, [action.targetPlanetId]: action.chosenTrait } } : {}),
+          ...(action.explorationChoice ? { pendingExplorationChoices: { ...pending.pendingExplorationChoices, [action.targetPlanetId]: action.explorationChoice } } : {}),
         },
       };
     }
@@ -485,7 +486,7 @@ export function commitGroundForces(
     if (planet.controllerId === null && traitsHere.length > 1 && (!action.chosenTrait || !traitsHere.includes(action.chosenTrait))) {
       return { ok: false, error: `TE DUAL PLANET TRAITS: ${action.targetPlanetId} has multiple traits (${traitsHere.join("/")}) — chosenTrait must specify which one to explore with.` };
     }
-    const controlResult = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules, action.chosenTrait);
+    const controlResult = setPlanetController(nextState, systemId, action.targetPlanetId, action.playerId, rules, action.chosenTrait, action.explorationChoice);
     const previousControllerId = planet.controllerId;
     nextState = controlResult.state;
     events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId: action.targetPlanetId, playerId: action.playerId });
@@ -1310,7 +1311,7 @@ function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameSta
     const winner = survivors[0] ?? null;
     const previousControllerId = planet.controllerId;
     if (winner) {
-      const controlResult = setPlanetController(nextState, systemId, planetId, winner, rules, pending.dualTraitChoices?.[planetId]);
+      const controlResult = setPlanetController(nextState, systemId, planetId, winner, rules, pending.dualTraitChoices?.[planetId], pending.pendingExplorationChoices?.[planetId]);
       nextState = controlResult.state;
       events.push(...controlResult.events, { type: "PLANET_CONTROL_ESTABLISHED", systemId, planetId, playerId: winner });
       // TE COEXIST: this fight's own loser is out, and if the winner was
@@ -1386,6 +1387,8 @@ export function setPlanetController(
   rules: RuleData,
   /** TE DUAL PLANET TRAITS (rulebook p.11): the controlling player's own choice of which trait to explore with, if this planet has 2 — supplied by whichever action actually triggers this control gain (COMMIT_GROUND_FORCES for an uncontested landing, ASSIGN_HITS for a combat win), since that player already knows which planet is at stake when they submit it. Optional/ignored for single-trait (or traitless) planets. */
   chosenTrait?: "cultural" | "industrial" | "hazardous",
+  /** Player choice for whatever exploration card gets drawn as part of this specific control gain, if it needs one — see phases/exploration.ts's own ExplorationCardChoice/applyExplorationCard. */
+  explorationChoice?: import("./exploration").ExplorationCardChoice,
 ): { state: GameState; events: GameEvent[] } {
   const system = state.systems[systemId];
   const planet = system.planets.find((p) => p.planetId === planetId);
@@ -1471,10 +1474,17 @@ export function setPlanetController(
       const deck = nextState.explorationDecks?.[trait] ?? [];
       if (deck.length > 0) {
         const [cardId, ...rest] = deck;
-        const result = applyExplorationCard(nextState, controllerId, systemId, planetId, cardId, rules);
+        const result = applyExplorationCard(nextState, controllerId, systemId, planetId, cardId, rules, explorationChoice);
         nextState = result.state;
         events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: controllerId, cardId, deck: trait });
-        nextState = { ...nextState, explorationDecks: { ...nextState.explorationDecks!, [trait]: rest } };
+        // RR "exploration": "if the card was not a relic fragment or an attachment, it is discarded" (and see rules/exploration.ts's own applyExplorationCard doc comment for the further "or purged" case) — previously this specific path (exploring via gaining planet control) never tracked a discard pile at all, unlike frontier-token exploration's own equivalent path.
+        const card = rules.explorationCards[cardId];
+        const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea && !card?.purge;
+        nextState = {
+          ...nextState,
+          explorationDecks: { ...nextState.explorationDecks!, [trait]: rest },
+          explorationDiscardPiles: { ...nextState.explorationDiscardPiles, [trait]: goesToDiscard ? [...(nextState.explorationDiscardPiles?.[trait] ?? []), cardId] : (nextState.explorationDiscardPiles?.[trait] ?? []) } as GameState["explorationDiscardPiles"],
+        };
       }
       const exploredSystem = nextState.systems[systemId];
       nextState = {

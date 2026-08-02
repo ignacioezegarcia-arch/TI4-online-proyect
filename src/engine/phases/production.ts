@@ -10,6 +10,7 @@ import { hasEntropicScar } from "../rules/anomalies";
 import { getEffectiveProducesQuantity, isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
+import { spendForCost } from "./technology";
 
 /**
  * RR 78 STEP 5 — PRODUCTION (RR 58/59), tactical-action version (units
@@ -19,13 +20,6 @@ import { checkReinforcementsAvailable } from "../rules/reinforcements";
  * built yet).
  *
  * SCOPE CUT, flagged rather than silently wrong:
- *  - Spends straight from player.resourcesAvailable/tradeGoods as one pool.
- *    Real RR 26 resource-spending exhausts SPECIFIC planets to raise that
- *    amount; this engine doesn't track per-planet exhaustion-for-resources
- *    anywhere yet (GameState.ts's own comment already flags
- *    resourcesAvailable/influenceAvailable as "derived cache — not
- *    authoritative"; that derivation doesn't exist yet either). Until it
- *    does, this just decrements the cached numbers directly.
  *  - Production limit for a Space Dock = that planet's resources + 2 (RR
  *    58's base formula). Doesn't yet special-case Space Dock II or any
  *    other producer with a different formula/value — there's currently
@@ -48,6 +42,14 @@ export function produceUnits(
     units: { unitType: UnitType; count: number }[];
     /** RR "AI Development Algorithm"'s OTHER ability (distinct from its unit-upgrade-research one, but shares the same exhausted-state — using either one exhausts the same card): exhaust to reduce this production's combined cost by the number of unit upgrade technologies this player owns. */
     useAiDevelopmentAlgorithmForCost?: boolean;
+    /** Hacan "Harrugh Gefhara — GALACTIC SECURITIES NET" (hero, single-use): reduces this production's own cost to 0 (production limits still apply) — see phases/production.ts's own executeProduction for the full doc comment. */
+    useHarrughGefharaBonus?: boolean;
+    /** RR 26: which of this player's own controlled, unexhausted planets to exhaust for this production's own resource cost — same shape as phases/technology.ts's own RESEARCH_TECHNOLOGY action, reusing that exact same spendForCost function under the hood. */
+    exhaustPlanetIdsForResources?: PlanetId[];
+    /** "Freelancers" (exploration card): "you may spend influence as if it were resources to produce this unit" — a per-production grant, not a permanent ability. Validated against this player's own real pending grant for this system — see phases/production.ts's own executeProduction. */
+    freelancersActive?: boolean;
+    /** "Freelancers" (exploration card): only consulted if this player's reinforcements are empty for the unit type being produced — see phases/production.ts's own executeProduction for the full doc comment on this substitution rule. */
+    freelancersSubstituteSourceSystemId?: SystemId;
   },
   rules: RuleData,
 ): ActionResult {
@@ -58,7 +60,20 @@ export function produceUnits(
   if (pending.step !== "production") {
     return { ok: false, error: `RR 58: expected step "production", got "${pending.step}".` };
   }
-  return executeProduction(state, action.playerId, pending.systemId, action.planetId, action.units, rules, action.useAiDevelopmentAlgorithmForCost);
+  return executeProduction(
+    state,
+    action.playerId,
+    pending.systemId,
+    action.planetId,
+    action.units,
+    rules,
+    action.useAiDevelopmentAlgorithmForCost,
+    undefined,
+    action.useHarrughGefharaBonus,
+    action.exhaustPlanetIdsForResources,
+    action.freelancersActive,
+    action.freelancersSubstituteSourceSystemId,
+  );
 }
 
 /**
@@ -78,6 +93,24 @@ export function executeProduction(
   useAiDevelopmentAlgorithmForCost?: boolean,
   /** RR "Warfare" strategy card's own secondary: confirmed, this specifically invokes ONE space dock's own Production ability — "Minister of Industry"'s combined-limit-across-every-producer-in-the-system bonus does NOT apply here, regardless of who owns that law. Every other caller (a normal tactical action's own Production step, Sling Relay) leaves this false/undefined, where Minister of Industry's bonus applies as normal. */
   singleProducerOnly?: boolean,
+  /** Hacan "Harrugh Gefhara — GALACTIC SECURITIES NET" (hero, single-use): "you may reduce the cost of each of your units to 0 during this use of Production. If you do, purge this card." Confirmed (tirules2.com/F_hacan): "Production limits still apply" — only the CHECK against total cost, the ACTUAL resource/trade-good spend and the reinforcements/production-limit checks below all still get validated normally, just with a cost of 0 to pay. */
+  useHarrughGefharaBonus?: boolean,
+  /** RR 26: which of this player's own controlled, unexhausted planets to exhaust for this production's own resource cost — see produceUnits' own doc comment on this same field. Defaults to empty (paying entirely from trade goods) for callers that don't pass it (e.g. Sling Relay, Warfare's secondary), preserving their own existing behavior. */
+  exhaustPlanetIdsForResources?: PlanetId[],
+  /** "Freelancers" (exploration card): "you may spend influence as if it were resources to produce THIS unit" — a one-time grant scoped to just this call, not a permanent player ability. Threaded straight through to spendForCost's own generalized override. */
+  treatInfluenceAsResourcesForThisProduction = false,
+  /**
+   * "Freelancers" (exploration card): "if a player wishes to place a
+   * unit, but there are none of that type left in their reinforcements,
+   * they may remove a unit of that type from any system that does not
+   * contain one of their command tokens and place that instead. This
+   * unit will be placed undamaged." Confirmed
+   * (tirules2.com/C_exploration_cards). Only consulted when the normal
+   * reinforcements check below fails AND treatInfluenceAsResourcesForThisProduction
+   * is true — this substitution is specific to exploration-card-granted
+   * placements like this one, not a general production fallback.
+   */
+  freelancersSubstituteSourceSystemId?: SystemId,
 ): ActionResult {
   const system = state.systems[systemId];
   if (!system) return { ok: false, error: `No system ${systemId}.` };
@@ -214,6 +247,20 @@ export function executeProduction(
   // Confirmed via this same combined-cost example: only the LIMIT check
   // is exempted, not the actual resource-spending check right after.
   let limitCheckCost = totalCost;
+  // Hacan "Harrugh Gefhara — GALACTIC SECURITIES NET" (hero, single-use):
+  // "reduce the cost of each of your units to 0 during this use of
+  // Production... purge this card." Confirmed: "Production limits still
+  // apply" — limitCheckCost above already captured the REAL cost before
+  // this zeroes totalCost (the actual amount paid) down to 0, so the
+  // limit check right after this whole block still uses the genuine
+  // figure while the player pays nothing.
+  let usedHarrughGefhara = false;
+  if (useHarrughGefharaBonus && totalCost > 0) {
+    const heroEntry = player.leaders.find((l) => l.leaderId === ("hacan_hero" as never));
+    if (!heroEntry || heroEntry.locked) return { ok: false, error: "This player doesn't have an unlocked Harrugh Gefhara." };
+    totalCost = 0;
+    usedHarrughGefhara = true;
+  }
   if (player.hasBreakthrough && player.factionId === ("sol" as never)) {
     const combinedCapacity = units.reduce((sum, u) => {
       if (u.count <= 0) return sum;
@@ -241,16 +288,45 @@ export function executeProduction(
   if (limitCheckCost > productionLimit) {
     return { ok: false, error: `RR 58: total cost ${limitCheckCost} exceeds this Space Dock's Production limit (${productionLimit}).` };
   }
-  const spendable = player.resourcesAvailable + player.tradeGoods;
-  if (totalCost > spendable) {
-    return { ok: false, error: `Not enough resources: need ${totalCost}, have ${spendable} (resources + trade goods).` };
+
+  // "Freelancers" (exploration card): validated here — the flag alone
+  // isn't trusted; this player must actually hold an unused grant for
+  // THIS system, and "produce 1 unit" is a hard cap of exactly 1 (not
+  // "up to 1", though the card's own "may" already makes 0 the trivial
+  // alternative of just not using it — this project's own convention is
+  // to reject a MISMATCHED count rather than silently ignore the flag).
+  if (treatInfluenceAsResourcesForThisProduction) {
+    const grants = state.players[playerId]?.pendingFreelancersGrants ?? [];
+    if (!grants.includes(systemId)) {
+      return { ok: false, error: "Freelancers: this player has no unused grant for this system." };
+    }
+    const totalUnitsThisCall = units.reduce((sum, u) => sum + u.count, 0);
+    if (totalUnitsThisCall !== 1) {
+      return { ok: false, error: "Freelancers: grants exactly 1 unit's worth of production, no more and no less." };
+    }
   }
 
-  const spentFromResources = Math.min(totalCost, player.resourcesAvailable);
-  const spentFromTradeGoods = totalCost - spentFromResources;
+  // RR 26: real per-planet resource exhaustion (previously this function
+  // spent from a flat, never-properly-maintained player.resourcesAvailable
+  // cache instead — see phases/technology.ts's own spendForCost, now
+  // shared between both consumers so Xxcha's Archon's Gift/Xxekir Grom Ω
+  // apply here too, not just to research).
+  const spend = spendForCost(state, playerId, totalCost, exhaustPlanetIdsForResources ?? [], rules, treatInfluenceAsResourcesForThisProduction);
+  if (!spend.ok) return spend;
+  let state2 = spend.state;
+  if (treatInfluenceAsResourcesForThisProduction) {
+    const consumerPlayer = state2.players[playerId];
+    const grants = consumerPlayer.pendingFreelancersGrants ?? [];
+    const idx = grants.indexOf(systemId);
+    const updatedGrants = idx >= 0 ? [...grants.slice(0, idx), ...grants.slice(idx + 1)] : grants;
+    state2 = { ...state2, players: { ...state2.players, [playerId]: { ...consumerPlayer, pendingFreelancersGrants: updatedGrants } } };
+  }
+  const player2 = state2.players[playerId];
+  const system2 = state2.systems[systemId];
+  const planet2 = system2.planets.find((p) => p.planetId === planetId)!;
 
-  let updatedSpaceStacks = (system.spaceUnitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
-  let updatedPlanetStacks = producerStacks.map((s) => ({ ...s }));
+  let updatedSpaceStacks = (system2.spaceUnitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+  let updatedPlanetStacks = (planet2.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
   const events: GameEvent[] = [];
 
   // RR 58 (structures): confirmed limits — at most 2 PDS and 1 space dock
@@ -315,7 +391,26 @@ export function executeProduction(
   // this player has left in their box (see rules/reinforcements.ts's own
   // doc comments — infantry/fighter are exempt, everything else isn't).
   const reinforcementsCheck = checkReinforcementsAvailable(state, playerId, resolvedUnits);
-  if (!reinforcementsCheck.ok) return reinforcementsCheck;
+  let freelancersSubstituteRemoval: { systemId: SystemId; unitType: UnitType } | null = null;
+  if (!reinforcementsCheck.ok) {
+    if (!treatInfluenceAsResourcesForThisProduction || !freelancersSubstituteSourceSystemId || resolvedUnits.length !== 1) {
+      return reinforcementsCheck;
+    }
+    const substituteSystem = state.systems[freelancersSubstituteSourceSystemId];
+    if (!substituteSystem) return { ok: false, error: `No system ${freelancersSubstituteSourceSystemId}.` };
+    if (player.commandTokens.onBoard.includes(freelancersSubstituteSourceSystemId)) {
+      return { ok: false, error: "Freelancers: the substitute system cannot contain this player's own command token." };
+    }
+    const { unitType } = resolvedUnits[0];
+    const isShip = SHIP_TYPES.includes(unitType);
+    const hasMatchingUnit = isShip
+      ? (substituteSystem.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.unitType === unitType && s.count > 0)
+      : substituteSystem.planets.some((p) => (p.unitsByPlayer[playerId] ?? []).some((s) => s.unitType === unitType && s.count > 0));
+    if (!hasMatchingUnit) {
+      return { ok: false, error: `Freelancers: no ${unitType} of this player's own in ${freelancersSubstituteSourceSystemId} to relocate.` };
+    }
+    freelancersSubstituteRemoval = { systemId: freelancersSubstituteSourceSystemId, unitType };
+  }
 
   for (const { unitType, count, unitCost } of resolvedUnits) {
     const isShip = SHIP_TYPES.includes(unitType);
@@ -336,39 +431,68 @@ export function executeProduction(
     });
   }
 
-  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [playerId]: updatedPlanetStacks } };
+  const updatedPlanet: PlanetState = { ...planet2, unitsByPlayer: { ...planet2.unitsByPlayer, [playerId]: updatedPlanetStacks } };
   const updatedSystem: SystemState = {
-    ...system,
-    spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: updatedSpaceStacks },
-    planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
+    ...system2,
+    spaceUnitsByPlayer: { ...system2.spaceUnitsByPlayer, [playerId]: updatedSpaceStacks },
+    planets: system2.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
   };
 
   // RR "Prophecy of Ixth": confirmed, checked on EVERY Production use by
   // the owner (not just this one specific dock) — if fewer than 2
   // fighters are produced this time, the card is discarded immediately.
   const fightersProduced = resolvedUnits.filter((u) => u.unitType === "fighter").reduce((sum, u) => sum + u.count, 0);
-  const isProphecyOfIxthOwner = getLawOwner(state, "prophecy_of_ixth" as AgendaId) === playerId;
+  const isProphecyOfIxthOwner = getLawOwner(state2, "prophecy_of_ixth" as AgendaId) === playerId;
   const agendaDeck = isProphecyOfIxthOwner && fightersProduced < 2
-    ? { ...state.agendaDeck, lawsInPlay: state.agendaDeck.lawsInPlay.filter((l) => l.agendaId !== "prophecy_of_ixth") }
-    : state.agendaDeck;
+    ? { ...state2.agendaDeck, lawsInPlay: state2.agendaDeck.lawsInPlay.filter((l) => l.agendaId !== "prophecy_of_ixth") }
+    : state2.agendaDeck;
 
-  const nextState: GameState = {
-    ...state,
+  let nextState: GameState = {
+    ...state2,
     agendaDeck,
-    systems: { ...state.systems, [systemId]: updatedSystem },
+    systems: { ...state2.systems, [systemId]: updatedSystem },
     players: {
-      ...state.players,
+      ...state2.players,
       [playerId]: {
-        ...player,
-        resourcesAvailable: player.resourcesAvailable - spentFromResources,
-        tradeGoods: player.tradeGoods - spentFromTradeGoods,
+        ...player2,
         exhaustedTechnologies: usedAiDevelopmentAlgorithmForCost
-          ? [...player.exhaustedTechnologies, asTechId("ai_development_algorithm")]
-          : player.exhaustedTechnologies,
+          ? [...player2.exhaustedTechnologies, asTechId("ai_development_algorithm")]
+          : player2.exhaustedTechnologies,
         warMachineActive: false,
+        leaders: usedHarrughGefhara ? player2.leaders.filter((l) => l.leaderId !== ("hacan_hero" as never)) : player2.leaders,
       },
     },
   };
+
+  // "Freelancers": the substitute unit actually gets removed from its origin system here — RR confirms it's placed "undamaged" at the destination, which is already this function's own default for every newly-produced unit (no special handling needed beyond the relocation itself).
+  if (freelancersSubstituteRemoval) {
+    const { systemId: srcSystemId, unitType } = freelancersSubstituteRemoval;
+    const srcSystem = nextState.systems[srcSystemId];
+    const isShip = SHIP_TYPES.includes(unitType);
+    if (isShip) {
+      const stacks = srcSystem.spaceUnitsByPlayer[playerId] ?? [];
+      const stack = stacks.find((s) => s.unitType === unitType && s.count > 0)!;
+      const updatedStacks = stacks.map((s) => (s === stack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+      nextState = { ...nextState, systems: { ...nextState.systems, [srcSystemId]: { ...srcSystem, spaceUnitsByPlayer: { ...srcSystem.spaceUnitsByPlayer, [playerId]: updatedStacks } } } };
+    } else {
+      const srcPlanet = srcSystem.planets.find((p) => (p.unitsByPlayer[playerId] ?? []).some((s) => s.unitType === unitType && s.count > 0))!;
+      const stacks = srcPlanet.unitsByPlayer[playerId] ?? [];
+      const stack = stacks.find((s) => s.unitType === unitType && s.count > 0)!;
+      const updatedStacks = stacks.map((s) => (s === stack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+      const updatedSrcPlanet = { ...srcPlanet, unitsByPlayer: { ...srcPlanet.unitsByPlayer, [playerId]: updatedStacks } };
+      nextState = { ...nextState, systems: { ...nextState.systems, [srcSystemId]: { ...srcSystem, planets: srcSystem.planets.map((p) => (p.planetId === srcPlanet.planetId ? updatedSrcPlanet : p)) } } };
+    }
+  }
+
+  // Hacan "Auto-Factories" (Breakthrough ability): "When you produce 3 or more non-fighter ships, place 1 command token from your reinforcements into your fleet pool." Counted across THIS single production batch (the units parameter as a whole), not per-unit-type.
+  const nonFighterShipsProduced = units.filter((u) => SHIP_TYPES.includes(u.unitType) && u.unitType !== "fighter").reduce((sum, u) => sum + u.count, 0);
+  if (nonFighterShipsProduced >= 3 && player.hasBreakthrough && player.factionId === ("hacan" as never)) {
+    const finalPlayer = nextState.players[playerId];
+    const { tactic, fleet, strategy, onBoard } = finalPlayer.commandTokens;
+    if (tactic + fleet + strategy + onBoard.length < 16) {
+      nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...finalPlayer, commandTokens: { ...finalPlayer.commandTokens, fleet: finalPlayer.commandTokens.fleet + 1 } } } };
+    }
+  }
 
   // RR 100.2: placing a unit (via Production) directly into the wormhole
   // nexus system also flips it active — previously only covered for
