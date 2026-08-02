@@ -145,7 +145,7 @@ import { revealAgenda, castVotes, resolveAgendaVote, continueAgendaPhaseAfterEle
 import { checkGroundForcesCommittedWindow, finishGroundCombatWrapUp, openInvasionStartWindowIfNeeded } from "./phases/invasion";
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
-import { exploreFrontier, purgeRelicFragments } from "./phases/exploration";
+import { exploreFrontier, purgeRelicFragments, useEnigmaticDevice } from "./phases/exploration";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
   useSelfAssemblyRoutines,
@@ -159,12 +159,14 @@ import {
   usePredictiveIntelligenceRedistribute,
   useTransitDiodes,
 } from "./phases/technologyAbilities";
-import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy, useDokNPicsSalvageYardPlay, useTheAcropolis, useTheGalacticCouncil, useJupiterBrain } from "./phases/legendaryPlanets";
+import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy, useDokNPicsSalvageYardPlay, useTheAcropolis, useTheGalacticCouncil, useJupiterBrain, useMaxisCentralControl } from "./phases/legendaryPlanets";
 import { useStarForge, useTheNucleus, applyStellarGenesisOnGain } from "./rules/muaat";
 import { useOrbitalDrop, useZsThunderboltM2Deploy, resolveGenesisCapacityOverflow, useMilitarySupport, useClaireGibson, useJaceX } from "./rules/sol";
 import { useRearAdmiralFarran, useDunlainReaperDeploy, useDarktalonTreilla, useMunitionsReserves, resolveFleetCleanup, useWarFunding, useWarFundingOmega } from "./rules/letnev";
 import { useTekklarLegion, useExotriremeIISelfDestruct, useTro, useNorrSupremacy, useGhomSekkus, useShvalHarbinger } from "./rules/sardakk";
 import { useResearchAgreement, useSpatialConduitCylinder, useRinGeneticMemory } from "./rules/jolnar";
+import { useTradeConvoys, useCarthOfGoldenSands, useProductionBiomes, useQuantumDatahubNode } from "./rules/hacan";
+import { usePeaceAccords, useGgrucotoRinn, useQuash, usePoliticalFavor, useNullificationField, useInstinctTraining, useXxekirGromOmegaOmega } from "./rules/xxcha";
 import { destroyShipForAntiIntellectualRevolution, exhaustPlanetsForAntiIntellectualRevolution, useCommitteeFormation, skipCommitteeFormation, destroyPdsForHomelandDefenseAct, discardRandomActionCardForExecutiveSanctions, useImperialArbiter, useMinisterOfPeace, useMinisterOfWar, useCrownOfThalnosReroll, skipCrownOfThalnosReroll, returnSecretObjective, getLawOwner } from "./phases/agendaEffects";
 import {
   useColonialRedistributionChoice,
@@ -923,6 +925,12 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       case "USE_DOK_N_PICS_SALVAGE_YARD_PLAY":
         result = useDokNPicsSalvageYardPlay(state, action);
         break;
+      case "USE_MAXIS_CENTRAL_CONTROL":
+        result = useMaxisCentralControl(state, action, rules);
+        break;
+      case "USE_ENIGMATIC_DEVICE":
+        result = useEnigmaticDevice(state, action, rules);
+        break;
       case "USE_THE_ACROPOLIS":
         result = useTheAcropolis(state, action);
         break;
@@ -997,6 +1005,39 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_RIN_GENETIC_MEMORY":
         result = useRinGeneticMemory(state, action, rules);
+        break;
+      case "USE_TRADE_CONVOYS":
+        result = useTradeConvoys(state, action);
+        break;
+      case "USE_CARTH_OF_GOLDEN_SANDS":
+        result = useCarthOfGoldenSands(state, action, rules);
+        break;
+      case "USE_PRODUCTION_BIOMES":
+        result = useProductionBiomes(state, action);
+        break;
+      case "USE_QUANTUM_DATAHUB_NODE":
+        result = useQuantumDatahubNode(state, action);
+        break;
+      case "USE_PEACE_ACCORDS":
+        result = usePeaceAccords(state, action, rules);
+        break;
+      case "USE_GGRUCOTO_RINN":
+        result = useGgrucotoRinn(state, action, rules);
+        break;
+      case "USE_QUASH":
+        result = useQuash(state, action);
+        break;
+      case "USE_POLITICAL_FAVOR":
+        result = usePoliticalFavor(state, action);
+        break;
+      case "USE_NULLIFICATION_FIELD":
+        result = useNullificationField(state, action, rules);
+        break;
+      case "USE_INSTINCT_TRAINING":
+        result = useInstinctTraining(state, action);
+        break;
+      case "USE_XXEKIR_GROM_OMEGA_OMEGA":
+        result = useXxekirGromOmegaOmega(state, action, rules);
         break;
       case "USE_STAR_FORGE":
         result = useStarForge(state, action, rules);
