@@ -39,7 +39,8 @@
           "id": "gamma_wormhole_explore",
           "name": "Gamma Wormhole",
           "count": 1,
-          "effect": "Place a gamma wormhole token in this system. Then, purge this card."
+          "effect": "Place a gamma wormhole token in this system. Then, purge this card.",
+          "purge": true
         },
         {
           "id": "mercenary_outfit",
@@ -229,7 +230,8 @@
           "name": "Gamma Relay",
           "count": 1,
           "set": "pok",
-          "effect": "Place a gamma wormhole token in this system. Then, purge this card."
+          "effect": "Place a gamma wormhole token in this system. Then, purge this card.",
+          "purge": true
         },
         {
           "id": "ion_storm",
@@ -257,7 +259,8 @@
           "name": "Mirage",
           "count": 1,
           "set": "pok",
-          "effect": "Place the Mirage planet token in this system. Gain the Mirage planet card and ready it. Then, purge this card."
+          "effect": "Place the Mirage planet token in this system. Gain the Mirage planet card and ready it. Then, purge this card.",
+          "purge": true
         },
         {
           "id": "unknown_relic_fragment",
