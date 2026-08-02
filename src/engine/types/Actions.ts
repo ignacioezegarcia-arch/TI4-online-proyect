@@ -147,6 +147,8 @@ export type GameAction =
       viscountUnlennBonus?: { ownerId: PlayerId; targetPlayerId: PlayerId; unitType: UnitType };
       /** Letnev "Gravleash Maneuvers" (breakthrough): "apply +X to the results of 1 of your ship's rolls, where X is the number of ship types you have in the combat" — the CALLER just names which unit type gets the boosted die; X itself is computed server-side from the actual board state. Space-combat-only. */
       gravleashManeuversUnitType?: UnitType;
+      /** Hacan "Wrath of Kenara" (flagship, Trade Good Bonus): trusted-input, same as every other roll here — see phases/spaceCombat.ts's own resolveSpaceCombatRound for the full doc comment. */
+      wrathOfKenaraTradeGoodsSpent?: number;
     }
   | {
       type: "ASSIGN_HITS";
@@ -195,6 +197,8 @@ export type GameAction =
       coexist?: boolean;
       /** TE DUAL PLANET TRAITS: required if this planet has never been controlled and has 2 traits — see phases/invasion.ts's own commitGroundForces for exactly when this is checked/banked. */
       chosenTrait?: "cultural" | "industrial" | "hazardous";
+      /** Same "banked now, consumed once control is actually established" shape as chosenTrait above — this player's own choice for whatever exploration card gets drawn once this planet is actually gained, whether immediately (uncontested) or after combat concludes (contested). */
+      explorationChoice?: import("../phases/exploration").ExplorationCardChoice;
     } // RR 44.2: moves ground forces from the active system's space area onto a planet there.
   | {
       type: "INITIATE_COEXIST_COMBAT";
@@ -281,6 +285,14 @@ export type GameAction =
       units: { unitType: UnitType; count: number }[];
       /** RR "AI Development Algorithm"'s OTHER ability (distinct from its unit-upgrade-research one, but shares the same exhausted state): exhaust to reduce this production's combined cost by the number of unit upgrade technologies this player owns. */
       useAiDevelopmentAlgorithmForCost?: boolean;
+      /** Hacan "Harrugh Gefhara — GALACTIC SECURITIES NET" (hero, single-use): reduces this production's own cost to 0 — see phases/production.ts's own executeProduction for the full doc comment. */
+      useHarrughGefharaBonus?: boolean;
+      /** RR 26: which of this player's own controlled, unexhausted planets to exhaust for this production's own resource cost — same shape as RESEARCH_TECHNOLOGY's own field below, both now backed by the exact same phases/technology.ts's own spendForCost. */
+      exhaustPlanetIdsForResources?: PlanetId[];
+      /** "Freelancers" (exploration card): "you may spend influence as if it were resources to produce this unit" — validated against this player's own real pending grant for this system, see phases/production.ts's own executeProduction. */
+      freelancersActive?: boolean;
+      /** "Freelancers": only consulted if reinforcements are empty for the unit type — see phases/production.ts's own executeProduction for the full substitution-rule doc comment. */
+      freelancersSubstituteSourceSystemId?: SystemId;
     }
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
@@ -342,7 +354,7 @@ export type GameAction =
       cost: number;
       exhaustPlanetIdsForResources: PlanetId[];
     }
-  | { type: "PLAY_EXPLORATION_PROBE"; playerId: PlayerId; systemId: SystemId }
+  | { type: "PLAY_EXPLORATION_PROBE"; playerId: PlayerId; systemId: SystemId; choice?: import("../phases/exploration").ExplorationCardChoice }
   | { type: "PLAY_SEIZE_ARTIFACT"; playerId: PlayerId; targetPlayerId: PlayerId; fragmentType: "cultural" | "industrial" | "hazardous" | "unknown" }
 
   // --- RR 8 "after/when an agenda is revealed" reaction cards. Each of
@@ -450,6 +462,14 @@ export type GameAction =
   | { type: "USE_JR_XS455_O"; playerId: PlayerId; targetPlayerId: PlayerId; placeStructure?: { planetId: PlanetId; structureType: "space_dock" | "pds"; exhaustPlanetIdsForResources: PlanetId[] } } // RR relic/agent — see rules/relics.ts's own useJrXs455O
   | { type: "USE_NEURALOOP"; playerId: PlayerId; relicIdToPurge: string; discardedObjectiveId: ObjectiveId; replacementObjectiveId: ObjectiveId; replacementDeck: "publicStageI" | "publicStageII" | "secret" } // RR relic — see rules/relics.ts's own useNeuraloop
   | { type: "USE_DOK_N_PICS_SALVAGE_YARD_PLAY"; playerId: PlayerId; cardId: string } // TE Garbozia's own legendary ability — see phases/legendaryPlanets.ts
+  | {
+      type: "USE_MAXIS_CENTRAL_CONTROL";
+      playerId: PlayerId;
+      targetPlanetId: PlanetId;
+      chosenTrait?: "cultural" | "industrial" | "hazardous";
+      explorationChoice?: import("../phases/exploration").ExplorationCardChoice;
+    } // Faunus' own legendary ability — see phases/legendaryPlanets.ts
+  | { type: "USE_ENIGMATIC_DEVICE"; playerId: PlayerId; techId: TechId; exhaustPlanetIdsForResources: PlanetId[] } // Frontier exploration card, kept in play area — see phases/exploration.ts
   | { type: "USE_THE_ACROPOLIS"; playerId: PlayerId; target: { kind: "planet"; planetId: PlanetId } | { kind: "relic"; relicId: string } | { kind: "technology"; techId: TechId } | { kind: "leader"; leaderId: string } } // TE Emelpar's own legendary ability, "at the end of your turn" — usable only during the end_of_turn priority window — see phases/legendaryPlanets.ts
   | { type: "USE_THE_GALACTIC_COUNCIL"; playerId: PlayerId; discardedSecretObjectiveId: string } // TE Mecatol Rex's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
   | { type: "USE_JUPITER_BRAIN"; playerId: PlayerId } // TE Thunder's Edge's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
@@ -481,6 +501,17 @@ export type GameAction =
   | { type: "USE_RESEARCH_AGREEMENT"; playerId: PlayerId; techId: TechId } // Jol-Nar's own promissory note — see rules/jolnar.ts
   | { type: "USE_SPATIAL_CONDUIT_CYLINDER"; playerId: PlayerId } // Jol-Nar's own faction tech — see rules/jolnar.ts
   | { type: "USE_RIN_GENETIC_MEMORY"; playerId: PlayerId; replacements: { oldTechId: TechId; newTechId: TechId }[] } // Jol-Nar's own hero — see rules/jolnar.ts
+  | { type: "USE_TRADE_CONVOYS"; playerId: PlayerId } // Hacan's own promissory note — see rules/hacan.ts
+  | { type: "USE_CARTH_OF_GOLDEN_SANDS"; playerId: PlayerId; choice: "gain_2_for_self" | "replenish_another"; targetPlayerId?: PlayerId } // Hacan's own agent — see rules/hacan.ts
+  | { type: "USE_PRODUCTION_BIOMES"; playerId: PlayerId; targetPlayerId: PlayerId } // Hacan's own faction tech — see rules/hacan.ts
+  | { type: "USE_QUANTUM_DATAHUB_NODE"; playerId: PlayerId; targetPlayerId: PlayerId; cardId: string; targetCardId: string } // Hacan's own faction tech — see rules/hacan.ts
+  | { type: "USE_PEACE_ACCORDS"; playerId: PlayerId; targetPlanetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous"; explorationChoice?: import("../phases/exploration").ExplorationCardChoice } // Xxcha's own faction ability — see rules/xxcha.ts
+  | { type: "USE_GGRUCOTO_RINN"; playerId: PlayerId; targetPlanetId: PlanetId; removeInfantry?: boolean } // Xxcha's own agent — see rules/xxcha.ts
+  | { type: "USE_QUASH"; playerId: PlayerId } // Xxcha's own faction ability — see rules/xxcha.ts
+  | { type: "USE_POLITICAL_FAVOR"; playerId: PlayerId } // Xxcha's own promissory note — see rules/xxcha.ts
+  | { type: "USE_NULLIFICATION_FIELD"; playerId: PlayerId; targetSystemId: SystemId } // Xxcha's own faction tech — see rules/xxcha.ts
+  | { type: "USE_INSTINCT_TRAINING"; playerId: PlayerId } // Xxcha's own faction tech — see rules/xxcha.ts
+  | { type: "USE_XXEKIR_GROM_OMEGA_OMEGA"; playerId: PlayerId; placements: { planetId: PlanetId; unitType: "pds" | "mech"; count: number }[] } // Xxcha's own hero (Thunder's Edge version) — see rules/xxcha.ts
   | { type: "USE_STAR_FORGE"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Muaat's own base faction ability — see rules/muaat.ts
   | { type: "USE_THE_NUCLEUS"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Avernus's own legendary ability (Muaat's Breakthrough) — see rules/muaat.ts
   | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain
@@ -517,7 +548,7 @@ export type GameAction =
       /** RR 90.13-90.15: see RESEARCH_TECHNOLOGY's own note on this same field. */
       exhaustPlanetIdsForTechSpecialty?: PlanetId[];
     } // RR 90/86
-  | { type: "EXPLORE_FRONTIER"; playerId: PlayerId; systemId: SystemId } // RR 35 — PoK only
+  | { type: "EXPLORE_FRONTIER"; playerId: PlayerId; systemId: SystemId; choice?: import("../phases/exploration").ExplorationCardChoice } // RR 35 — PoK only
   | {
       type: "PURGE_RELIC_FRAGMENTS";
       playerId: PlayerId;
@@ -539,8 +570,9 @@ export type GameAction =
       planetId: PlanetId;
       unitType: UnitType;
       count: number;
+      exhaustPlanetIdsForResources?: PlanetId[];
     } // component action (uses this player's whole turn); exhausts the tech; produce 1 ship in any system with this player's own space dock, paying its normal cost against that dock's Production limit
-  | { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" } // not exhaustable; explores a planet in the just-activated system that has this player's own units on it
+  | { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous"; choice?: import("../phases/exploration").ExplorationCardChoice } // not exhaustable; explores a planet in the just-activated system that has this player's own units on it
   | {
       type: "USE_BIO_STIMS";
       playerId: PlayerId;
@@ -639,6 +671,8 @@ export type GameAction =
       exhaustPlanetIds: PlanetId[];
       /** RR "Predictive Intelligence": exhaust that tech (if owned and readied) to cast 3 additional votes for this outcome — the actual exhaustion only takes effect once the agenda resolves, and only if this outcome doesn't win (see phases/agendaPhase.ts's own note on PendingAgendaVote.predictiveIntelligenceBonusUsedBy). */
       usePredictiveIntelligenceBonus?: boolean;
+      /** Hacan "Gila the Silvertongue" (commander, passive): spend any number of trade goods, cast 2 additional votes each for THIS outcome — see phases/agendaPhase.ts's own castVotes for the full ruling. */
+      useGilaTradeGoodsSpent?: number;
     }
   | { type: "REVEAL_AGENDA" } // RR 8.2: engine-driven (no playerId) — pops the agenda deck and opens voting; wired into autoAdvancePhase so nothing needs to remember to call it, but kept as a real action for direct/manual triggering too.
 

@@ -105,6 +105,8 @@ export interface RuleData {
       techSpecialtyBonus?: string;
       fallbackResourceBonus?: number;
       fallbackInfluenceBonus?: number;
+      /** "Then, purge this card" — removed from the game entirely rather than returned to its own discard pile (unlike a "plain one-time effect" card, which DOES go to discard). Distinct from isRelicFragment/attach/keepInPlayArea, none of which apply to these specific cards. */
+      purge?: boolean;
     }
   >;
   /**

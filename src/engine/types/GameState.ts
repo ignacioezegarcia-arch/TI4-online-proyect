@@ -75,6 +75,8 @@ export interface SystemState {
   /** Ships and fighters in the space area, per owning player. */
   spaceUnitsByPlayer: Partial<Record<PlayerId, UnitStack[]>>;
   wormholes: WormholeType[];
+  /** Frontier "Ion Storm" (exploration card): which side is currently face up in this system — flips at the end of a Move Ships/Retreat sub-step during which 1+ of the OWNER's own ships used the ion storm wormhole. KNOWN SCOPE LIMIT: the flip-on-wormhole-use trigger itself isn't wired into movement resolution yet (see phases/exploration.ts's own applyExplorationCard) — only the initial placement/face is tracked here. */
+  ionStormFace?: "asteroid_field" | "gravity_rift";
   /** RR 9.5: a system can combine more than one anomaly type (e.g. tile 82, "Asteroid Field / Alpha Wormhole"). Empty array = not an anomaly. */
   anomalies: AnomalyType[];
   /** TE p.9 Ingress/Egress tokens linking to The Fracture. Empty outside Thunder's Edge / before it's rolled into play. */
@@ -179,6 +181,8 @@ export interface Player {
   relicFragments: { cultural: number; industrial: number; hazardous: number; unknown: number };
   /** Exploration cards with `keepInPlayArea` (e.g. "Enigmatic Device") — sit face-up in front of the player until purged, distinct from actionCards/promissoryNotes. */
   explorationCardsInPlayArea: ExplorationCardId[];
+  /** "Freelancers" (exploration card): each entry is 1 unused "you may produce 1 unit in this system; you may spend influence as resources to produce it" grant, tracked by which system it was drawn in — set by phases/exploration.ts's own applyExplorationCard, consumed by phases/production.ts's own executeProduction (its own freelancersActive flag). Multiple entries can stack if several Freelancers are drawn before any are used. */
+  pendingFreelancersGrants?: SystemId[];
 
   /** Faction- or breakthrough-granted ability ids this player currently has, e.g. "genesis", "versatile", "red_yellow_synergy".
    *  This is the hook point for `player.hasAbility(id)` referenced throughout faction JSON. */
@@ -653,6 +657,8 @@ export interface PendingTacticalAction {
   remainingInvasionPlanetIds?: PlanetId[];
   /** TE DUAL PLANET TRAITS (rulebook p.11): banks the committing player's own chosenTrait from COMMIT_GROUND_FORCES for a CONTESTED planet — control (and RR 25.1c's own automatic exploration) isn't actually established until combat concludes, potentially several rounds later, but the player already specified which trait they want right when they first committed, so there's no need to ask again at combat's end. Keyed by planetId since a player could be contesting more than one planet across the same invasion step. */
   dualTraitChoices?: Partial<Record<PlanetId, "cultural" | "industrial" | "hazardous">>;
+  /** Same "banked now, consumed once control is actually established later" shape as dualTraitChoices above — a player's own exploration-card choice for whatever card gets drawn once this contested planet's combat concludes (see phases/exploration.ts's own ExplorationCardChoice). */
+  pendingExplorationChoices?: Partial<Record<PlanetId, import("../phases/exploration").ExplorationCardChoice>>;
   /**
    * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
    * players actively fighting the CURRENT ground combat on
