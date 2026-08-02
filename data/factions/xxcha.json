@@ -84,12 +84,8 @@
           "name": "Space Cannon",
           "value": 5,
           "diceCount": 3,
-          "effect": "SPACE CANNON 5 (x3)"
-        },
-        {
-          "id": "loncara_adjacent_cannon",
-          "name": "Adjacent Space Cannon",
-          "effect": "You may use this unit's SPACE CANNON against ships that are in adjacent systems."
+          "effect": "SPACE CANNON 5 (x3)",
+          "rangesToAdjacent": true
         }
       ]
     },
@@ -109,12 +105,8 @@
           "name": "Space Cannon",
           "value": 8,
           "diceCount": 1,
-          "effect": "SPACE CANNON 8"
-        },
-        {
-          "id": "indomitus_adjacent_cannon",
-          "name": "Adjacent Space Cannon",
-          "effect": "You may use this unit's SPACE CANNON against ships that are in adjacent systems."
+          "effect": "SPACE CANNON 8",
+          "rangesToAdjacent": true
         }
       ]
     }
