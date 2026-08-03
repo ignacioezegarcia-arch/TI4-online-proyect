@@ -43,7 +43,7 @@ export function useResearchAgreement(
   rules: RuleData,
 ): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("research_agreement" as never)) {
+  if (!player?.promissoryNotesInHand.includes("jolnar_promissory" as never)) {
     return { ok: false, error: "This player doesn't have Research Agreement in hand." };
   }
   const jolNarPlayerId = findJolNarPlayerId(state);
@@ -61,9 +61,9 @@ export function useResearchAgreement(
   const updatedPlayer: Player = {
     ...player,
     technologies: [...player.technologies, action.techId],
-    promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("research_agreement" as never)),
+    promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("jolnar_promissory" as never)),
   };
-  const updatedJolNarPlayer: Player = { ...jolNarPlayer, promissoryNotesInHand: [...jolNarPlayer.promissoryNotesInHand, "research_agreement" as never] };
+  const updatedJolNarPlayer: Player = { ...jolNarPlayer, promissoryNotesInHand: [...jolNarPlayer.promissoryNotesInHand, "jolnar_promissory" as never] };
   return {
     ok: true,
     state: { ...state, players: { ...state.players, [action.playerId]: updatedPlayer, [jolNarPlayerId]: updatedJolNarPlayer } },

@@ -1,5 +1,5 @@
 import { GameState, Player, PlanetState, UnitStack } from "../types/GameState";
-import { PlayerId, SystemId, FactionId, UnitUpgradeId, AgendaId, asTechId, asAbilityId } from "../types/ids";
+import { PlayerId, SystemId, PlanetId, FactionId, UnitUpgradeId, AgendaId, asTechId, asAbilityId } from "../types/ids";
 import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus, hasEntropicScar } from "./anomalies";
@@ -311,6 +311,8 @@ export function buildBombardmentEntries(
   plasmaScoringUnitType?: UnitType,
   /** "Bunker"/"Blitz" both need to know who actually controls the planet being bombarded — optional because callers that don't care about either card (or haven't picked a target planet yet) can simply omit it. */
   defenderId?: PlayerId,
+  /** L1Z1X "Ground Bombardment" (Annihilator mech ability): "while NOT participating in ground combat, this unit can use its BOMBARDMENT ability on planets in its system as if it were a ship." Confirmed (yjmrobert.com/tirules/factions/f_lizix): usable even while committed to a DIFFERENT planet's own ground combat, as long as it isn't actively fighting itself right now — the caller supplies which planet(s) this player currently has a mech ACTIVELY fighting ground combat on (excluded from this scan); every OTHER planet's own Annihilator(s) qualify. */
+  groundBombardmentExcludePlanetIds?: PlanetId[],
 ): CombatUnitEntry[] {
   const system = state.systems[systemId];
   if (!system) return [];
@@ -340,6 +342,25 @@ export function buildBombardmentEntries(
       diceCount += 1;
     }
     entries.push({ playerId: attackerId, diceCount, hitOn: bombardment.value + bunkerPenalty, unitType: stack.unitType });
+  }
+
+  // L1Z1X "Ground Bombardment" (Annihilator mech ability): scans every
+  // planet in this system (except ones this player currently has a mech
+  // actively fighting ground combat on) for this player's own mechs with
+  // Bombardment — same dice/Plasma-Scoring/X-89 treatment as the normal
+  // ship-based scan above, just sourced from planets instead of space.
+  if (player.factionId === ("l1z1x" as never)) {
+    for (const planet of system.planets) {
+      if (groundBombardmentExcludePlanetIds?.includes(planet.planetId)) continue;
+      const mechStack = (planet.unitsByPlayer[attackerId] ?? []).find((s) => s.unitType === "mech" && s.count > 0);
+      if (!mechStack) continue;
+      const mechStats = getUnitStats(rules, player.factionId, "mech", player.unitUpgrades);
+      const bombardment = mechStats?.abilityValues?.bombardment;
+      if (!bombardment) continue;
+      let diceCount = mechStack.count * bombardment.dice * bombardmentDiceMultiplier;
+      if (applyPlasmaScoringTo === "mech") diceCount += 1;
+      entries.push({ playerId: attackerId, diceCount, hitOn: bombardment.value + bunkerPenalty, unitType: "mech" });
+    }
   }
   return entries;
 }
@@ -479,6 +500,23 @@ export function applyHitAssignments(
   metaliVoidShieldingAvailable = false,
   /** Letnev "Non-Euclidean Shielding" (faction tech): true if the OWNING side of these `stacks` has this tech — computed by the caller (who has the full Player object, unlike this function, which only receives factionId/ownedUnitUpgrades) and passed in directly. */
   nonEuclideanShieldingAvailable = false,
+  /** L1Z1X "Priority Targeting" (flagship ability): "During a space
+   * combat, hits produced by this ship and by your dreadnoughts in this
+   * system must be assigned to non-fighter ships if able." Confirmed
+   * (yjmrobert.com/tirules/factions/f_lizix — see this file's own note
+   * on this flag's own KNOWN SCOPE LIMIT). True when the OWNER of
+   * THESE stacks (the side being hit) is being attacked by an L1Z1X
+   * player who has their flagship or a dreadnought present in this
+   * combat — computed by the caller. KNOWN SCOPE LIMIT: this project
+   * aggregates a whole combat round's hits into 1 combined count per
+   * player rather than tracking which SPECIFIC attacking unit produced
+   * which SPECIFIC hit — so this is applied to ALL of that L1Z1X
+   * player's own hits this round once ANY qualifying unit (flagship/
+   * dreadnought) is present, not just the exact share of hits that
+   * specific unit itself produced. Flagged rather than silently assumed
+   * exact.
+   */
+  mustPreferNonFighterTargets = false,
 ): ApplyHitAssignmentsResult {
   const updated = stacks.map((s) => ({ ...s }));
   const unitsLeft = updated.reduce((sum, s) => sum + s.count, 0);
@@ -510,6 +548,10 @@ export function applyHitAssignments(
   for (const { unitType, outcome } of assignments) {
     const stack = updated.find((s) => s.unitType === unitType && s.count > 0);
     if (!stack) return { ok: false, error: `No ${unitType} left to assign a hit to.` };
+    // L1Z1X "Priority Targeting": mandatory — reject a fighter assignment if a non-fighter is available instead.
+    if (mustPreferNonFighterTargets && unitType === "fighter" && updated.some((s) => s !== stack && s.unitType !== "fighter" && s.count > 0)) {
+      return { ok: false, error: 'L1Z1X "Priority Targeting": this hit must be assigned to a non-fighter ship instead, since one is available.' };
+    }
 
     if (outcome === "flip") {
       if (hasEntropicScar(systemAnomalies)) {

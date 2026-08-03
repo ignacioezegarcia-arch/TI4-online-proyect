@@ -37,6 +37,7 @@ export function usePeaceAccords(
   rules: RuleData,
 ): ActionResult {
   const player = state.players[action.playerId];
+  if (!hasAbility(player, asAbilityId("peace_accords"))) return { ok: false, error: "This player doesn't have PEACE ACCORDS." };
   let found: { systemId: SystemId; system: SystemState; planet: PlanetState } | null = null;
   for (const [systemId, system] of Object.entries(state.systems)) {
     const planet = system.planets.find((p) => p.planetId === action.targetPlanetId);
@@ -209,7 +210,7 @@ export function useQuash(state: GameState, action: { type: "USE_QUASH"; playerId
  */
 export function usePoliticalFavor(state: GameState, action: { type: "USE_POLITICAL_FAVOR"; playerId: PlayerId } ): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("political_favor" as never)) {
+  if (!player?.promissoryNotesInHand.includes("xxcha_promissory" as never)) {
     return { ok: false, error: "This player doesn't have Political Favor in hand." };
   }
   if (state.pendingPriorityWindow?.kind !== "agenda_revealed" || !state.pendingAgendaVote) {
@@ -223,9 +224,9 @@ export function usePoliticalFavor(state: GameState, action: { type: "USE_POLITIC
   const updatedXxchaPlayer: Player = {
     ...xxchaPlayer,
     commandTokens: { ...xxchaPlayer.commandTokens, strategy: xxchaPlayer.commandTokens.strategy - 1 },
-    promissoryNotesInHand: [...xxchaPlayer.promissoryNotesInHand, "political_favor" as never],
+    promissoryNotesInHand: [...xxchaPlayer.promissoryNotesInHand, "xxcha_promissory" as never],
   };
-  const updatedPlayer: Player = { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("political_favor" as never)) };
+  const updatedPlayer: Player = { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("xxcha_promissory" as never)) };
   const workingState: GameState = { ...state, players: { ...state.players, [action.playerId]: updatedPlayer, [xxchaPlayerId]: updatedXxchaPlayer } };
   return { ok: true, state: discardAndRevealReplacementAgenda(workingState), events: [] };
 }

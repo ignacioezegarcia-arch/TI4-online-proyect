@@ -25,7 +25,7 @@ function findSardakkPlayerId(state: GameState): PlayerId | undefined {
  */
 export function useTekklarLegion(state: GameState, action: { type: "USE_TEKKLAR_LEGION"; playerId: PlayerId }): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("tekklar_legion" as never)) {
+  if (!player?.promissoryNotesInHand.includes("sardakk_promissory" as never)) {
     return { ok: false, error: "This player doesn't have Tekklar Legion in hand." };
   }
   const sardakkPlayerId = findSardakkPlayerId(state);
@@ -44,8 +44,8 @@ export function useTekklarLegion(state: GameState, action: { type: "USE_TEKKLAR_
     pendingTacticalAction: { ...pending, tekklarLegionHolderIdThisCombat: action.playerId },
     players: {
       ...state.players,
-      [sardakkPlayerId]: { ...sardakkPlayer, promissoryNotesInHand: [...sardakkPlayer.promissoryNotesInHand, "tekklar_legion" as never] },
-      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("tekklar_legion" as never)) },
+      [sardakkPlayerId]: { ...sardakkPlayer, promissoryNotesInHand: [...sardakkPlayer.promissoryNotesInHand, "sardakk_promissory" as never] },
+      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("sardakk_promissory" as never)) },
     },
   };
   return { ok: true, state: nextState, events: [] };

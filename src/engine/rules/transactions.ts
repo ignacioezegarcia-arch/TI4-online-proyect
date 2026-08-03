@@ -1,10 +1,11 @@
 import { GameState, Player } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
-import { PlayerId, PromissoryNoteId } from "../types/ids";
+import { PlayerId, PromissoryNoteId, asAbilityId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { arePlayersNeighbors } from "./adjacency";
 import { actionPhaseWindowOrder } from "./priorityWindow";
 import { spaceStationsControlledBy } from "./spaceStations";
+import { hasAbility } from "./abilities";
 
 type RelicFragmentType = "cultural" | "industrial" | "hazardous" | "unknown";
 
@@ -40,7 +41,13 @@ export function canTransact(state: GameState, playerIdA: PlayerId, playerIdB: Pl
 
   const isNeighbors = arePlayersNeighbors(state, playerIdA, playerIdB, rules);
   const bothHaveSpaceStations = spaceStationsControlledBy(state, playerIdA).length > 0 && spaceStationsControlledBy(state, playerIdB).length > 0;
-  if (!isNeighbors && !bothHaveSpaceStations) {
+  // Hacan "GUILD SHIPS" (faction ability, passive) / "Trade Convoys" (promissory note, placed face-up in a player's own play area): "You can negotiate transactions with players who are not your neighbor." Confirmed (tirules2.com/F_hacan): doesn't make Hacan neighbors with EVERYONE (just bypasses the neighbor requirement for THIS check specifically); either player may initiate; still limited to 1 transaction per pair per turn (the check right below this one is untouched).
+  const guildShipsOrTradeConvoysActive =
+    hasAbility(state.players[playerIdA], asAbilityId("guild_ships")) ||
+    hasAbility(state.players[playerIdB], asAbilityId("guild_ships")) ||
+    (state.players[playerIdA]?.promissoryNotesInPlayArea ?? []).includes("hacan_promissory" as never) ||
+    (state.players[playerIdB]?.promissoryNotesInPlayArea ?? []).includes("hacan_promissory" as never);
+  if (!isNeighbors && !bothHaveSpaceStations && !guildShipsOrTradeConvoysActive) {
     return { ok: false, error: "These 2 players are not neighbors (and don't both control a space station)." };
   }
   if ((state.transactionsThisTurn ?? []).includes(key)) {
@@ -60,6 +67,14 @@ interface TransactionOffer {
   relicId?: import("../types/ids").RelicId;
   actionCardId?: string;
   unscoredSecretObjectiveId?: string;
+  /** Hacan "ARBITERS" (faction ability, passive): "action cards can be exchanged as part of a transaction" — ANY NUMBER, unlike Black Market Dealings' own singular actionCardId above (that one's TE-specific and doesn't require either side to actually be Hacan). Confirmed (tirules2.com/F_hacan): "any number of action cards may be traded"; a receiver may go OVER the 7-card hand limit as a result, but must immediately discard back down to 7 (discardExcessActionCardIds below, the RECEIVING player's own choice of which). */
+  actionCardIds?: string[];
+  /** Only meaningful alongside actionCardIds above, on the RECEIVING side of an ARBITERS trade that would push them over 7 action cards — their own choice of which excess ones to discard, applied immediately after receiving. */
+  discardExcessActionCardIds?: string[];
+  /** Hacan "Pride of Kenara" (mech, Tradeable Planet): "this planet's card may be traded as part of a transaction; if you do, move all of your units from this planet to another planet you control." Confirmed (tirules2.com/F_hacan): structures move too (not just ground forces); cannot be traded DURING combat; if the planet is in a gravity rift, moved units must roll for removal (KNOWN GAP: not implemented here — this project has no generic gravity-rift-removal-roll wiring for planet-to-planet moves like this one, same category of gap as a few other gravity-rift edge cases elsewhere). Only meaningful on the GIVING side. */
+  tradeablePlanetId?: import("../types/ids").PlanetId;
+  /** Required alongside tradeablePlanetId above — which OTHER planet the giver's units move to; must already be controlled by the giver. */
+  tradeablePlanetMoveToPlanetId?: import("../types/ids").PlanetId;
 }
 
 /**
@@ -96,10 +111,14 @@ export function resolveTransaction(
   const check = canTransact(state, action.playerId, action.withPlayerId, rules);
   if (!check.ok) return { ok: false, error: check.error };
 
+  const eitherPlayerHasArbiters = hasAbility(state.players[action.playerId], asAbilityId("arbiters")) || hasAbility(state.players[action.withPlayerId], asAbilityId("arbiters"));
   if (!action.blackMarketDealings) {
     const usesWideItems = (o: TransactionOffer) => o.relicId || o.actionCardId || o.unscoredSecretObjectiveId;
     if (usesWideItems(action.offer) || usesWideItems(action.request)) {
       return { ok: false, error: 'TE "Black Market Dealings": relics, action cards, and unscored secret objectives can only be included in a transaction when this card is played as part of it.' };
+    }
+    if ((action.offer.actionCardIds?.length || action.request.actionCardIds?.length) && !eitherPlayerHasArbiters) {
+      return { ok: false, error: 'Hacan "ARBITERS": action cards can only be exchanged in a transaction if one of the 2 players has this ability.' };
     }
   } else {
     const caster = state.players[action.playerId];
@@ -165,6 +184,24 @@ export function resolveTransaction(
       g = { ...g, actionCards: g.actionCards.filter((id) => id !== offer.actionCardId) as never };
       r = { ...r, actionCards: [...r.actionCards, offer.actionCardId] as never };
     }
+    if (offer.actionCardIds && offer.actionCardIds.length > 0) {
+      for (const cardId of offer.actionCardIds) {
+        if (!g.actionCards.includes(cardId as never)) return { error: `${g.id} doesn't have ${cardId}.` };
+      }
+      g = { ...g, actionCards: g.actionCards.filter((id) => !offer.actionCardIds!.includes(id)) as never };
+      r = { ...r, actionCards: [...r.actionCards, ...offer.actionCardIds] as never };
+      // Hacan "ARBITERS": "a player may receive action cards even if doing so would put them over the 7 action card hand limit; they must immediately discard down to 7." The RECEIVER'S OWN choice of which — required here if this pushes them over.
+      if (r.actionCards.length > 7) {
+        const toDiscard = offer.discardExcessActionCardIds ?? [];
+        if (toDiscard.length !== r.actionCards.length - 7) {
+          return { error: `${r.id} would have ${r.actionCards.length} action cards (limit 7) — discardExcessActionCardIds must specify exactly ${r.actionCards.length - 7} to discard.` };
+        }
+        for (const cardId of toDiscard) {
+          if (!r.actionCards.includes(cardId as never)) return { error: `${r.id} doesn't have ${cardId} to discard.` };
+        }
+        r = { ...r, actionCards: r.actionCards.filter((id) => !toDiscard.includes(id)) as never };
+      }
+    }
     if (offer.unscoredSecretObjectiveId) {
       if (!g.secretObjectives.includes(offer.unscoredSecretObjectiveId as never) || g.victoryPoints.scoredObjectiveIds.includes(offer.unscoredSecretObjectiveId as never)) {
         return { error: `${g.id} doesn't have that UNSCORED secret objective.` };
@@ -197,6 +234,43 @@ export function resolveTransaction(
     transactionsThisAgenda: state.phase === "agenda" ? [...(state.transactionsThisAgenda ?? []), key] : state.transactionsThisAgenda,
   };
   events.push({ type: "TRANSACTION_RESOLVED", playerId: action.playerId, otherPlayerId: action.withPlayerId });
+
+  // Hacan "Pride of Kenara" (mech, Tradeable Planet): "move all of your units from this planet to another planet you control." Checked for BOTH sides of the transaction (either the offer or the request could include it) — validated here (not inside applyOffer, which only has Player objects, not the full board) since this operates on systems/planets directly.
+  for (const [giverId, offer] of [[action.playerId, action.offer], [action.withPlayerId, action.request]] as [PlayerId, TransactionOffer][]) {
+    if (!offer.tradeablePlanetId) continue;
+    if (nextState.pendingTacticalAction && (nextState.pendingTacticalAction.step === "spaceCombat" || nextState.pendingTacticalAction.step === "invasion")) {
+      return { ok: false, error: "Pride of Kenara: cannot trade a planet during combat." };
+    }
+    type FoundPlanet = { systemId: import("../types/ids").SystemId; system: import("../types/GameState").SystemState; planet: import("../types/GameState").PlanetState };
+    let sourceFound: FoundPlanet | null = null;
+    let destFound: FoundPlanet | null = null;
+    for (const [systemId, system] of Object.entries(nextState.systems)) {
+      const sourcePlanet = system.planets.find((p) => p.planetId === offer.tradeablePlanetId);
+      if (sourcePlanet) sourceFound = { systemId: systemId as import("../types/ids").SystemId, system, planet: sourcePlanet };
+      const destPlanet = system.planets.find((p) => p.planetId === offer.tradeablePlanetMoveToPlanetId);
+      if (destPlanet) destFound = { systemId: systemId as import("../types/ids").SystemId, system, planet: destPlanet };
+    }
+    if (!sourceFound || sourceFound.planet.controllerId !== giverId) return { ok: false, error: "That player doesn't control the tradeable planet." };
+    if (!destFound || destFound.planet.controllerId !== giverId) return { ok: false, error: "That player doesn't control the destination planet." };
+    const hasPrideOfKenaraHere = (sourceFound.planet.unitsByPlayer[giverId] ?? []).some((s) => s.unitType === "mech" && s.count > 0) && nextState.players[giverId]?.factionId === ("hacan" as never);
+    if (!hasPrideOfKenaraHere) return { ok: false, error: "Pride of Kenara: that player doesn't have this mech on the planet being traded." };
+
+    const movedStacks = sourceFound.planet.unitsByPlayer[giverId] ?? [];
+    const destStacks = destFound.planet.unitsByPlayer[giverId] ?? [];
+    const mergedStacks = [...destStacks];
+    for (const stack of movedStacks) {
+      const existing = mergedStacks.find((s) => s.unitType === stack.unitType);
+      if (existing) existing.count += stack.count;
+      else mergedStacks.push({ ...stack });
+    }
+    const updatedSourcePlanet = { ...sourceFound.planet, unitsByPlayer: { ...sourceFound.planet.unitsByPlayer, [giverId]: [] } };
+    const updatedSourceSystem = { ...sourceFound.system, planets: sourceFound.system.planets.map((p) => (p.planetId === offer.tradeablePlanetId ? updatedSourcePlanet : p)) };
+    let systems = { ...nextState.systems, [sourceFound.systemId]: updatedSourceSystem };
+    const destSystemAfterSourceUpdate = sourceFound.systemId === destFound.systemId ? updatedSourceSystem : destFound.system;
+    const updatedDestPlanet = { ...destFound.planet, unitsByPlayer: { ...destFound.planet.unitsByPlayer, [giverId]: mergedStacks } };
+    systems = { ...systems, [destFound.systemId]: { ...destSystemAfterSourceUpdate, planets: destSystemAfterSourceUpdate.planets.map((p) => (p.planetId === offer.tradeablePlanetMoveToPlanetId ? updatedDestPlanet : p)) } };
+    nextState = { ...nextState, systems };
+  }
 
   // TE "Lie in Wait": "After 2 of your neighbours resolve a transaction"
   // — checked for every OTHER player who is a neighbor of BOTH parties to

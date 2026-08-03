@@ -6,6 +6,7 @@ import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { checkReinforcementsAvailable } from "./reinforcements";
 import { spendForCost } from "../phases/technology";
 import { getAdjacentSystems } from "./adjacency";
+import { hasCodex } from "./gameMode";
 
 /**
  * Arborec "MITOSIS" (faction ability): the pending-choice half — "place
@@ -83,13 +84,15 @@ function findArborecPlayerId(state: GameState): PlayerId | undefined {
  */
 export function useStymie(state: GameState, action: { type: "USE_STYMIE"; playerId: PlayerId } ): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("stymie" as never)) {
+  // NOTE: same "no separate id for original vs Ω in the raw data" situation as Letnev's own War Funding — see rules/letnev.ts's own useWarFunding for the fuller explanation. Gated here by game mode instead.
+  if (!player?.promissoryNotesInHand.includes("arborec_promissory" as never)) {
     return { ok: false, error: "This player doesn't have Stymie in hand." };
   }
+  if (hasCodex(state.mode)) return { ok: false, error: "This game uses Stymie Ω instead (Codex content is active)." };
   const updatedPlayer: Player = {
     ...player,
-    promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("stymie" as never)),
-    promissoryNotesInPlayArea: [...player.promissoryNotesInPlayArea, "stymie" as never],
+    promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("arborec_promissory" as never)),
+    promissoryNotesInPlayArea: [...player.promissoryNotesInPlayArea, "arborec_promissory" as never],
   };
   return { ok: true, state: { ...state, players: { ...state.players, [action.playerId]: updatedPlayer } }, events: [] };
 }
@@ -105,12 +108,12 @@ export function maybeReturnStymie(state: GameState, activatingPlayerId: PlayerId
 
   let players = state.players;
   for (const [holderId, holder] of Object.entries(players)) {
-    if (!holder.promissoryNotesInPlayArea.includes("stymie" as never)) continue;
+    if (!holder.promissoryNotesInPlayArea.includes("arborec_promissory" as never)) continue;
     const arborecPlayer = players[arborecPlayerId];
     players = {
       ...players,
-      [holderId]: { ...holder, promissoryNotesInPlayArea: holder.promissoryNotesInPlayArea.filter((id) => id !== ("stymie" as never)) },
-      [arborecPlayerId]: { ...arborecPlayer, promissoryNotesInHand: [...arborecPlayer.promissoryNotesInHand, "stymie" as never] },
+      [holderId]: { ...holder, promissoryNotesInPlayArea: holder.promissoryNotesInPlayArea.filter((id) => id !== ("arborec_promissory" as never)) },
+      [arborecPlayerId]: { ...arborecPlayer, promissoryNotesInHand: [...arborecPlayer.promissoryNotesInHand, "arborec_promissory" as never] },
     };
   }
   return { ...state, players };
@@ -134,9 +137,10 @@ export function useStymieOmega(
   rules: RuleData,
 ): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("stymie_omega" as never)) {
+  if (!player?.promissoryNotesInHand.includes("arborec_promissory" as never)) {
     return { ok: false, error: "This player doesn't have Stymie Ω in hand." };
   }
+  if (!hasCodex(state.mode)) return { ok: false, error: "This game uses the original Stymie instead (Codex content isn't active)." };
   const arborecPlayerId = findArborecPlayerId(state);
   if (!arborecPlayerId) return { ok: false, error: "No Arborec player in this game." };
 
@@ -168,8 +172,8 @@ export function useStymieOmega(
   }
 
   const arborecPlayer = state.players[arborecPlayerId];
-  const updatedPlayer: Player = { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("stymie_omega" as never)) };
-  const updatedArborecPlayer: Player = { ...arborecPlayer, promissoryNotesInHand: [...arborecPlayer.promissoryNotesInHand, "stymie_omega" as never] };
+  const updatedPlayer: Player = { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("arborec_promissory" as never)) };
+  const updatedArborecPlayer: Player = { ...arborecPlayer, promissoryNotesInHand: [...arborecPlayer.promissoryNotesInHand, "arborec_promissory" as never] };
 
   return {
     ok: true,

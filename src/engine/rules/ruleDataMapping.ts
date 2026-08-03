@@ -15,6 +15,7 @@ export const ABILITY_NAME_TO_ENUM: Record<string, UnitAbility> = {
   Production: "production",
   "Space Cannon": "spaceCannon",
   "Sustain Damage": "sustainDamage",
+  "Direct Hit Immunity": "directHitImmunity",
 };
 
 export interface RawUnitEntry {

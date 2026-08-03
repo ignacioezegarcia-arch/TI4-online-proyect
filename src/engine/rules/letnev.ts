@@ -6,6 +6,7 @@ import { asAbilityId, asLeaderId, PlayerId, PlanetId, SystemId } from "../types/
 import { SHIP_TYPES } from "../types/enums";
 import { unlockCommander } from "./leaders";
 import { checkReinforcementsAvailable } from "./reinforcements";
+import { hasCodex } from "./gameMode";
 import { buildSpaceCombatEntries } from "./combat";
 
 /**
@@ -331,9 +332,11 @@ export function useWarFunding(
   rules: RuleData,
 ): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("war_funding" as never)) {
+  // NOTE: the raw data (data/factions/letnev.json's own promissoryNote.versions) has NO separate id for "original" vs "Ω" — this project's own buildFactionPromissoryNotesLookup synthesizes a single "letnev_promissory" id either way, using only the BASE version's text. Since only ONE of these 2 functions can ever be the correct RULES for a given game, gated here by game mode (this one = base rules, no Codex) rather than by a (nonexistent) separate note id.
+  if (!player?.promissoryNotesInHand.includes("letnev_promissory" as never)) {
     return { ok: false, error: "This player doesn't have War Funding in hand." };
   }
+  if (hasCodex(state.mode)) return { ok: false, error: "This game uses War Funding Ω instead (Codex content is active)." };
   const letnevPlayerId = findLetnevPlayerId(state);
   if (!letnevPlayerId) return { ok: false, error: "No Letnev player in this game." };
   const pending = state.pendingTacticalAction;
@@ -362,13 +365,13 @@ export function useWarFunding(
   }
 
   const letnevPlayer = state.players[letnevPlayerId];
-  const updatedLetnevPlayer: Player = { ...letnevPlayer, tradeGoods: Math.max(0, letnevPlayer.tradeGoods - 2), promissoryNotesInHand: [...letnevPlayer.promissoryNotesInHand, "war_funding" as never] };
+  const updatedLetnevPlayer: Player = { ...letnevPlayer, tradeGoods: Math.max(0, letnevPlayer.tradeGoods - 2), promissoryNotesInHand: [...letnevPlayer.promissoryNotesInHand, "letnev_promissory" as never] };
   let nextState: GameState = {
     ...state,
     players: {
       ...state.players,
       [letnevPlayerId]: updatedLetnevPlayer,
-      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("war_funding" as never)) },
+      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("letnev_promissory" as never)) },
     },
     pendingTacticalAction: { ...pending, usedWarFundingThisRoundBy: action.playerId },
   };
@@ -416,9 +419,10 @@ export function useWarFundingOmega(
   rules: RuleData,
 ): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("war_funding_omega" as never)) {
+  if (!player?.promissoryNotesInHand.includes("letnev_promissory" as never)) {
     return { ok: false, error: "This player doesn't have War Funding Ω in hand." };
   }
+  if (!hasCodex(state.mode)) return { ok: false, error: "This game uses the original War Funding instead (Codex content isn't active)." };
   const letnevPlayerId = findLetnevPlayerId(state);
   if (!letnevPlayerId) return { ok: false, error: "No Letnev player in this game." };
   const pending = state.pendingTacticalAction;
@@ -460,8 +464,8 @@ export function useWarFundingOmega(
     ...state,
     players: {
       ...state.players,
-      [letnevPlayerId]: { ...letnevPlayer, promissoryNotesInHand: [...letnevPlayer.promissoryNotesInHand, "war_funding_omega" as never] },
-      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("war_funding_omega" as never)) },
+      [letnevPlayerId]: { ...letnevPlayer, promissoryNotesInHand: [...letnevPlayer.promissoryNotesInHand, "letnev_promissory" as never] },
+      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("letnev_promissory" as never)) },
     },
     pendingTacticalAction: { ...pending, usedWarFundingThisRoundBy: action.playerId },
   };

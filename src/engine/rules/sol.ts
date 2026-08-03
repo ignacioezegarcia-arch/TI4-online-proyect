@@ -145,7 +145,7 @@ export function useMilitarySupport(
   action: { type: "USE_MILITARY_SUPPORT"; playerId: PlayerId; placeInfantry?: { targetPlanetId: PlanetId; count: number } },
 ): ActionResult {
   const player = state.players[action.playerId];
-  if (!player?.promissoryNotesInHand.includes("military_support" as never)) {
+  if (!player?.promissoryNotesInHand.includes("sol_promissory" as never)) {
     return { ok: false, error: "This player doesn't have Military Support in hand." };
   }
   const solPlayerId = Object.values(state.players).find((p) => p.factionId === ("sol" as never))?.id;
@@ -164,8 +164,8 @@ export function useMilitarySupport(
     usedMilitarySupportForActivePlayerTurn: true,
     players: {
       ...state.players,
-      [solPlayerId]: { ...updatedSolPlayer, promissoryNotesInHand: [...updatedSolPlayer.promissoryNotesInHand, "military_support" as never] },
-      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("military_support" as never)) },
+      [solPlayerId]: { ...updatedSolPlayer, promissoryNotesInHand: [...updatedSolPlayer.promissoryNotesInHand, "sol_promissory" as never] },
+      [action.playerId]: { ...player, promissoryNotesInHand: player.promissoryNotesInHand.filter((id) => id !== ("sol_promissory" as never)) },
     },
   };
   const events: GameEvent[] = [];
