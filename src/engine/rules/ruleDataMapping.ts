@@ -37,7 +37,22 @@ export function unitEntryToStats(raw: Partial<RawUnitEntry>, unitType: UnitType)
   const abilityValues: Partial<Record<UnitAbility, { value: number; dice: number; rangesToAdjacent?: boolean }>> = {};
   for (const a of rawAbilities) {
     const key = ABILITY_NAME_TO_ENUM[a.name];
-    if (key && a.value !== undefined && a.diceCount !== undefined) {
+    if (!key) continue;
+    // "Production" (e.g. Arborec's own Letani Warrior/Letani Behemoth,
+    // "Production 1"/"Production 2") is a FLAT ability with a value but
+    // no dice roll at all — requiring diceCount here (as every OTHER
+    // dice-rolling ability like AFB/Bombardment/Space Cannon correctly
+    // does) silently dropped Production's own value entirely for every
+    // unit that has it as a plain numeric ability, since the data
+    // genuinely never includes diceCount for it. Previously this meant
+    // phases/production.ts's own productionLimit computation could never
+    // see ANY non-space-dock unit's own explicit Production value —
+    // caught only once that computation was actually built out for
+    // Arborec specifically, but this bug applies to ANY faction/unit
+    // with a plain "Production N" ability, not just Arborec.
+    if (key === "production" && a.value !== undefined) {
+      abilityValues[key] = { value: a.value, dice: a.diceCount ?? 1, rangesToAdjacent: a.rangesToAdjacent };
+    } else if (a.value !== undefined && a.diceCount !== undefined) {
       abilityValues[key] = { value: a.value, dice: a.diceCount, rangesToAdjacent: a.rangesToAdjacent };
     }
   }

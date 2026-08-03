@@ -291,15 +291,18 @@ export function checkSpecOpsRespawn(
   destroyedInfantryCount: number,
   dieRolls: number[],
   rules: RuleData,
+  /** Which faction owns this Respawn-bearing infantry, and at what die-roll threshold it succeeds — Sol's own Spec Ops II ("5 or greater") and Arborec's own Letani Warrior II ("6 or greater") are the 2 known sources of this exact mechanic, each with its own faction gate and threshold; defaults preserve this function's own original Sol-specific behavior for any caller that doesn't pass these. */
+  factionId: string = "sol",
+  threshold: number = 5,
 ): GameState {
   if (destroyedInfantryCount <= 0) return state;
   const player = state.players[playerId];
-  if (player.factionId !== ("sol" as never)) return state;
+  if (player.factionId !== (factionId as never)) return state;
   const stats = getUnitStats(rules, player.factionId, "infantry", player.unitUpgrades);
   if (!stats?.abilities.includes("respawn" as never)) return state;
   if (dieRolls.length !== destroyedInfantryCount) return state;
 
-  const respawnedCount = dieRolls.filter((r) => r >= 5).length;
+  const respawnedCount = dieRolls.filter((r) => r >= threshold).length;
   if (respawnedCount <= 0) return state;
   return { ...state, players: { ...state.players, [playerId]: { ...player, specOpsOnCard: (player.specOpsOnCard ?? 0) + respawnedCount } } };
 }
