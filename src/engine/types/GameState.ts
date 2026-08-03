@@ -183,6 +183,8 @@ export interface Player {
   explorationCardsInPlayArea: ExplorationCardId[];
   /** "Freelancers" (exploration card): each entry is 1 unused "you may produce 1 unit in this system; you may spend influence as resources to produce it" grant, tracked by which system it was drawn in — set by phases/exploration.ts's own applyExplorationCard, consumed by phases/production.ts's own executeProduction (its own freelancersActive flag). Multiple entries can stack if several Freelancers are drawn before any are used. */
   pendingFreelancersGrants?: SystemId[];
+  /** L1Z1X "ASSIMILATE": structure replacements owed but not yet fulfilled because reinforcements were empty at the moment control was gained — resolved later via rules/l1z1x.ts's own resolveAssimilateSubstitute (steal from elsewhere), or simply left unfulfilled if the player never does (RR confirms this isn't forced when reinforcements are truly empty). */
+  pendingAssimilateReplacements?: { planetId: PlanetId; unitType: UnitType }[];
 
   /** Faction- or breakthrough-granted ability ids this player currently has, e.g. "genesis", "versatile", "red_yellow_synergy".
    *  This is the hook point for `player.hasAbility(id)` referenced throughout faction JSON. */
@@ -200,6 +202,8 @@ export interface Player {
    * faction, but shouldn't count until earned.
    */
   hasBreakthrough?: boolean;
+  /** Arborec "Psychospore" (Breakthrough ability): the FIRST Breakthrough this project has built that explicitly says "ACTION: Exhaust this card" — every OTHER Breakthrough implemented so far (Bellum Gloriosum, Archon's Gift, Auto-Factories, N'orr Supremacy, Specialized Compounds) is either passive or exhausts something ELSE (a planet), so hasBreakthrough alone was never insufficient before this one. Readied during the status phase, same as leaders/technologies. */
+  breakthroughExhausted?: boolean;
   /**
    * TE NEUTRAL UNITS (rulebook p.10): true only for the single, special
    * "neutral" pseudo-player entry (see ids.ts's own NEUTRAL_PLAYER_ID)
@@ -299,6 +303,8 @@ export interface GameState {
   pendingLieInWaitTargets?: [PlayerId, PlayerId];
   /** Sol "Genesis" (flagship): "placing the infantry during the status phase is mandatory. After, the Sol player might need to remove an infantry or fighter to meet capacity limits" (confirmed, yjmrobert.com/tirules/factions/f_sol) — tracked here as a pending choice (which unit type to remove) rather than blocking the status phase transition; resolved via RESOLVE_GENESIS_CAPACITY_OVERFLOW. */
   pendingGenesisCapacityOverflow?: { playerId: PlayerId; systemId: SystemId }[];
+  /** Arborec "MITOSIS": players who still need to choose which controlled planet gets their mandatory 1 infantry this status phase — see phases/actionPhase.ts's own runStatusPhaseBookkeeping and rules/arborec.ts's own resolveMitosisPlacement. */
+  pendingMitosisPlacements?: PlayerId[];
   /** Sol "Military Support" (promissory note): "cannot be played twice in one timing window" (confirmed, yjmrobert.com/tirules/factions/f_sol) — tracks whether it's already been used during THIS specific active-player turn; reset whenever the active player changes (phases/actionPhase.ts's own advanceActivePlayer), same as transactionsThisTurn above. */
   usedMilitarySupportForActivePlayerTurn?: boolean;
   /** TE The Fracture: set by phases/theFracture.ts's own setUpFractureOnEntry right when the Fracture comes into play, cleared once placeIngressTokens resolves the triggering player's own choice. synergyColors mirrors whatever that player's breakthrough synergy was AT THAT MOMENT (null if they have none), since that's what determines whether the 3-per-color or the 4-different-specialties path applies. */
@@ -659,6 +665,8 @@ export interface PendingTacticalAction {
   dualTraitChoices?: Partial<Record<PlanetId, "cultural" | "industrial" | "hazardous">>;
   /** Same "banked now, consumed once control is actually established later" shape as dualTraitChoices above — a player's own exploration-card choice for whatever card gets drawn once this contested planet's combat concludes (see phases/exploration.ts's own ExplorationCardChoice). */
   pendingExplorationChoices?: Partial<Record<PlanetId, import("../phases/exploration").ExplorationCardChoice>>;
+  /** Arborec "Duha Menaimon" (flagship): true only if the flagship was actually present in this system at the moment it was activated — see phases/tacticalAction.ts's own activateSystem and rules/arborec.ts's own useDuhaMenaimonProduction. */
+  duhaMenaimonPresentAtActivation?: boolean;
   /**
    * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
    * players actively fighting the CURRENT ground combat on

@@ -470,6 +470,38 @@ export type GameAction =
       explorationChoice?: import("../phases/exploration").ExplorationCardChoice;
     } // Faunus' own legendary ability — see phases/legendaryPlanets.ts
   | { type: "USE_ENIGMATIC_DEVICE"; playerId: PlayerId; techId: TechId; exhaustPlanetIdsForResources: PlanetId[] } // Frontier exploration card, kept in play area — see phases/exploration.ts
+  | { type: "RESOLVE_MITOSIS_PLACEMENT"; playerId: PlayerId; targetPlanetId: PlanetId; useDeployMech?: boolean } // Arborec's own faction ability — see rules/arborec.ts
+  | { type: "USE_STYMIE"; playerId: PlayerId } // Arborec's own promissory note — see rules/arborec.ts
+  | { type: "USE_STYMIE_OMEGA"; playerId: PlayerId; targetPlayerId: PlayerId; targetSystemId: SystemId; commandTokenPool?: "tactic" | "fleet" | "strategy" } // Arborec's own promissory note (Codex) — see rules/arborec.ts
+  | { type: "USE_DUHA_MENAIMON_PRODUCTION"; playerId: PlayerId; units: { unitType: UnitType; count: number }[]; exhaustPlanetIdsForResources: PlanetId[]; groundForceTargetPlanetId?: PlanetId } // Arborec's own flagship — see rules/arborec.ts
+  | { type: "USE_BIOPLASMOSIS"; playerId: PlayerId; moves: { fromPlanetId: PlanetId; toPlanetId: PlanetId; count: number }[] } // Arborec's own faction tech — see rules/arborec.ts
+  | {
+      type: "USE_LETANI_OSPHA";
+      ownerId: PlayerId;
+      targetPlayerId: PlayerId;
+      systemId: SystemId;
+      replacedUnitType: UnitType;
+      newUnitType: UnitType;
+      substituteSourceSystemId?: SystemId;
+    } // Arborec's own agent — see rules/arborec.ts
+  | { type: "USE_DIRZUGA_ROPHAL"; playerId: PlayerId; systemId: SystemId; unitType: UnitType; count: number; exhaustPlanetIdsForResources: PlanetId[]; groundForceTargetPlanetId?: PlanetId } // Arborec's own commander — see rules/arborec.ts
+  | {
+      type: "USE_LETANI_MIASMIALA";
+      playerId: PlayerId;
+      productions: { systemId: SystemId; units: { unitType: UnitType; count: number }[]; exhaustPlanetIdsForResources: PlanetId[]; groundForceTargetPlanetId?: PlanetId }[];
+    } // Arborec's own hero — see rules/arborec.ts
+  | { type: "USE_PSYCHOSPORE"; playerId: PlayerId; targetSystemId: SystemId } // Arborec's own Breakthrough — see rules/arborec.ts
+  | { type: "RESOLVE_ASSIMILATE_SUBSTITUTE"; playerId: PlayerId; planetId: PlanetId; unitType: UnitType; substituteSourceSystemId: SystemId } // L1Z1X's own faction ability — see rules/l1z1x.ts
+  | { type: "USE_HARROW"; playerId: PlayerId; diceRolls: number[]; plasmaScoringUnitType?: UnitType } // L1Z1X's own faction ability — hits assigned via the existing ASSIGN_BOMBARDMENT_HITS action — see rules/l1z1x.ts
+  | { type: "USE_CYBERNETIC_ENHANCEMENTS"; playerId: PlayerId } // L1Z1X's own promissory note — see rules/l1z1x.ts
+  | { type: "USE_CYBERNETIC_ENHANCEMENTS_OMEGA"; playerId: PlayerId; commandTokenPool: "tactic" | "fleet" | "strategy" } // L1Z1X's own promissory note (Codex) — see rules/l1z1x.ts
+  | { type: "USE_I48S"; ownerId: PlayerId; targetPlayerId: PlayerId; systemId: SystemId; targetPlanetId?: PlanetId; substituteSourceSystemId?: SystemId } // L1Z1X's own agent — see rules/l1z1x.ts
+  | {
+      type: "USE_THE_HELMSMAN";
+      playerId: PlayerId;
+      targetSystemId: SystemId;
+      moves: { fromSystemId: SystemId; unitType: "flagship" | "dreadnought"; count: number; transportedUnits?: { unitType: UnitType; count: number }[] }[];
+    } // L1Z1X's own hero — see rules/l1z1x.ts
   | { type: "USE_THE_ACROPOLIS"; playerId: PlayerId; target: { kind: "planet"; planetId: PlanetId } | { kind: "relic"; relicId: string } | { kind: "technology"; techId: TechId } | { kind: "leader"; leaderId: string } } // TE Emelpar's own legendary ability, "at the end of your turn" — usable only during the end_of_turn priority window — see phases/legendaryPlanets.ts
   | { type: "USE_THE_GALACTIC_COUNCIL"; playerId: PlayerId; discardedSecretObjectiveId: string } // TE Mecatol Rex's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
   | { type: "USE_JUPITER_BRAIN"; playerId: PlayerId } // TE Thunder's Edge's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
@@ -534,6 +566,8 @@ export type GameAction =
       docSucabanRemovedInfantry?: { planetId: PlanetId; count: number }[];
       /** Jol-Nar "Specialized Compounds" (Breakthrough): exhaust this tech-specialty planet instead of paying resources — see phases/technology.ts's own researchTechnology for the full doc comment. */
       specializedCompoundsPlanetId?: PlanetId;
+      /** L1Z1X "Inheritance Systems" (faction tech): ignore ALL prerequisites, paying 2 resources separately — see phases/technology.ts's own researchTechnology for the full doc comment. */
+      useInheritanceSystemsExhaustPlanetIds?: PlanetId[];
     } // RR 90
   | {
       type: "RESEARCH_UNIT_UPGRADE";
@@ -848,6 +882,7 @@ export type GameEvent =
   | { type: "PLANET_DESTROYED"; systemId: SystemId; planetId: PlanetId }
   | { type: "HEART_OF_IXTH_ADJUSTED_ROLL"; playerId: PlayerId; originalRoll: number; adjustedRoll: number }
   | { type: "COMMAND_TOKENS_RETURNED_TO_REINFORCEMENTS"; playerId: PlayerId; count: number }
+  | { type: "HARROW_HITS_SCORED"; playerId: PlayerId; targetPlayerId: PlayerId; hits: number }
   | { type: "GAME_ENDED"; winnerId: PlayerId }
   | { type: "PLAYER_ELIMINATED"; playerId: PlayerId };
 
