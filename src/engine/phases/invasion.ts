@@ -7,6 +7,8 @@ import { usesCodex4Version, hasPoKContent } from "../rules/gameMode";
 import { isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeTransferShardOfTheThroneOnControlGain, maybeQueueCrownOfThalnosReroll } from "../rules/relics";
 import { checkSpecOpsRespawn } from "../rules/sol";
+import { checkReinforcementsAvailable } from "../rules/reinforcements";
+import { has2ramBombardmentOverride, applyFealtyUplink } from "../rules/l1z1x";
 import { applyExplorationCard, ExplorationCardChoice } from "./exploration";
 import {
   playersWithGroundForces,
@@ -125,7 +127,7 @@ export function bombard(
   // "Disable": this attacker's opponents' PDS units lose Planetary Shield (and Space Cannon, checked separately in Space Cannon Defense) for the rest of this invasion.
   const disableActive = pending.disablePlayerId === action.playerId;
 
-  if (!disableActive && planetHasShield(planet, primaryDefenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules, attackerHasWarSunInSystem)) {
+  if (!disableActive && !has2ramBombardmentOverride(state, action.playerId) && planetHasShield(planet, primaryDefenderId, defenderPlayer.factionId, defenderPlayer.unitUpgrades, rules, attackerHasWarSunInSystem)) {
     return { ok: false, error: `RR 15/44.1: ${action.targetPlanetId} has Planetary Shield — Bombardment can't target it.` };
   }
   // RR "Conventions of War" ("for"): Bombardment can't target units on a cultural planet while this law is active.
@@ -133,7 +135,7 @@ export function bombard(
     return { ok: false, error: 'RR "Conventions of War": Bombardment cannot target units on a cultural planet while this law is active.' };
   }
 
-  const entries = buildBombardmentEntries(state, rules, systemId, action.playerId, action.plasmaScoringUnitType, planet.controllerId ?? undefined);
+  const entries = buildBombardmentEntries(state, rules, systemId, action.playerId, action.plasmaScoringUnitType, planet.controllerId ?? undefined, pending.currentInvasionPlanetId ? [pending.currentInvasionPlanetId] : []);
   if (entries.length === 0) {
     return { ok: false, error: "RR 44.1: this player has no Bombardment-capable units in this system." };
   }
@@ -1420,6 +1422,47 @@ export function setPlanetController(
     planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
   };
   let nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+
+  // L1Z1X "ASSIMILATE" (faction ability): "When you gain control of a
+  // planet, replace each PDS and space dock that is on that planet with
+  // a matching unit from your reinforcements." Confirmed
+  // (yjmrobert.com/tirules/factions/f_lizix):
+  //  - Checked against whatever structures were on the planet BEFORE
+  //    RR 49.5b's own destruction above already removed them (this
+  //    project's own general rule for ANY other player's structures on
+  //    control change) — Assimilate's own replacement is a consequence
+  //    layered ON TOP of that normal destruction, not an exception to it.
+  //  - Mandatory for every structure type that WAS there, unless there
+  //    are none of that type left in reinforcements (not forced then).
+  //  - If none left in reinforcements, may substitute from any OTHER
+  //    system without this player's own command token (same "steal from
+  //    elsewhere" fallback as Freelancers/Letani Ospha/Dirzuga Rophal).
+  //  - A newly-placed space dock CAN produce during this SAME tactical
+  //    action's own Production step — achieved simply by never gating
+  //    or flagging it any differently from a normally-placed one.
+  if (state.players[controllerId]?.factionId === ("l1z1x" as never) && previousControllerId && previousControllerId !== controllerId) {
+    const destroyedStructureTypes = (planet.unitsByPlayer[previousControllerId] ?? []).filter((s) => STRUCTURE_TYPES.includes(s.unitType) && s.count > 0).map((s) => s.unitType);
+    const pendingReplacements: { planetId: PlanetId; unitType: import("../types/enums").UnitType }[] = [...(nextState.players[controllerId]?.pendingAssimilateReplacements ?? [])];
+    for (const structureType of destroyedStructureTypes) {
+      const check = checkReinforcementsAvailable(nextState, controllerId, [{ unitType: structureType, count: 1 }]);
+      if (check.ok) {
+        const currentPlanet = nextState.systems[systemId].planets.find((p) => p.planetId === planetId)!;
+        const stacks = currentPlanet.unitsByPlayer[controllerId] ?? [];
+        const existing = stacks.find((s) => s.unitType === structureType);
+        const updatedStacks = existing ? stacks.map((s) => (s.unitType === structureType ? { ...s, count: s.count + 1 } : s)) : [...stacks, { unitType: structureType, count: 1, damagedCount: 0 }];
+        const finalPlanet: PlanetState = { ...currentPlanet, unitsByPlayer: { ...currentPlanet.unitsByPlayer, [controllerId]: updatedStacks } };
+        nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...nextState.systems[systemId], planets: nextState.systems[systemId].planets.map((p) => (p.planetId === planetId ? finalPlanet : p)) } } };
+      } else {
+        // "Not forced if none left in reinforcements" — but per ruling #3, the player MAY still substitute from elsewhere later; queued here (rules/l1z1x.ts's own resolveAssimilateSubstitute) rather than silently dropped.
+        pendingReplacements.push({ planetId, unitType: structureType });
+      }
+    }
+    if (pendingReplacements.length > (nextState.players[controllerId]?.pendingAssimilateReplacements ?? []).length) {
+      nextState = { ...nextState, players: { ...nextState.players, [controllerId]: { ...nextState.players[controllerId], pendingAssimilateReplacements: pendingReplacements } } };
+    }
+  }
+  // L1Z1X "Fealty Uplink" (Breakthrough ability): "When you gain control of a planet, place infantry equal to that planet's influence value on that planet." Mandatory — see rules/l1z1x.ts's own applyFealtyUplink for the full doc comment.
+  nextState = applyFealtyUplink(nextState, controllerId, systemId, planetId, rules);
   // RR "Shard of the Throne" (relic — PoK version, not the old base-game law): checked on every actual control change, not just combat wins — see rules/relics.ts's own doc comment for the full history/reasoning.
   nextState = maybeTransferShardOfTheThroneOnControlGain(nextState, controllerId, planetId, previousControllerId, rules);
   // Styx / "A Song Like Marrow" (Fracture legendary planet ability): "When you gain this card, gain 1 victory point. When you lose this card, lose 1 victory point." Simple, direct VP swing tied to control of this ONE specific planet — unlike Shard of the Throne, no broader "legendary or home system" condition to check, just this planet by name.

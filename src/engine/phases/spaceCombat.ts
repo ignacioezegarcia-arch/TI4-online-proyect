@@ -439,7 +439,15 @@ export function announceRetreat(
 
 export function resolveSpaceCombatRound(
   state: GameState,
-  action: { type: "RESOLVE_COMBAT_ROUND"; playerId: PlayerId; diceRolls: number[]; viscountUnlennBonus?: { ownerId: PlayerId; targetPlayerId: PlayerId; unitType: UnitType }; gravleashManeuversUnitType?: UnitType },
+  action: {
+    type: "RESOLVE_COMBAT_ROUND";
+    playerId: PlayerId;
+    diceRolls: number[];
+    viscountUnlennBonus?: { ownerId: PlayerId; targetPlayerId: PlayerId; unitType: UnitType };
+    gravleashManeuversUnitType?: UnitType;
+    /** Hacan "Wrath of Kenara" (flagship, Trade Good Bonus): "After you roll a die during a space combat in this system, you may spend 1 trade good to apply +1 to the result." Confirmed (tirules2.com/F_hacan): "triggered only once for each die rolled" (can't spend 2+ on a SINGLE die for +2+) — trusted-input convention, same as every other roll in this project: the caller's own diceRolls array above already reflects any +1 boosts applied, and this is simply how many trade goods they're paying for that (1 per boosted die, at most 1 boost per die since there's no mechanism here to apply more). */
+    wrathOfKenaraTradeGoodsSpent?: number;
+  },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -478,6 +486,15 @@ export function resolveSpaceCombatRound(
         [action.viscountUnlennBonus.ownerId]: { ...unlennOwner, leaders: unlennOwner.leaders.map((l) => (l.leaderId === ("letnev_agent" as never) ? { ...l, exhausted: true } : l)) },
       },
     };
+  }
+
+  // Hacan "Wrath of Kenara" (flagship, Trade Good Bonus): validated + paid here.
+  if (action.wrathOfKenaraTradeGoodsSpent && action.wrathOfKenaraTradeGoodsSpent > 0) {
+    const casterPlayer = workingState.players[action.playerId];
+    const hasWrathOfKenaraHere = (workingState.systems[systemId]?.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.unitType === "flagship" && s.count > 0) && casterPlayer?.factionId === ("hacan" as never);
+    if (!hasWrathOfKenaraHere) return { ok: false, error: "This player doesn't have Wrath of Kenara in this system." };
+    if (casterPlayer.tradeGoods < action.wrathOfKenaraTradeGoodsSpent) return { ok: false, error: "Not enough trade goods." };
+    workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...casterPlayer, tradeGoods: casterPlayer.tradeGoods - action.wrathOfKenaraTradeGoodsSpent } } };
   }
 
   let entries;
@@ -560,7 +577,14 @@ export function assignHits(
   // TE NEUTRAL UNITS: see phases/invasion.ts's own assignGroundCombatHits for the identical fixed-priority-order reasoning — same mechanic, space combat side.
   const spaceAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
 
-  const result = applyHitAssignments(state, stacks, spaceAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, player.relics.includes("metali_void_shielding" as never), player.technologies.includes("non_euclidean_shielding" as never));
+  // L1Z1X "Priority Targeting" (flagship ability): true if this player's own opponent in this combat is L1Z1X and has their flagship or a dreadnought present here — see combat.ts's own applyHitAssignments for the full doc comment on this parameter's own known scope limit.
+  const opponentId = Object.keys(system.spaceUnitsByPlayer).find((id) => id !== action.playerId && (system.spaceUnitsByPlayer[id as PlayerId] ?? []).some((s) => s.count > 0)) as PlayerId | undefined;
+  const opponentPlayer = opponentId ? state.players[opponentId] : undefined;
+  const mustPreferNonFighterTargets =
+    opponentPlayer?.factionId === ("l1z1x" as never) &&
+    (system.spaceUnitsByPlayer[opponentId!] ?? []).some((s) => (s.unitType === "flagship" || s.unitType === "dreadnought") && s.count > 0);
+
+  const result = applyHitAssignments(state, stacks, spaceAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, player.relics.includes("metali_void_shielding" as never), player.technologies.includes("non_euclidean_shielding" as never), mustPreferNonFighterTargets);
   if (!result.ok) return { ok: false, error: `RR 67.6: ${result.error}` };
 
   const events: GameEvent[] = [

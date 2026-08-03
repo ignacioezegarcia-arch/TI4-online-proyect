@@ -41,6 +41,8 @@ export function researchTechnology(
   docSucabanRemovedInfantry?: { planetId: PlanetId; count: number }[],
   /** Jol-Nar "Specialized Compounds" (Breakthrough ability): "When researching using the Technology strategy card, you may exhaust 1 tech-specialty planet you control instead of spending resources; that technology must match the exhausted planet's specialty." Confirmed (tirules2.com/F_jol_nar): (1) can't be used for unit upgrades — not applicable to this function at all, since it's only ever called for non-unit-upgrade research; (2) even a tech with 0 (or fully ignored) prerequisites must still match the planet's OWN specialty color to qualify — checked directly against rules.technologies[techId].color, independent of the prerequisite check above; (3) the SAME planet can't both pay via this AND be used to ignore a prerequisite (via exhaustPlanetIdsForTechSpecialty above) in the same research — checked by rejecting overlap. */
   specializedCompoundsPlanetId?: PlanetId,
+  /** L1Z1X "Inheritance Systems" (faction tech, exhaustable): "you may exhaust this card and spend 2 resources when you research a technology; ignore all of that technology's prerequisites." Confirmed (yjmrobert.com/tirules/factions/f_lizix): the 2 resources are paid SEPARATELY from the tech's own cost (never combined into one spendForCost call/one exhausted planet) — the planets listed here are exclusively for THIS 2-resource payment, distinct from exhaustPlanetIdsForResources above. */
+  useInheritanceSystemsExhaustPlanetIds?: PlanetId[],
 ): ActionResult {
   const player = state.players[playerId];
   if (!player) return { ok: false, error: "Unknown player." };
@@ -106,6 +108,16 @@ export function researchTechnology(
     if (!hasAbility(player, asAbilityId("analytical"))) return { ok: false, error: "This player doesn't have ANALYTICAL." };
     ignoreColors.push(useAnalyticalIgnoreColor);
   }
+  let ignoreAllPrerequisites = false;
+  if (useInheritanceSystemsExhaustPlanetIds) {
+    if (!player.technologies.includes("inheritance_systems" as never)) return { ok: false, error: "This player doesn't have Inheritance Systems." };
+    if (player.exhaustedTechnologies.includes("inheritance_systems" as never)) return { ok: false, error: "Inheritance Systems is already exhausted." };
+    // Confirmed (yjmrobert.com/tirules/factions/f_lizix): "the 2 resources for Inheritance Systems must be paid IN ADDITION TO AND SEPARATELY FROM any other costs paid to research the technology" — its own standalone spendForCost call, never combined with the tech's own cost above (e.g. a single exhausted planet can't split its resources across both payments in one go).
+    const inheritanceSpend = spendForCost(workingState, playerId, 2, useInheritanceSystemsExhaustPlanetIds, rules);
+    if (!inheritanceSpend.ok) return inheritanceSpend;
+    workingState = { ...inheritanceSpend.state, players: { ...inheritanceSpend.state.players, [playerId]: { ...inheritanceSpend.state.players[playerId], exhaustedTechnologies: [...inheritanceSpend.state.players[playerId].exhaustedTechnologies, "inheritance_systems" as never] } } };
+    ignoreAllPrerequisites = true;
+  }
   if (useResearchTeamAttachmentPlanetId) {
     const teamResult = useResearchTeamAttachment(workingState, playerId, useResearchTeamAttachmentPlanetId, rules);
     if (!teamResult.ok) return teamResult;
@@ -119,7 +131,7 @@ export function researchTechnology(
     ignoreColors.push(...specialtyResult.colors);
   }
 
-  const prereqCheck = checkTechPrerequisites(workingState, playerId, techId, rules, ignoreColors);
+  const prereqCheck = checkTechPrerequisites(workingState, playerId, techId, rules, ignoreAllPrerequisites ? rules.technologies[techId]?.prerequisites ?? [] : ignoreColors);
   if (!prereqCheck.met) return { ok: false, error: `RR 90.7: ${prereqCheck.reason}` };
 
   const spend = spendForCost(workingState, playerId, effectiveCost, exhaustPlanetIdsForResources, rules);

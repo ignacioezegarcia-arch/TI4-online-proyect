@@ -2840,13 +2840,20 @@ export function playCourageousToTheEnd(
 }
 
 /** RR "Direct Hit": after another player's ship uses Sustain Damage to cancel a hit produced by this player's own units/abilities, destroy that ship outright. */
-export function playDirectHit(state: GameState, action: { type: "PLAY_DIRECT_HIT"; playerId: PlayerId; opponentId: PlayerId; unitType: UnitType }): ActionResult {
+export function playDirectHit(state: GameState, action: { type: "PLAY_DIRECT_HIT"; playerId: PlayerId; opponentId: PlayerId; unitType: UnitType }, rules: RuleData): ActionResult {
   const pending = state.pendingTacticalAction;
   if (!pending) return { ok: false, error: 'RR "Direct Hit": only playable during combat.' };
   const recentSustain = (state.recentEvents ?? []).some(
     (e) => e.type === "UNIT_SUSTAINED_DAMAGE" && e.playerId === action.opponentId && e.systemId === pending.systemId && e.unitType === action.unitType,
   );
   if (!recentSustain) return { ok: false, error: "That player hasn't just used Sustain Damage on one of those ships here." };
+
+  // Sardakk N'orr "Exotrireme II" / L1Z1X "Super-Dreadnought II" (both dreadnought upgrades): "This unit cannot be destroyed by 'Direct Hit' action cards." Checked here directly against the TARGET player's own actual dreadnought upgrade (not just unit TYPE, since the base/level-1 versions of both these upgrades do NOT have this immunity).
+  const opponentPlayer = state.players[action.opponentId];
+  const targetStats = getUnitStats(rules, opponentPlayer.factionId, action.unitType, opponentPlayer.unitUpgrades);
+  if (targetStats?.abilities.includes("directHitImmunity")) {
+    return { ok: false, error: "That unit has Direct Hit Immunity — this card cannot destroy it." };
+  }
 
   const played = playCard(state, action.playerId, "direct_hit");
   if (!played.ok) return played;
