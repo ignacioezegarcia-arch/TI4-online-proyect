@@ -147,6 +147,7 @@ import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strat
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
 import { exploreFrontier, purgeRelicFragments, useEnigmaticDevice } from "./phases/exploration";
 import { resolveMitosisPlacement, useStymie, useStymieOmega, useDuhaMenaimonProduction, useBioplasmosis, useLetaniOspha, useDirzugaRophal, useLetaniMiasmiala, usePsychospore } from "./rules/arborec";
+import { resolveAssimilateSubstitute, useHarrow, useCyberneticEnhancements, useCyberneticEnhancementsOmega, useI48s, useTheHelmsman } from "./rules/l1z1x";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
   useSelfAssemblyRoutines,
@@ -390,7 +391,7 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         result = resolveStrategySecondary(state, action, rules);
         break;
       case "RESEARCH_TECHNOLOGY":
-        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId, action.exhaustPlanetIdsForTechSpecialty, action.useAnalyticalIgnoreColor, action.docSucabanRemovedInfantry, action.specializedCompoundsPlanetId);
+        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId, action.exhaustPlanetIdsForTechSpecialty, action.useAnalyticalIgnoreColor, action.docSucabanRemovedInfantry, action.specializedCompoundsPlanetId, action.useInheritanceSystemsExhaustPlanetIds);
         break;
       case "RESEARCH_UNIT_UPGRADE":
         result = researchUnitUpgrade(
@@ -834,7 +835,7 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         result = playCourageousToTheEnd(state, action, rules);
         break;
       case "PLAY_DIRECT_HIT":
-        result = playDirectHit(state, action);
+        result = playDirectHit(state, action, rules);
         break;
       case "PLAY_REFLECTIVE_SHIELDING":
         result = playReflectiveShielding(state, action, rules);
@@ -958,6 +959,24 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_PSYCHOSPORE":
         result = usePsychospore(state, action);
+        break;
+      case "RESOLVE_ASSIMILATE_SUBSTITUTE":
+        result = resolveAssimilateSubstitute(state, action);
+        break;
+      case "USE_HARROW":
+        result = useHarrow(state, action, rules);
+        break;
+      case "USE_CYBERNETIC_ENHANCEMENTS":
+        result = useCyberneticEnhancements(state, action);
+        break;
+      case "USE_CYBERNETIC_ENHANCEMENTS_OMEGA":
+        result = useCyberneticEnhancementsOmega(state, action);
+        break;
+      case "USE_I48S":
+        result = useI48s(state, action);
+        break;
+      case "USE_THE_HELMSMAN":
+        result = useTheHelmsman(state, action, rules);
         break;
       case "USE_THE_ACROPOLIS":
         result = useTheAcropolis(state, action);
