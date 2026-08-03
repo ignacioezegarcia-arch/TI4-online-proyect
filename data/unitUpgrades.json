@@ -173,6 +173,10 @@
           "value": 4,
           "diceCount": 1,
           "text": "BOMBARDMENT 4 (x1): además, a diferencia del Dreadnought base, esta unidad puede usar BOMBARDMENT contra cada planeta del sistema al que se movió, inmediatamente después de moverse (no solo durante el paso de Bombardeo de una invasión que él mismo activa)."
+        },
+        {
+          "name": "Direct Hit Immunity",
+          "text": "Upgraded Dreadnoughts are no longer affected by the 'Direct Hit' action card (confirmed via twilight-imperium.fandom.com/wiki/Dreadnought, same immunity Sardakk N'orr's own Exotrireme II and L1Z1X's own Super-Dreadnought II already have)."
         }
       ],
       "cost": 4
