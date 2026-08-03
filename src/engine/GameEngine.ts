@@ -146,6 +146,7 @@ import { checkGroundForcesCommittedWindow, finishGroundCombatWrapUp, openInvasio
 import { resolveStrategyPrimary, resolveStrategySecondary } from "./phases/strategyCardAbilities";
 import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
 import { exploreFrontier, purgeRelicFragments, useEnigmaticDevice } from "./phases/exploration";
+import { resolveMitosisPlacement, useStymie, useStymieOmega, useDuhaMenaimonProduction, useBioplasmosis, useLetaniOspha, useDirzugaRophal, useLetaniMiasmiala, usePsychospore } from "./rules/arborec";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
   useSelfAssemblyRoutines,
@@ -930,6 +931,33 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_ENIGMATIC_DEVICE":
         result = useEnigmaticDevice(state, action, rules);
+        break;
+      case "RESOLVE_MITOSIS_PLACEMENT":
+        result = resolveMitosisPlacement(state, action);
+        break;
+      case "USE_STYMIE":
+        result = useStymie(state, action);
+        break;
+      case "USE_STYMIE_OMEGA":
+        result = useStymieOmega(state, action, rules);
+        break;
+      case "USE_DUHA_MENAIMON_PRODUCTION":
+        result = useDuhaMenaimonProduction(state, action, rules);
+        break;
+      case "USE_BIOPLASMOSIS":
+        result = useBioplasmosis(state, action, rules);
+        break;
+      case "USE_LETANI_OSPHA":
+        result = useLetaniOspha(state, action, rules);
+        break;
+      case "USE_DIRZUGA_ROPHAL":
+        result = useDirzugaRophal(state, action, rules);
+        break;
+      case "USE_LETANI_MIASMIALA":
+        result = useLetaniMiasmiala(state, action, rules);
+        break;
+      case "USE_PSYCHOSPORE":
+        result = usePsychospore(state, action);
         break;
       case "USE_THE_ACROPOLIS":
         result = useTheAcropolis(state, action);
