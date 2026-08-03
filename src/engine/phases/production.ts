@@ -144,23 +144,49 @@ export function executeProduction(
 
   const player = state.players[playerId];
   const producerStacks = planet.unitsByPlayer[playerId] ?? [];
-  let productionLimit: number | null = null;
+  // RR 58: "a unit's Production ability is always followed by a value...
+  // this value is the maximum number of units that unit can produce. If
+  // the active player has multiple units [...] with Production, that
+  // player can produce up to the COMBINED total." Previously this only
+  // ever checked "is ANY Production-capable unit present, if so use the
+  // SPACE DOCK's own special 'planet resources + 2' formula" — silently
+  // ignoring any OTHER unit's own EXPLICIT Production value entirely
+  // (e.g. Arborec's own Letani Warriors, "Production 1"/"Production 2"
+  // printed directly on the unit, no planet-resources formula involved).
+  // Now correctly sums BOTH kinds of contribution. A unit has the
+  // SPECIAL space-dock-style formula when its own Production ability
+  // has no explicit numeric value in the data (space docks are the only
+  // such case); every other Production-capable unit contributes its own
+  // printed value directly. spaceDockLimit/nonSpaceDockLimit are tracked
+  // SEPARATELY (not just summed into 1 number) for Arborec's own
+  // "MITOSIS" restriction further below ("your space docks cannot
+  // produce infantry" — checked against nonSpaceDockLimit specifically).
+  let spaceDockLimit = 0;
+  let nonSpaceDockLimit = 0;
+  let hasAnyProducer = false;
   for (const stack of producerStacks) {
     if (stack.count <= 0) continue;
     const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
-    if (stats?.abilities.includes("production")) {
-      const planetStats = getEffectivePlanetStats(planet, planetId, rules);
-      productionLimit = planetStats.resources + 2;
-      break;
+    if (!stats?.abilities.includes("production")) continue;
+    hasAnyProducer = true;
+    const explicitValue = stats.abilityValues?.production?.value;
+    if (explicitValue == null) {
+      if (spaceDockLimit === 0) {
+        const planetStats = getEffectivePlanetStats(planet, planetId, rules);
+        spaceDockLimit = planetStats.resources + 2;
+      }
+    } else {
+      nonSpaceDockLimit += explicitValue * stack.count;
     }
   }
-  if (productionLimit === null) {
+  if (!hasAnyProducer) {
     return { ok: false, error: `RR 58: no Production-capable unit (e.g. a Space Dock) on ${planetId}.` };
   }
-  // RR "War Machine": +4 to the total Production value for this 1 use.
+  // RR "War Machine": +4 to the total Production value for this 1 use — a general combat-support bonus, not specifically FROM a space dock, so it goes toward the non-space-dock pool (usable for infantry too, relevant for Arborec's own MITOSIS restriction below).
   if (player.warMachineActive) {
-    productionLimit += 4;
+    nonSpaceDockLimit += 4;
   }
+  let productionLimit: number = spaceDockLimit + nonSpaceDockLimit;
 
   // RR "Minister of Industry": confirmed, the owner isn't limited to ONE
   // producer per system — every one of THEIR OWN Production-capable
@@ -177,8 +203,13 @@ export function executeProduction(
     let combinedLimit = 0;
     for (const otherPlanet of system.planets) {
       const stacksHere = otherPlanet.unitsByPlayer[playerId] ?? [];
-      const hasProducerHere = stacksHere.some((s) => s.count > 0 && getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades)?.abilities.includes("production"));
-      if (hasProducerHere) combinedLimit += getEffectivePlanetStats(otherPlanet, otherPlanet.planetId, rules).resources + 2;
+      for (const s of stacksHere) {
+        if (s.count <= 0) continue;
+        const otherStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+        if (!otherStats?.abilities.includes("production")) continue;
+        const explicitValue = otherStats.abilityValues?.production?.value;
+        combinedLimit += explicitValue != null ? explicitValue * s.count : getEffectivePlanetStats(otherPlanet, otherPlanet.planetId, rules).resources + 2;
+      }
     }
     if (combinedLimit > productionLimit) productionLimit = combinedLimit;
   }
@@ -289,6 +320,25 @@ export function executeProduction(
     return { ok: false, error: `RR 58: total cost ${limitCheckCost} exceeds this Space Dock's Production limit (${productionLimit}).` };
   }
 
+  // Arborec "MITOSIS" (faction ability): "Your space docks cannot
+  // produce infantry." Confirmed (yjmrobert.com/tirules/factions/f_arborec
+  // and the Fandom wiki's own FAQ): "Production value from Arborec space
+  // docks cannot be used to produce infantry, even if the Arborec player
+  // controls other units that have Production in the same system" — so
+  // infantry's own cost specifically must be coverable by nonSpaceDockLimit
+  // alone (Letani Warriors' own Production value + War Machine), never
+  // drawing on spaceDockLimit. Confirmed separately: "the produced
+  // infantry may be placed on the SAME planet as the space dock,
+  // regardless of if that planet contains any Letani Warriors" — a
+  // PLACEMENT clarification only, not relevant to this cost check.
+  if (player.factionId === ("arborec" as never)) {
+    const infantryCost = resolvedUnits
+      .filter((u) => u.unitType === "infantry")
+      .reduce((sum, u) => sum + (u.count / getEffectiveProducesQuantity(state, "infantry", 2)) * u.unitCost, 0);
+    if (infantryCost > nonSpaceDockLimit) {
+      return { ok: false, error: `MITOSIS: your space docks cannot produce infantry — this ${infantryCost}-resource infantry cost exceeds your other units' own combined Production value (${nonSpaceDockLimit}).` };
+    }
+  }
   // "Freelancers" (exploration card): validated here — the flag alone
   // isn't trusted; this player must actually hold an unused grant for
   // THIS system, and "produce 1 unit" is a hard cap of exactly 1 (not

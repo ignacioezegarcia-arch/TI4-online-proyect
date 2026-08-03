@@ -14,6 +14,8 @@ import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { findControlledLegendaryPlanet, exhaustLegendaryAbility } from "./legendaryPlanets";
 import { getMaxNonFighterShips } from "../rules/letnev";
+import { maybeReturnTradeConvoys } from "../rules/hacan";
+import { maybeReturnStymie } from "../rules/arborec";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -105,6 +107,24 @@ export function activateSystem(
     }
   }
 
+  // Hacan "Trade Convoys" (promissory note): "if you [the activating player] activate a system that contains 1 or more of the Hacan player's units, return this card to the Hacan player." Confirmed (tirules2.com/F_hacan): returned even for a structures-only system (space dock/PDS, tracked on the PLANET side, not just ships in the system's own space area) — checked across BOTH.
+  const activatedSystemHasHacanUnits = (() => {
+    const hacanPlayerId = Object.values(players).find((p) => p.factionId === ("hacan" as never))?.id;
+    if (!hacanPlayerId || !activatedSystem) return false;
+    if ((activatedSystem.spaceUnitsByPlayer[hacanPlayerId] ?? []).some((s) => s.count > 0)) return true;
+    return activatedSystem.planets.some((p) => (p.unitsByPlayer[hacanPlayerId] ?? []).some((s) => s.count > 0));
+  })();
+  players = maybeReturnTradeConvoys({ ...state, players }, action.playerId, activatedSystemHasHacanUnits).players;
+
+  // Arborec "Stymie" (promissory note): same "returned on ANY activation of a system with the owner's own units" shape as Trade Convoys above — see rules/arborec.ts's own maybeReturnStymie for the full doc comment.
+  const activatedSystemHasArborecUnits = (() => {
+    const arborecPlayerId = Object.values(players).find((p) => p.factionId === ("arborec" as never))?.id;
+    if (!arborecPlayerId || !activatedSystem) return false;
+    if ((activatedSystem.spaceUnitsByPlayer[arborecPlayerId] ?? []).some((s) => s.count > 0)) return true;
+    return activatedSystem.planets.some((p) => (p.unitsByPlayer[arborecPlayerId] ?? []).some((s) => s.count > 0));
+  })();
+  players = maybeReturnStymie({ ...state, players }, action.playerId, activatedSystemHasArborecUnits).players;
+
   const nextState: GameState = {
     ...state,
     systems: systemsWithMagenDefenseGridInfantry,
@@ -113,6 +133,8 @@ export function activateSystem(
       playerId: action.playerId,
       systemId: action.systemId,
       step: "movement",
+      // Arborec "Duha Menaimon" (flagship): "the flagship must be in the system when it is activated for its effect to trigger — it will not trigger if it is moved into the active system later in the turn." Confirmed (yjmrobert.com/tirules/factions/f_arborec). Snapshotted right here, at activation, since this player's own units could change a lot before Production actually resolves.
+      duhaMenaimonPresentAtActivation: (activatedSystem?.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.unitType === "flagship" && s.count > 0) && players[action.playerId]?.factionId === ("arborec" as never),
     },
     // RR 52-adjacent: see GameState.ts's own doc comment on recentEvents —
     // a new tactical action starting is the reset point for that buffer.

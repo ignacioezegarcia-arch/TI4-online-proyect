@@ -1222,6 +1222,8 @@ export function assignGroundCombatHits(
   const destroyedInfantryCount = result.destroyed.get("infantry") ?? 0;
   if (destroyedInfantryCount > 0 && action.specOpsRespawnDieRolls) {
     nextState = checkSpecOpsRespawn(nextState, action.playerId, destroyedInfantryCount, action.specOpsRespawnDieRolls, rules);
+    // Arborec "Letani Warrior II" (Respawn): same mechanic as Sol's own Spec Ops II above, just its own faction gate and a 6+ threshold instead of 5+ — see rules/sol.ts's own checkSpecOpsRespawn, now generalized to take both as parameters.
+    nextState = checkSpecOpsRespawn(nextState, action.playerId, destroyedInfantryCount, action.specOpsRespawnDieRolls, rules, "arborec", 6);
   }
 
   // Sardakk N'orr "Valkyrie Exoskeleton" (mech, Retaliation Strike): "After this unit uses its SUSTAIN DAMAGE ability during Ground Combat, it produces 1 hit against your opponent's ground forces on this planet." Confirmed (tirules2.com/F_norr): mandatory — 1 hit per mech that actually flipped this round, added to the OPPONENT's own pendingHits for this same combat (they'll need their own ASSIGN_HITS to resolve it, same as any other pending hit).

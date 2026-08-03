@@ -750,6 +750,8 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
       exhaustedTechnologies: [],
       // RR: readies every exhausted RELIC too — everything exhausted during the action phase readies at the end of the status phase, same general rule as strategy cards/planets/techs above.
       exhaustedRelics: [],
+      // Arborec "Psychospore" (Breakthrough ability): same readying as the above — see this file's own doc comment on why hasBreakthrough alone wasn't enough for this specific card.
+      breakthroughExhausted: false,
       // RR "Agents" (confirmed by this project's own user): exhausting an agent to use its ability, then readying it at the end of the status phase — same general "exhausted during the action phase, readies at the end of the status phase" rule as everything else here. Commanders/heroes don't normally have an exhaust/ready cycle at all (they're unlock-once, standing-effect leaders) — resetting exhausted unconditionally on every leader entry is harmless for those (already false, stays false) and correct for any exhaust-ability commander/hero too, not just agents specifically.
       leaders: player.leaders.map((l) => ({ ...l, exhausted: false })),
     };
@@ -869,6 +871,26 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
     }
   }
 
+  // Arborec "MITOSIS" (faction ability): "At the start of the status
+  // phase, place 1 infantry from your reinforcements on any planet you
+  // control." Confirmed (yjmrobert.com/tirules/factions/f_arborec):
+  // "placing the infantry during the status phase is mandatory (unless
+  // the Arborec player controls no planets)." Unlike Sol's own Genesis
+  // above (a DETERMINISTIC location, the flagship's own system), this is
+  // the OWNER's own CHOICE of which controlled planet — queued here as a
+  // pending choice (RESOLVE_MITOSIS_PLACEMENT) rather than resolved
+  // automatically, the same shape as pendingGenesisCapacityOverflow's
+  // own "mandatory effect, but WHICH one needs a choice" pattern.
+  const pendingMitosisPlacements: PlayerId[] = [];
+  for (const [playerId, player] of Object.entries(players)) {
+    if (player.factionId !== ("arborec" as never) || player.eliminated) continue;
+    const hasControlledPlanet = Object.values(systems).some((sys) => sys.planets.some((p) => p.controllerId === playerId));
+    if (!hasControlledPlanet) continue;
+    const reinforcementsCheck = checkReinforcementsAvailable({ ...state, systems, players }, playerId as PlayerId, [{ unitType: "infantry", count: 1 }]);
+    if (!reinforcementsCheck.ok) continue;
+    pendingMitosisPlacements.push(playerId as PlayerId);
+  }
+
   return {
     state: {
       ...stateForCrownCheck,
@@ -879,6 +901,7 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
       actionCardDiscardPile,
       pendingCommandTokenGains,
       ...(genesisCapacityOverflow.length > 0 ? { pendingGenesisCapacityOverflow: genesisCapacityOverflow } : {}),
+      ...(pendingMitosisPlacements.length > 0 ? { pendingMitosisPlacements } : {}),
     },
     events,
   };
