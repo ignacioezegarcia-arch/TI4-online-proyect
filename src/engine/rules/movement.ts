@@ -49,7 +49,7 @@ export function canShipReachSystem(
   from: SystemId,
   to: SystemId,
   baseMoveValue: number,
-  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean; ignoreAllAnomalyEffects?: boolean; circletOfTheVoidActive?: boolean } = {},
+  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean; ignoreAllAnomalyEffects?: boolean; circletOfTheVoidActive?: boolean; canMoveThroughSupernova?: boolean } = {},
   rules?: RuleData,
   /**
    * Muaat "Stellar Genesis" breakthrough ability: "after you move 1 of
@@ -116,13 +116,13 @@ export function canShipReachSystem(
         const passedThrough = current.passedThrough || neighborId === mustPassThroughSystemId;
 
         if (isDestination) {
-          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields, bypassAllBlocking: techs.circletOfTheVoidActive })) continue;
+          if (!canShipEnterTile(neighborAnomalies, { isActiveSystem: true, ignoreAsteroidFields, bypassAllBlocking: techs.circletOfTheVoidActive, ignoreSupernova: techs.canMoveThroughSupernova || techs.ignoreAllAnomalyEffects })) continue;
           if (passedThrough) return true;
           // Doesn't satisfy mustPassThroughSystemId via THIS path — keep exploring other paths/hop-counts instead of returning early, same as any other non-final state.
           continue;
         }
 
-        if (!canShipPassThroughTile(neighborAnomalies, ignoreAsteroidFields, techs.circletOfTheVoidActive)) continue;
+        if (!canShipPassThroughTile(neighborAnomalies, ignoreAsteroidFields, techs.circletOfTheVoidActive, techs.canMoveThroughSupernova || techs.ignoreAllAnomalyEffects)) continue;
         const blockedByEnemyFleet =
           !techs.ignoreEnemyFleets && playersWithShipsInSystem(state, neighborId).some((p) => p !== playerId);
         if (blockedByEnemyFleet) continue;

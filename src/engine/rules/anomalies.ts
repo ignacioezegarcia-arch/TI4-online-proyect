@@ -76,15 +76,16 @@ export const ANOMALY_RULES: Record<AnomalyType, AnomalyRuleDefinition> = {
   },
 };
 
-/** Can a ship (no special tech) enter this system? `isActiveSystem` must be true only for the system being activated this tactical action — never for a mid-path system. `ignoreAsteroidFields` is Antimass Deflectors' own effect ("your ships can move into and through asteroid fields") — everything else (Supernova, Nebula's active-system-only rule) still applies even with it. */
+/** Can a ship (no special tech) enter this system? `isActiveSystem` must be true only for the system being activated this tactical action — never for a mid-path system. `ignoreAsteroidFields` is Antimass Deflectors' own effect ("your ships can move into and through asteroid fields") — everything else (Supernova, Nebula's active-system-only rule) still applies even with it. `ignoreSupernova` is Embers of Muaat's own "GASHLAI PHYSIOLOGY"/"Magmus Reactor" ("your ships can move through/into supernovas") — a separate, faction-specific carve-out from Antimass Deflectors', which only ever covers asteroid fields. */
 export function canShipEnterTile(
   anomalies: AnomalyType[],
-  opts: { isActiveSystem?: boolean; ignoreAsteroidFields?: boolean; bypassAllBlocking?: boolean } = {},
+  opts: { isActiveSystem?: boolean; ignoreAsteroidFields?: boolean; bypassAllBlocking?: boolean; ignoreSupernova?: boolean } = {},
 ): boolean {
   if (opts.bypassAllBlocking) return true;
   const isActiveSystem = opts.isActiveSystem ?? false;
   for (const type of anomalies) {
     if (opts.ignoreAsteroidFields && type === "asteroidField") continue;
+    if (opts.ignoreSupernova && type === "supernova") continue;
     const rule = ANOMALY_RULES[type]?.movement;
     if (!rule) continue;
     if (rule.canEnter === false) return false;
@@ -93,11 +94,12 @@ export function canShipEnterTile(
   return true;
 }
 
-/** Can a ship (no special tech) pass through this system as a mid-path stop? Same Antimass Deflectors carve-out as canShipEnterTile above. */
-export function canShipPassThroughTile(anomalies: AnomalyType[], ignoreAsteroidFields = false, bypassAllBlocking = false): boolean {
+/** Can a ship (no special tech) pass through this system as a mid-path stop? Same Antimass Deflectors/Muaat-supernova carve-outs as canShipEnterTile above. */
+export function canShipPassThroughTile(anomalies: AnomalyType[], ignoreAsteroidFields = false, bypassAllBlocking = false, ignoreSupernova = false): boolean {
   if (bypassAllBlocking) return true;
   return anomalies.every((type) => {
     if (ignoreAsteroidFields && type === "asteroidField") return true;
+    if (ignoreSupernova && type === "supernova") return true;
     return ANOMALY_RULES[type]?.movement.canPassThrough !== false;
   });
 }
