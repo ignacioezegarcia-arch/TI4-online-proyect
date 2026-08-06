@@ -165,6 +165,7 @@ import {
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy, useDokNPicsSalvageYardPlay, useTheAcropolis, useTheGalacticCouncil, useJupiterBrain, useMaxisCentralControl } from "./phases/legendaryPlanets";
 import { useStarForge, useTheNucleus, applyStellarGenesisOnGain, useMagmusReactorOmegaProduction, useFiresOfTheGashlai, useForgeCruiser, useEmberColossusSpawn, useUmbat, useMagmusTradeGood, useNovaSeed } from "./rules/muaat";
+import { useStallTactics, discardSchemingCard, useSpyNet, useMageonImplants, checkSsruuAndTarget, loanAgentLeader, returnLoanedAgentLeaderAndExhaustSsruu, useGuildOfSpies } from "./rules/yssaril";
 import { useOrbitalDrop, useZsThunderboltM2Deploy, resolveGenesisCapacityOverflow, useMilitarySupport, useClaireGibson, useJaceX } from "./rules/sol";
 import { useRearAdmiralFarran, useDunlainReaperDeploy, useDarktalonTreilla, useMunitionsReserves, resolveFleetCleanup, useWarFunding, useWarFundingOmega } from "./rules/letnev";
 import { useTekklarLegion, useExotriremeIISelfDestruct, useTro, useNorrSupremacy, useGhomSekkus, useShvalHarbinger } from "./rules/sardakk";
@@ -298,6 +299,19 @@ function resolveAnnouncedStrategicAction(state: GameState, rules: RuleData): Act
  */
 function dispatchAction(state: GameState, action: GameAction, rules: RuleData): ActionResult {
   let result: ActionResult;
+
+  // Yssaril Tribes "SCHEMING": "No other abilities may resolve until the
+  // Yssaril player has discarded the action card" (confirmed at
+  // tirules2.com/F_yssaril) — a GLOBAL pause, not just Yssaril's own
+  // turn: nothing else (any player, any action) proceeds until every
+  // pending SCHEMING discard is resolved. Previously pendingSchemingDiscards
+  // was only ever set/read/cleared, never actually enforced anywhere —
+  // caught only by re-checking this specific "no other abilities" line
+  // after already believing SCHEMING was "done".
+  if ((state.pendingSchemingDiscards ?? []).length > 0 && action.type !== "DISCARD_SCHEMING_CARD") {
+    return { ok: false, error: 'Yssaril "SCHEMING": no other abilities may resolve until the pending discard(s) are resolved.' };
+  }
+
     switch (action.type) {
       case "CHOOSE_STRATEGY_CARD":
         result = chooseStrategyCard(state, action);
@@ -1160,6 +1174,38 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       case "USE_NOVA_SEED":
         result = useNovaSeed(state, action, rules);
         break;
+      case "USE_STALL_TACTICS":
+        result = useStallTactics(state, action);
+        break;
+      case "DISCARD_SCHEMING_CARD":
+        result = discardSchemingCard(state, action);
+        break;
+      case "USE_SPY_NET":
+        result = useSpyNet(state, action);
+        break;
+      case "USE_MAGEON_IMPLANTS":
+        result = useMageonImplants(state, action);
+        break;
+      case "USE_GUILD_OF_SPIES":
+        result = useGuildOfSpies(state, action);
+        break;
+      case "USE_SSRUU": {
+        const ssruuAction = action as { type: "USE_SSRUU"; playerId: PlayerId; targetFactionId: string; innerAction: GameAction };
+        const check = checkSsruuAndTarget(state, ssruuAction.playerId, ssruuAction.targetFactionId);
+        if (!check.ok) {
+          result = check;
+          break;
+        }
+        const syntheticLeaderId = `${ssruuAction.targetFactionId}_agent`;
+        const loanedState = loanAgentLeader(state, ssruuAction.playerId, syntheticLeaderId);
+        const innerResult = dispatchAction(loanedState, ssruuAction.innerAction, rules);
+        if (!innerResult.ok) {
+          result = innerResult;
+          break;
+        }
+        result = { ok: true, state: returnLoanedAgentLeaderAndExhaustSsruu(innerResult.state, ssruuAction.playerId, syntheticLeaderId), events: innerResult.events };
+        break;
+      }
       case "APPLY_STELLAR_GENESIS":
         result = applyStellarGenesisOnGain(state, action.playerId, action.targetSystemId, rules);
         break;
