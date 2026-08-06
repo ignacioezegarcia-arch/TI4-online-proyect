@@ -28,8 +28,16 @@ function pairKey(a: PlayerId, b: PlayerId): string {
  * players do not need to be neighbors to perform these transactions" —
  * capped at 1 per agenda per pair instead of 1 per turn per pair.
  */
-export function canTransact(state: GameState, playerIdA: PlayerId, playerIdB: PlayerId, rules: RuleData): { ok: true } | { ok: false; error: string } {
+export function canTransact(
+  state: GameState,
+  playerIdA: PlayerId,
+  playerIdB: PlayerId,
+  rules: RuleData,
+  /** Yssaril Tribes "Deepgloom Executable" (Breakthrough ability): "you may resolve a transaction with that player [after allowing them to use STALL TACTICS/SCHEMING]... does not count against the once-per-player transactions limit." Confirmed (tirules2.com/F_yssaril): also bypasses the NEIGHBOR requirement entirely, and works even if neither player is the active player — see rules/yssaril.ts's own useDeepgloomExecutableTransaction. */
+  deepgloomExecutableActive = false,
+): { ok: true } | { ok: false; error: string } {
   if (playerIdA === playerIdB) return { ok: false, error: "A player cannot transact with themselves." };
+  if (deepgloomExecutableActive) return { ok: true };
   const key = pairKey(playerIdA, playerIdB);
 
   if (state.phase === "agenda") {
@@ -105,10 +113,12 @@ export function resolveTransaction(
     request: TransactionOffer;
     /** TE "Black Market Dealings": if true, this player is spending that card (from their own hand) as PART of this same transaction, unlocking relics/action cards/unscored secret objectives on EITHER side's offer. Consumed here directly rather than through the normal PLAY_<CARD>/Sabotage-interception flow — the card's own "this card cannot be cancelled" line means it was never eligible for that announce-then-maybe-cancel mechanism in the first place (see GameEngine.ts's own COMPONENT_ACTION_CARD_IDS-adjacent exclusion list). */
     blackMarketDealings?: boolean;
+    /** Yssaril Tribes "Deepgloom Executable" (Breakthrough): bypasses BOTH the neighbor requirement and the once-per-turn/agenda transaction limit for this specific transaction — see canTransact's own doc comment on this same parameter. */
+    deepgloomExecutableActive?: boolean;
   },
   rules: RuleData,
 ): ActionResult {
-  const check = canTransact(state, action.playerId, action.withPlayerId, rules);
+  const check = canTransact(state, action.playerId, action.withPlayerId, rules, action.deepgloomExecutableActive);
   if (!check.ok) return { ok: false, error: check.error };
 
   const eitherPlayerHasArbiters = hasAbility(state.players[action.playerId], asAbilityId("arbiters")) || hasAbility(state.players[action.withPlayerId], asAbilityId("arbiters"));
@@ -230,8 +240,9 @@ export function resolveTransaction(
   let nextState: GameState = {
     ...state,
     players: { ...state.players, [action.playerId]: updatedPlayer, [action.withPlayerId]: updatedOther },
-    transactionsThisTurn: state.phase === "agenda" ? state.transactionsThisTurn : [...(state.transactionsThisTurn ?? []), key],
-    transactionsThisAgenda: state.phase === "agenda" ? [...(state.transactionsThisAgenda ?? []), key] : state.transactionsThisAgenda,
+    // Yssaril Tribes "Deepgloom Executable": "does not count against the once-per-player transactions limit" — skip recording it at all, so this same pair remains free to ALSO transact normally later.
+    transactionsThisTurn: state.phase === "agenda" || action.deepgloomExecutableActive ? state.transactionsThisTurn : [...(state.transactionsThisTurn ?? []), key],
+    transactionsThisAgenda: state.phase === "agenda" && !action.deepgloomExecutableActive ? [...(state.transactionsThisAgenda ?? []), key] : state.transactionsThisAgenda,
   };
   events.push({ type: "TRANSACTION_RESOLVED", playerId: action.playerId, otherPlayerId: action.withPlayerId });
 
