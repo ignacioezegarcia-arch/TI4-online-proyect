@@ -6,6 +6,7 @@ import { RuleData, getUnitStats } from "../types/RuleData";
 import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { isDemilitarizedZone } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
+import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
 import { setPlanetController } from "./invasion";
 import { isPlayersTurnInWindow, advancePriorityWindowAfterAction } from "../rules/priorityWindow";
@@ -125,13 +126,9 @@ export function useImperialArmsVault(
     workingState = placed.state;
     events.push({ type: "UNITS_PRODUCED", playerId: action.playerId, systemId: placed.systemId, planetId: action.targetPlanetId, unitType: "mech", count: 1, totalCost: 0 });
   } else {
-    const draw = drawActionCard(workingState);
-    workingState = { ...workingState, actionCardDeck: draw.deck, actionCardDiscardPile: draw.discardPile };
-    if (draw.drawn) {
-      const player = workingState.players[action.playerId];
-      workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...player, actionCards: [...player.actionCards, draw.drawn] } } };
-      events.push({ type: "ACTION_CARD_DRAWN", playerId: action.playerId, cardId: draw.drawn });
-    }
+    const drawResult = drawActionCardsForPlayer(workingState, action.playerId, 1);
+    workingState = drawResult.state;
+    events.push(...drawResult.events);
   }
 
   let nextState = exhaustLegendaryAbility(workingState, found.systemId, asPlanetId("hopes_end"));
@@ -235,14 +232,10 @@ export function use4X41DHyperionVI(
   }
   const updatedPlayer: Player = { ...player, commandTokens: { ...player.commandTokens, [action.commandTokenPool]: player.commandTokens[action.commandTokenPool] + 1 } };
 
-  const draw = drawActionCard(state);
-  let workingState: GameState = { ...state, players: { ...state.players, [action.playerId]: updatedPlayer }, actionCardDeck: draw.deck, actionCardDiscardPile: draw.discardPile };
-  const events: GameEvent[] = [];
-  if (draw.drawn) {
-    const finalPlayer = workingState.players[action.playerId];
-    workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...finalPlayer, actionCards: [...finalPlayer.actionCards, draw.drawn] } } };
-    events.push({ type: "ACTION_CARD_DRAWN", playerId: action.playerId, cardId: draw.drawn });
-  }
+  let workingState: GameState = { ...state, players: { ...state.players, [action.playerId]: updatedPlayer } };
+  const drawResult = drawActionCardsForPlayer(workingState, action.playerId, 1);
+  workingState = drawResult.state;
+  const events: GameEvent[] = [...drawResult.events];
 
   const nextState = exhaustLegendaryAbility(workingState, found.systemId, asPlanetId("ordinian"));
   return { ok: true, state: nextState, events };

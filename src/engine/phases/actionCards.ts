@@ -3,6 +3,7 @@ import { ActionResult } from "../types/Actions";
 import { PlayerId, ActionCardId, AgendaId } from "../types/ids";
 import { fisherYatesShuffle } from "../setup/mapGeneration";
 import { getLawOwner } from "./agendaEffects";
+import { isBlockedByTransparasteelPlating } from "../rules/yssaril";
 
 /**
  * RR 2 ACTION CARDS.
@@ -35,6 +36,10 @@ export function playActionCard(
   // RR "Political Censure": the elected player cannot play action cards while they own this card.
   if (getLawOwner(state, "political_censure" as AgendaId) === action.playerId) {
     return { ok: false, error: 'RR "Political Censure": this player cannot play action cards while they own this card.' };
+  }
+  // Yssaril Tribes "Transparasteel Plating" (faction tech): "During your turn of the action phase, players that have passed cannot play action cards." — see rules/yssaril.ts's own isBlockedByTransparasteelPlating.
+  if (state.activePlayerId && isBlockedByTransparasteelPlating(state, state.activePlayerId, action.playerId)) {
+    return { ok: false, error: 'Yssaril "Transparasteel Plating": this player has passed and cannot play action cards during the Yssaril player\'s own turn.' };
   }
   if (!player.actionCards.includes(action.cardId)) {
     return { ok: false, error: "This player doesn't have that action card in hand." };

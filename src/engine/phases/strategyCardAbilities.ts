@@ -9,6 +9,7 @@ import { researchTechnology, researchUnitUpgrade } from "./technology";
 import { scoreObjectiveCore } from "./actionPhase";
 import { maybeApplyMinisterOfCommerce, getLawOwner, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
+import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { checkReinforcementsAvailable, COMMAND_TOKEN_TOTAL_SUPPLY } from "../rules/reinforcements";
 import { effectiveCommoditiesMax } from "../rules/spaceStations";
 
@@ -184,13 +185,8 @@ export function resolveStrategyPrimaryEffect(
       // site in this project uses. Previously this manually sliced
       // `actionCardDeck` directly, silently drawing nothing once it ran out
       // instead of reshuffling.
-      for (let i = 0; i < 2; i++) {
-        const drawResult = drawActionCard(next);
-        next = { ...next, actionCardDeck: drawResult.deck, actionCardDiscardPile: drawResult.discardPile };
-        if (drawResult.drawn) {
-          next = { ...next, players: { ...next.players, [action.playerId]: { ...next.players[action.playerId], actionCards: [...next.players[action.playerId].actionCards, drawResult.drawn] } } };
-        }
-      }
+      const drawResult = drawActionCardsForPlayer(next, action.playerId, 2);
+      next = drawResult.state;
       const reorder = p.order as { agendaId: import("../types/ids").AgendaId; placement: "top" | "bottom" }[] | undefined;
       if (reorder && reorder.length > 0) {
         const deckIds = next.agendaDeck.deckIds.filter((id) => !reorder.some((r) => r.agendaId === id));
@@ -198,7 +194,7 @@ export function resolveStrategyPrimaryEffect(
         const toBottom = reorder.filter((r) => r.placement === "bottom").map((r) => r.agendaId);
         next = { ...next, agendaDeck: { ...next.agendaDeck, deckIds: [...toTop, ...deckIds, ...toBottom] } };
       }
-      return { ok: true, state: next, events: [] };
+      return { ok: true, state: next, events: drawResult.events };
     }
 
     case "construction": {
@@ -384,16 +380,9 @@ export function resolveStrategySecondaryEffect(
       // RR 2.9/23.5: same reshuffle-on-empty fix as the primary above —
       // previously this manually sliced `actionCardDeck` directly.
       let next = working;
-      const events: GameEvent[] = [];
-      for (let i = 0; i < 2; i++) {
-        const drawResult = drawActionCard(next);
-        next = { ...next, actionCardDeck: drawResult.deck, actionCardDiscardPile: drawResult.discardPile };
-        if (drawResult.drawn) {
-          const pl = next.players[action.playerId];
-          next = { ...next, players: { ...next.players, [action.playerId]: { ...pl, actionCards: [...pl.actionCards, drawResult.drawn] } } };
-        }
-      }
-      return { ok: true, state: next, events };
+      const drawResult = drawActionCardsForPlayer(next, action.playerId, 2);
+      next = drawResult.state;
+      return { ok: true, state: next, events: drawResult.events };
     }
     case "construction": {
       const placement = p.placement as { planetId: PlanetId; unitType: "space_dock" | "pds" };

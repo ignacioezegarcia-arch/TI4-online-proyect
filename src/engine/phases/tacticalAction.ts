@@ -342,8 +342,8 @@ export function moveShips(
       !dominusOrbBypass &&
       !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, {
         ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
-        // "In the Silence of Space": scoped to ships whose move ORIGINATES from the chosen system — Light Wave Deflector's own version below has no such scoping.
-        ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId,
+        // "In the Silence of Space": scoped to ships whose move ORIGINATES from the chosen system — Light Wave Deflector's own version below has no such scoping. Yssaril Tribes "Y'sia Y'ssrila" (flagship, "Move Through"): "this ship can move through systems that contain other players' ships" — confirmed (tirules2.com/F_yssaril) redundant with, and having NO additional effect alongside, this same player's own Light/Wave Deflector tech (both grant the identical bypass for this same unit, hence the OR below).
+        ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId || (move.unitType === "flagship" && player.factionId === ("yssaril" as never)),
         // "Nav Suite": ignores every anomaly effect (asteroid/supernova blocking, nebula's move clamp, even the gravity rift bonus — see canShipReachSystem's own doc comment on that last part) for this player's whole movement step.
         ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
         // RR "Circlet of the Void" (relic): same asteroid/supernova/nebula bypass as Nav Suite, but explicitly KEEPS the gravity rift movement bonus (canShipReachSystem's own doc comment covers the distinction) — a standing passive effect, not gated on the relic being exhausted or not.
@@ -445,7 +445,7 @@ export function moveShips(
         m.effectiveMove,
         {
           ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
-          ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === m.fromSystemId,
+          ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === m.fromSystemId || (m.unitType === "flagship" && player.factionId === ("yssaril" as never)),
           ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
           circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
         // Embers of Muaat "GASHLAI PHYSIOLOGY"/"Magmus Reactor" (either grants this): "your ships can move through/into supernovas" -- see rules/muaat.ts's own canMoveThroughSupernova.

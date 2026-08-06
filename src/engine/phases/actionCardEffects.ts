@@ -5,6 +5,8 @@ import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { applyHitAssignments, getMoraleBoostHitOnBonus } from "../rules/combat";
 import { getLawOwner, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
+import { isBlockedByTransparasteelPlating } from "../rules/yssaril";
+import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { researchTechnology } from "./technology";
 import { getAdjacentSystems, arePlayersNeighbors } from "../rules/adjacency";
 import { drawExplorationCard, applyExplorationCard, ExplorationCardChoice } from "./exploration";
@@ -56,6 +58,10 @@ function playCard(state: GameState, playerId: PlayerId, cardId: string): { ok: t
   // RR "Political Censure": the elected player cannot play action cards while they own this card — same guard as phases/actionCards.ts's own playActionCard.
   if (getLawOwner(state, "political_censure" as AgendaId) === playerId) {
     return { ok: false, error: 'RR "Political Censure": this player cannot play action cards while they own this card.' };
+  }
+  // Yssaril Tribes "Transparasteel Plating" (faction tech): "During your turn of the action phase, players that have passed cannot play action cards." — see rules/yssaril.ts's own isBlockedByTransparasteelPlating.
+  if (state.activePlayerId && isBlockedByTransparasteelPlating(state, state.activePlayerId, playerId)) {
+    return { ok: false, error: 'Yssaril "Transparasteel Plating": this player has passed and cannot play action cards during the Yssaril player\'s own turn.' };
   }
   if (!player.actionCards.includes(id)) {
     return { ok: false, error: `This player doesn't have ${cardId} in hand.` };
@@ -1421,15 +1427,11 @@ export function applyAgendaPredictionRewards(
         break;
       }
       case "action_cards_and_speaker": {
-        let hand = player.actionCards;
-        for (let i = 0; i < 3; i++) {
-          const drawResult = drawActionCard(nextState);
-          nextState = { ...nextState, actionCardDeck: drawResult.deck, actionCardDiscardPile: drawResult.discardPile };
-          if (!drawResult.drawn) break;
-          hand = [...hand, drawResult.drawn];
-        }
+        const drawResult = drawActionCardsForPlayer(nextState, prediction.playerId, 3);
+        nextState = drawResult.state;
+        events.push(...drawResult.events);
         const previousSpeakerId = nextState.seatOrder.find((id) => nextState.players[id]?.isSpeaker);
-        let players: GameState["players"] = { ...nextState.players, [prediction.playerId]: { ...nextState.players[prediction.playerId], actionCards: hand } };
+        let players: GameState["players"] = nextState.players;
         if (previousSpeakerId && previousSpeakerId !== prediction.playerId) {
           players = { ...players, [previousSpeakerId]: { ...players[previousSpeakerId], isSpeaker: false } };
         }

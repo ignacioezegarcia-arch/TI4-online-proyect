@@ -13,6 +13,8 @@ import { hasAbility } from "../rules/abilities";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
 import { maybeUnlockHero, purgeHero } from "../rules/leaders";
 import { placeRespawnedSpecOps } from "../rules/sol";
+import { maybeReturnGiftOfPrescience } from "../rules/naalu";
+import { applySchemingToDrawCount, drawActionCardsForPlayer } from "../rules/yssaril";
 import { use4X41DHyperionVI, useMaxisCentralControl, useDokNPicsSalvageYardStore, useAeurexMechanica } from "./legendaryPlanets";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
@@ -739,6 +741,7 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
   let actionCardDiscardPile = state.actionCardDiscardPile ? [...state.actionCardDiscardPile] : [];
   let players: GameState["players"] = {};
   const pendingCommandTokenGains: Partial<Record<PlayerId, number>> = {};
+  const pendingSchemingDiscards: PlayerId[] = [];
   for (const [id, player] of Object.entries(state.players)) {
     let updatedPlayer: Player = {
       ...player,
@@ -769,16 +772,19 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
     if (!player.eliminated) {
       // Neural Motivator: draw 2 action cards instead of 1 — just runs the
       // same drawActionCard (with its own reshuffle-on-empty) an extra time.
-      const drawsThisPlayer = player.technologies.includes(asTechId("neural_motivator")) ? 2 : 1;
-      for (let i = 0; i < drawsThisPlayer; i++) {
-        const drawResult = drawActionCard({ ...state, actionCardDeck, actionCardDiscardPile });
-        actionCardDeck = drawResult.deck;
-        actionCardDiscardPile = drawResult.discardPile;
-        if (drawResult.drawn) {
-          updatedPlayer = { ...updatedPlayer, actionCards: [...updatedPlayer.actionCards, drawResult.drawn] };
-          events.push({ type: "ACTION_CARD_DRAWN", playerId: player.id, cardId: drawResult.drawn });
-        }
-      }
+      // Yssaril Tribes "SCHEMING": "when you draw 1+ action cards, draw 1
+      // additional" — applied to the TOTAL requested count here (capped at
+      // +1 regardless of how many were already being drawn), then a
+      // mandatory discard gets queued below once any cards were actually
+      // drawn — see rules/yssaril.ts's own applySchemingToDrawCount/discardSchemingCard.
+      const baseDraws = player.technologies.includes(asTechId("neural_motivator")) ? 2 : 1;
+      const drawResult = drawActionCardsForPlayer({ ...state, actionCardDeck, actionCardDiscardPile, players: { ...state.players, [id]: updatedPlayer }, pendingSchemingDiscards }, player.id, baseDraws);
+      actionCardDeck = drawResult.state.actionCardDeck ?? [];
+      actionCardDiscardPile = drawResult.state.actionCardDiscardPile ?? [];
+      updatedPlayer = drawResult.state.players[player.id];
+      events.push(...drawResult.events);
+      pendingSchemingDiscards.length = 0;
+      pendingSchemingDiscards.push(...(drawResult.state.pendingSchemingDiscards ?? []));
     }
 
     players[id as PlayerId] = updatedPlayer;
@@ -814,14 +820,13 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
   // RR "Minister of Policy": at the end of the status phase, the owner draws 1 additional action card — same reshuffle-on-empty draw as everyone else's RR 70.3 draw above.
   const ministerOfPolicyOwnerId = getLawOwner({ ...state, players }, "minister_of_policy" as AgendaId);
   if (ministerOfPolicyOwnerId && players[ministerOfPolicyOwnerId]) {
-    const drawResult = drawActionCard({ ...state, actionCardDeck, actionCardDiscardPile });
-    actionCardDeck = drawResult.deck;
-    actionCardDiscardPile = drawResult.discardPile;
-    if (drawResult.drawn) {
-      const owner = players[ministerOfPolicyOwnerId];
-      players = { ...players, [ministerOfPolicyOwnerId]: { ...owner, actionCards: [...owner.actionCards, drawResult.drawn] } };
-      events.push({ type: "ACTION_CARD_DRAWN", playerId: ministerOfPolicyOwnerId, cardId: drawResult.drawn });
-    }
+    const drawResult = drawActionCardsForPlayer({ ...state, actionCardDeck, actionCardDiscardPile, players, pendingSchemingDiscards }, ministerOfPolicyOwnerId, 1);
+    actionCardDeck = drawResult.state.actionCardDeck ?? [];
+    actionCardDiscardPile = drawResult.state.actionCardDiscardPile ?? [];
+    players = drawResult.state.players;
+    events.push(...drawResult.events);
+    pendingSchemingDiscards.length = 0;
+    pendingSchemingDiscards.push(...(drawResult.state.pendingSchemingDiscards ?? []));
   }
 
   // RR "The Crown of Emphidia" (relic): "At the end of the status phase, if you control the 'Tomb of Emphidia' attachment, you may purge this card to gain 1 Victory Point." Checked for whoever currently holds it (there's ever only one).
@@ -891,18 +896,21 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
     pendingMitosisPlacements.push(playerId as PlayerId);
   }
 
+  const preGiftState: GameState = {
+    ...stateForCrownCheck,
+    systems,
+    objectives,
+    publicObjectiveDeck: nextDeck,
+    actionCardDeck,
+    actionCardDiscardPile,
+    pendingCommandTokenGains,
+    ...(genesisCapacityOverflow.length > 0 ? { pendingGenesisCapacityOverflow: genesisCapacityOverflow } : {}),
+    ...(pendingMitosisPlacements.length > 0 ? { pendingMitosisPlacements } : {}),
+    ...(pendingSchemingDiscards.length > 0 ? { pendingSchemingDiscards } : {}),
+  };
+  // Naalu Collective "Gift of Prescience": "return this card to the Naalu player at the end of the status phase" — see rules/naalu.ts's own maybeReturnGiftOfPrescience.
   return {
-    state: {
-      ...stateForCrownCheck,
-      systems,
-      objectives,
-      publicObjectiveDeck: nextDeck,
-      actionCardDeck,
-      actionCardDiscardPile,
-      pendingCommandTokenGains,
-      ...(genesisCapacityOverflow.length > 0 ? { pendingGenesisCapacityOverflow: genesisCapacityOverflow } : {}),
-      ...(pendingMitosisPlacements.length > 0 ? { pendingMitosisPlacements } : {}),
-    },
+    state: maybeReturnGiftOfPrescience(preGiftState),
     events,
   };
 }

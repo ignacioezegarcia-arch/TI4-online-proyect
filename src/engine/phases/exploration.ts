@@ -7,8 +7,10 @@ import { hasPoKContent } from "../rules/gameMode";
 import { fisherYatesShuffle } from "../setup/mapGeneration";
 import { maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
+import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { effectiveCommoditiesMax } from "../rules/spaceStations";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
+import { applyIconoclastOmegaOmegaDeploy } from "../rules/naalu";
 import { checkTechPrerequisites, spendForCost } from "./technology";
 
 /**
@@ -243,21 +245,9 @@ export function applyExplorationCard(
     }
   } else if (cardId === "lost_crew") {
     // "Draw 2 Action Cards."
-    let deck = nextState.actionCardDeck ?? [];
-    let discardPile = nextState.actionCardDiscardPile ?? [];
-    const drawnIds: string[] = [];
-    for (let i = 0; i < 2; i++) {
-      const draw = drawActionCard({ ...nextState, actionCardDeck: deck, actionCardDiscardPile: discardPile });
-      deck = draw.deck;
-      discardPile = draw.discardPile;
-      if (draw.drawn) drawnIds.push(draw.drawn);
-    }
-    nextState = {
-      ...nextState,
-      actionCardDeck: deck,
-      actionCardDiscardPile: discardPile,
-      players: { ...nextState.players, [playerId]: { ...player, actionCards: [...player.actionCards, ...drawnIds] as never } },
-    };
+    const drawResult = drawActionCardsForPlayer(nextState, playerId, 2);
+    nextState = drawResult.state;
+    events.push(...drawResult.events);
   } else if (cardId === "dead_world") {
     // "Draw 1 relic."
     const deck = nextState.relicDeck ?? [];
@@ -294,9 +284,11 @@ export function applyExplorationCard(
       if (hasEnough) {
         let updatedPlayer: Player = source === "trade_good" ? { ...player, tradeGoods: player.tradeGoods - 1 } : { ...player, commodities: player.commodities - 1 };
         if (cardId === "functioning_base") {
-          const draw = drawActionCard(nextState);
-          if (draw.drawn) updatedPlayer = { ...updatedPlayer, actionCards: [...updatedPlayer.actionCards, draw.drawn] as never };
-          nextState = { ...nextState, actionCardDeck: draw.deck, actionCardDiscardPile: draw.discardPile };
+          nextState = { ...nextState, players: { ...nextState.players, [playerId]: updatedPlayer } };
+          const drawResult = drawActionCardsForPlayer(nextState, playerId, 1);
+          nextState = drawResult.state;
+          events.push(...drawResult.events);
+          updatedPlayer = nextState.players[playerId];
         } else if (planetId) {
           const reinforcementsCheck = checkReinforcementsAvailable(nextState, playerId, [{ unitType: "mech", count: 1 }]);
           if (reinforcementsCheck.ok) {
@@ -440,9 +432,12 @@ export function purgeRelicFragments(
     relics: [...player.relics, relicId],
   };
 
+  // Naalu Collective "Iconoclast ΩΩ" (mech, Deploy): "when another player gains a relic, place 1 mech" — see rules/naalu.ts's own applyIconoclastOmegaOmegaDeploy.
+  const stateWithIconoclastDeploy = applyIconoclastOmegaOmegaDeploy({ ...state, relicDeck: rest, players: { ...state.players, [action.playerId]: updatedPlayer } }, action.playerId);
+
   return {
     ok: true,
-    state: { ...state, relicDeck: rest, players: { ...state.players, [action.playerId]: updatedPlayer } },
+    state: stateWithIconoclastDeploy,
     events: [{ type: "RELIC_GAINED", playerId: action.playerId, relicId }],
   };
 }
