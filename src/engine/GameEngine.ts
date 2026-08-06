@@ -148,6 +148,8 @@ import { researchTechnology, researchUnitUpgrade } from "./phases/technology";
 import { exploreFrontier, purgeRelicFragments, useEnigmaticDevice } from "./phases/exploration";
 import { resolveMitosisPlacement, useStymie, useStymieOmega, useDuhaMenaimonProduction, useBioplasmosis, useLetaniOspha, useDirzugaRophal, useLetaniMiasmiala, usePsychospore } from "./rules/arborec";
 import { resolveAssimilateSubstitute, useHarrow, useCyberneticEnhancements, useCyberneticEnhancementsOmega, useI48s, useTheHelmsman } from "./rules/l1z1x";
+import { usePromiseOfProtection, usePillage, useSalvageOperations, useAmbush, useSuffiAn, useSUlaMentarion, useSleeperCell, resolveSleeperCellPlacement } from "./rules/mentak";
+import { useGiftOfPrescience, useZeuOmega, useZeuOmegaOmega, useNeuroglaive, useTheOracle, useMindsieve, useForesight } from "./rules/naalu";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
   useSelfAssemblyRoutines,
@@ -162,7 +164,7 @@ import {
   useTransitDiodes,
 } from "./phases/technologyAbilities";
 import { useAtrament, useImperialArmsVault, useExterrixHeadquarters, useMirageFlightAcademy, useDokNPicsSalvageYardPlay, useTheAcropolis, useTheGalacticCouncil, useJupiterBrain, useMaxisCentralControl } from "./phases/legendaryPlanets";
-import { useStarForge, useTheNucleus, applyStellarGenesisOnGain } from "./rules/muaat";
+import { useStarForge, useTheNucleus, applyStellarGenesisOnGain, useMagmusReactorOmegaProduction, useFiresOfTheGashlai, useForgeCruiser, useEmberColossusSpawn, useUmbat, useMagmusTradeGood, useNovaSeed } from "./rules/muaat";
 import { useOrbitalDrop, useZsThunderboltM2Deploy, resolveGenesisCapacityOverflow, useMilitarySupport, useClaireGibson, useJaceX } from "./rules/sol";
 import { useRearAdmiralFarran, useDunlainReaperDeploy, useDarktalonTreilla, useMunitionsReserves, resolveFleetCleanup, useWarFunding, useWarFundingOmega } from "./rules/letnev";
 import { useTekklarLegion, useExotriremeIISelfDestruct, useTro, useNorrSupremacy, useGhomSekkus, useShvalHarbinger } from "./rules/sardakk";
@@ -978,6 +980,51 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
       case "USE_THE_HELMSMAN":
         result = useTheHelmsman(state, action, rules);
         break;
+      case "USE_PROMISE_OF_PROTECTION":
+        result = usePromiseOfProtection(state, action);
+        break;
+      case "USE_PILLAGE":
+        result = usePillage(state, action, rules);
+        break;
+      case "USE_SALVAGE_OPERATIONS":
+        result = useSalvageOperations(state, action, rules);
+        break;
+      case "USE_AMBUSH":
+        result = useAmbush(state, action, rules);
+        break;
+      case "USE_SUFFI_AN":
+        result = useSuffiAn(state, action);
+        break;
+      case "USE_SULA_MENTARION":
+        result = useSUlaMentarion(state, action);
+        break;
+      case "USE_SLEEPER_CELL":
+        result = useSleeperCell(state, action);
+        break;
+      case "RESOLVE_SLEEPER_CELL_PLACEMENT":
+        result = resolveSleeperCellPlacement(state, action, rules);
+        break;
+      case "USE_GIFT_OF_PRESCIENCE":
+        result = useGiftOfPrescience(state, action);
+        break;
+      case "USE_ZEU_OMEGA":
+        result = useZeuOmega(state, action, rules);
+        break;
+      case "USE_ZEU_OMEGA_OMEGA":
+        result = useZeuOmegaOmega(state, action);
+        break;
+      case "USE_NEUROGLAIVE":
+        result = useNeuroglaive(state, action);
+        break;
+      case "USE_THE_ORACLE":
+        result = useTheOracle(state, action, rules);
+        break;
+      case "USE_MINDSIEVE":
+        result = useMindsieve(state, action);
+        break;
+      case "USE_FORESIGHT":
+        result = useForesight(state, action, rules);
+        break;
       case "USE_THE_ACROPOLIS":
         result = useTheAcropolis(state, action);
         break;
@@ -1091,6 +1138,27 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_THE_NUCLEUS":
         result = useTheNucleus(state, action, rules);
+        break;
+      case "USE_MAGMUS_REACTOR_OMEGA_PRODUCTION":
+        result = useMagmusReactorOmegaProduction(state, action, rules);
+        break;
+      case "USE_FIRES_OF_THE_GASHLAI":
+        result = useFiresOfTheGashlai(state, action);
+        break;
+      case "USE_FORGE_CRUISER":
+        result = useForgeCruiser(state, action);
+        break;
+      case "USE_EMBER_COLOSSUS_SPAWN":
+        result = useEmberColossusSpawn(state, action, rules);
+        break;
+      case "USE_UMBAT":
+        result = useUmbat(state, action, rules);
+        break;
+      case "USE_MAGMUS_TRADE_GOOD":
+        result = useMagmusTradeGood(state, action);
+        break;
+      case "USE_NOVA_SEED":
+        result = useNovaSeed(state, action, rules);
         break;
       case "APPLY_STELLAR_GENESIS":
         result = applyStellarGenesisOnGain(state, action.playerId, action.targetSystemId, rules);
