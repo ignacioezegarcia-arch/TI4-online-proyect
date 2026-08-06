@@ -3,6 +3,7 @@ import { GameEvent } from "../types/Actions";
 import { PlayerId, AgendaId, ObjectiveId, PromissoryNoteId } from "../types/ids";
 import { GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
+import { hasCodex } from "../rules/gameMode";
 import { fisherYatesShuffle } from "../setup/mapGeneration";
 
 /**
@@ -88,6 +89,20 @@ export function checkAndApplyEliminations(state: GameState, rules: RuleData): { 
 /** RR 33.1: a player is eliminated once ALL THREE are true simultaneously — no ground forces anywhere on the board, no unit anywhere with the "production" ability, and no planet under their control. */
 function meetsEliminationConditions(state: GameState, playerId: PlayerId, rules: RuleData): boolean {
   const player = state.players[playerId];
+
+  // Embers of Muaat "Magmus Reactor Ω" (faction tech): "If the Muaat
+  // player has a unit in a system containing a supernova, they cannot
+  // be eliminated." Confirmed (yjmrobert.com/tirules/factions/f_muaat)
+  // — checked first, as an outright exemption from the normal
+  // conditions below entirely (not merely "counts as a production unit"
+  // or similar — a supernova presence alone is sufficient on its own).
+  if (player.factionId === ("muaat" as never) && player.technologies.includes("magmus_reactor" as never) && hasCodex(state.mode)) {
+    const hasUnitInSupernova = Object.values(state.systems).some(
+      (system) => system.anomalies?.includes("supernova" as never) && (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.count > 0),
+    );
+    if (hasUnitInSupernova) return false;
+  }
+
   let hasGroundForces = false;
   let hasProductionUnit = false;
   let controlsAnyPlanet = false;

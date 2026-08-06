@@ -5,7 +5,8 @@ import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getMaxNonFighterShips } from "../rules/letnev";
 import { getEffectivePlanetStats } from "../rules/planetStats";
-import { maybeActivateWormholeNexus } from "../rules/adjacency";
+import { maybeActivateWormholeNexus, getAdjacentSystems } from "../rules/adjacency";
+import { hasCodex } from "../rules/gameMode";
 import { hasEntropicScar } from "../rules/anomalies";
 import { getEffectiveProducesQuantity, isLawActiveWithOutcome, getLawOwner, isDemilitarizedZone } from "./agendaEffects";
 import { maybeAdvanceActivePlayer } from "./actionPhase";
@@ -50,6 +51,8 @@ export function produceUnits(
     freelancersActive?: boolean;
     /** "Freelancers" (exploration card): only consulted if this player's reinforcements are empty for the unit type being produced — see phases/production.ts's own executeProduction for the full doc comment on this substitution rule. */
     freelancersSubstituteSourceSystemId?: SystemId;
+    /** Naalu Collective "M'aban" (commander): "+1 free fighter, doesn't count against the Production limit" — see phases/production.ts's own executeProduction for the full doc comment. */
+    useMabanBonusFighter?: boolean;
   },
   rules: RuleData,
 ): ActionResult {
@@ -73,6 +76,7 @@ export function produceUnits(
     action.exhaustPlanetIdsForResources,
     action.freelancersActive,
     action.freelancersSubstituteSourceSystemId,
+    action.useMabanBonusFighter,
   );
 }
 
@@ -111,6 +115,8 @@ export function executeProduction(
    * placements like this one, not a general production fallback.
    */
   freelancersSubstituteSourceSystemId?: SystemId,
+  /** Naalu Collective "M'aban" (commander): "+1 free fighter, doesn't count against the Production limit" — see this function's own doc comment further below on where this actually gets applied. */
+  useMabanBonusFighter = false,
 ): ActionResult {
   const system = state.systems[systemId];
   if (!system) return { ok: false, error: `No system ${systemId}.` };
@@ -169,13 +175,15 @@ export function executeProduction(
     const stats = getUnitStats(rules, player.factionId, stack.unitType, player.unitUpgrades);
     if (!stats?.abilities.includes("production")) continue;
     hasAnyProducer = true;
+    const productionResourceBonus = stats.abilityValues?.production?.productionResourceBonus;
     const explicitValue = stats.abilityValues?.production?.value;
-    if (explicitValue == null) {
+    if (productionResourceBonus != null) {
+      // Space Dock (base "+2") / Space Dock II ("+3") — confirmed distinct bonuses via data/units.json and data/unitUpgrades.json; previously this was hardcoded to "+2" everywhere, silently shortchanging Space Dock II.
       if (spaceDockLimit === 0) {
         const planetStats = getEffectivePlanetStats(planet, planetId, rules);
-        spaceDockLimit = planetStats.resources + 2;
+        spaceDockLimit = planetStats.resources + productionResourceBonus;
       }
-    } else {
+    } else if (explicitValue != null) {
       nonSpaceDockLimit += explicitValue * stack.count;
     }
   }
@@ -207,8 +215,14 @@ export function executeProduction(
         if (s.count <= 0) continue;
         const otherStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
         if (!otherStats?.abilities.includes("production")) continue;
+        const productionResourceBonus = otherStats.abilityValues?.production?.productionResourceBonus;
         const explicitValue = otherStats.abilityValues?.production?.value;
-        combinedLimit += explicitValue != null ? explicitValue * s.count : getEffectivePlanetStats(otherPlanet, otherPlanet.planetId, rules).resources + 2;
+        combinedLimit +=
+          productionResourceBonus != null
+            ? getEffectivePlanetStats(otherPlanet, otherPlanet.planetId, rules).resources + productionResourceBonus
+            : explicitValue != null
+              ? explicitValue * s.count
+              : 0;
       }
     }
     if (combinedLimit > productionLimit) productionLimit = combinedLimit;
@@ -514,6 +528,51 @@ export function executeProduction(
     },
   };
 
+  // Naalu Collective "M'aban" (commander): "You may produce 1 additional
+  // fighter for their cost; these additional units do not count against
+  // your production limit." Confirmed (yjmrobert.com/tirules/factions/f_naalu):
+  // "the Naalu player must produce all the units they intend to produce
+  // BEFORE they may unlock M'aban — M'aban cannot be applied to the
+  // instance of producing the units that unlocks it" — a general
+  // unlock-timing note this project's own generic unlock system already
+  // respects (unlock status is only ever checked fresh, never
+  // retroactively, and this bonus is its own separate step AFTER the
+  // main batch above, not folded into it). Only actually grants the
+  // extra fighter if this batch produced 1+ fighter already (matching
+  // "for THEIR cost" — the bonus rides along with an actual fighter
+  // production, not a standalone freebie).
+  if (useMabanBonusFighter && fightersProduced > 0) {
+    const commanderEntry = nextState.players[playerId].leaders.find((l) => l.leaderId === ("naalu_commander" as never));
+    if (commanderEntry && !commanderEntry.locked) {
+      const finalSystem = nextState.systems[systemId];
+      const spaceStacks = finalSystem.spaceUnitsByPlayer[playerId] ?? [];
+      const existing = spaceStacks.find((s) => s.unitType === "fighter");
+      const updatedSpaceStacks = existing ? spaceStacks.map((s) => (s.unitType === "fighter" ? { ...s, count: s.count + 1 } : s)) : [...spaceStacks, { unitType: "fighter" as const, count: 1, damagedCount: 0 }];
+      nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...finalSystem, spaceUnitsByPlayer: { ...finalSystem.spaceUnitsByPlayer, [playerId]: updatedSpaceStacks } } } };
+    }
+  }
+
+  // Embers of Muaat "Magmus Reactor" (faction tech, base/original
+  // version): "After 1 or more of your units use Production in a
+  // system that either contains a war sun or is adjacent to a
+  // supernova, gain 1 trade good." Confirmed
+  // (yjmrobert.com/tirules/factions/f_muaat):
+  //  - "The war sun must be in the system PRIOR TO the use of
+  //    Production" — checked against the ORIGINAL state (before this
+  //    production happened), not nextState, since a war sun produced
+  //    THIS SAME batch wouldn't itself satisfy this.
+  //  - "The trade good is gained AFTER the use of Production; it
+  //    cannot be used to pay for the produced units" — naturally true
+  //    here, since this whole block runs after spendForCost already
+  //    resolved above.
+  if (player.factionId === ("muaat" as never) && player.technologies.includes("magmus_reactor" as never) && !hasCodex(state.mode)) {
+    const hasWarSunHere = (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.unitType === "war_sun" && s.count > 0);
+    const isAdjacentToSupernova = (state.systems[systemId]?.anomalies?.includes("supernova" as never) ?? false) || getAdjacentSystems(state, systemId, rules).some((id) => state.systems[id]?.anomalies?.includes("supernova" as never));
+    if (hasWarSunHere || isAdjacentToSupernova) {
+      nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...nextState.players[playerId], tradeGoods: nextState.players[playerId].tradeGoods + 1 } } };
+    }
+  }
+
   // "Freelancers": the substitute unit actually gets removed from its origin system here — RR confirms it's placed "undamaged" at the destination, which is already this function's own default for every newly-produced unit (no special handling needed beyond the relocation itself).
   if (freelancersSubstituteRemoval) {
     const { systemId: srcSystemId, unitType } = freelancersSubstituteRemoval;
@@ -562,6 +621,17 @@ export function finishTacticalAction(
   }
   if (pending.step !== "production") {
     return { ok: false, error: `RR 78: a tactical action can only be finished from the "production" step, currently at "${pending.step}".` };
+  }
+
+  // Naalu Collective "Z'eu Ω": if this was a BORROWED tactical action (the chosen player wasn't really "up" in turn order), restore the real active player directly instead of advancing normally — this borrowed action never counted as anyone's real turn.
+  if (pending.zeuOmegaOriginalActivePlayerId) {
+    const nextState: GameState = {
+      ...state,
+      pendingTacticalAction: null,
+      lastCompletedTacticalAction: { playerId: action.playerId, systemId: pending.systemId },
+      activePlayerId: pending.zeuOmegaOriginalActivePlayerId,
+    };
+    return { ok: true, state: nextState, events: [] };
   }
 
   // Sardakk N'orr "T'ro" (agent): "At the end of a player's tactical action" — tracked here so useTro (rules/sardakk.ts) has something concrete to validate against, since it benefits the OTHER player (whoever's action just ended), not N'orr themselves.

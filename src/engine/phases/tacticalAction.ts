@@ -16,6 +16,8 @@ import { findControlledLegendaryPlanet, exhaustLegendaryAbility } from "./legend
 import { getMaxNonFighterShips } from "../rules/letnev";
 import { maybeReturnTradeConvoys } from "../rules/hacan";
 import { maybeReturnStymie } from "../rules/arborec";
+import { maybeReturnPromiseOfProtection, getMentakCruiserStats } from "../rules/mentak";
+import { canMoveThroughSupernova } from "../rules/muaat";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -28,11 +30,30 @@ export function activateSystem(
   state: GameState,
   action: { type: "ACTIVATE_SYSTEM"; playerId: PlayerId; systemId: SystemId },
   rules: RuleData,
+  /**
+   * Naalu Collective "Z'eu Ω" (agent, Codex version): "ACTION: Exhaust
+   * this card and choose a player; that player may perform a tactical
+   * action in a non-home system without placing a command token; that
+   * system still counts as being activated." Confirmed
+   * (yjmrobert.com/tirules/factions/f_naalu): "all other rules applying
+   * to tactical actions apply, other than placing a command token —
+   * the system cannot already contain a command token for the
+   * performing player" (checked below same as normal), "the chosen
+   * player is considered the active player" (this parameter lets
+   * rules/naalu.ts's own useZeuOmega bypass the normal `state.activePlayerId
+   * !== action.playerId` check, since Z'eu Ω explicitly lets a
+   * NON-active player act), and "counts for the purposes of returning
+   * promissory notes and other similar effects" — achieved for free
+   * since every OTHER trigger in this function below still runs exactly
+   * as normal, only the token-placement/tactic-pool-deduction itself is
+   * skipped.
+   */
+  skipCommandToken = false,
 ): ActionResult {
   if (state.phase !== "action") {
     return { ok: false, error: "RR 78: tactical actions only happen during the action phase." };
   }
-  if (state.activePlayerId !== action.playerId) {
+  if (!skipCommandToken && state.activePlayerId !== action.playerId) {
     return { ok: false, error: "RR 4: it is not this player's turn." };
   }
   if (state.pendingTacticalAction) {
@@ -40,24 +61,29 @@ export function activateSystem(
   }
 
   const player = state.players[action.playerId];
-  if (player.hasPassed) {
+  if (!skipCommandToken && player.hasPassed) {
     return { ok: false, error: "RR 3.3: this player has already passed for the action phase." };
   }
-  if (player.commandTokens.tactic <= 0) {
+  if (!skipCommandToken && player.commandTokens.tactic <= 0) {
     return { ok: false, error: "RR 78.1: no command tokens remaining in tactic pool." };
   }
   if (player.commandTokens.onBoard.includes(action.systemId)) {
     return { ok: false, error: "RR 5.2: a player cannot activate a system that already contains one of his command tokens." };
   }
+  if (skipCommandToken && rules.homeSystemByFaction[player.factionId] === action.systemId) {
+    return { ok: false, error: "Z'eu Ω: cannot be used to activate this player's own home system." };
+  }
 
-  const updatedPlayer: Player = {
-    ...player,
-    commandTokens: {
-      ...player.commandTokens,
-      tactic: player.commandTokens.tactic - 1,
-      onBoard: [...player.commandTokens.onBoard, action.systemId],
-    },
-  };
+  const updatedPlayer: Player = skipCommandToken
+    ? player
+    : {
+        ...player,
+        commandTokens: {
+          ...player.commandTokens,
+          tactic: player.commandTokens.tactic - 1,
+          onBoard: [...player.commandTokens.onBoard, action.systemId],
+        },
+      };
 
   // RR "Magen Defense Grid" ΩΩ (Codex 4): whenever ANY player activates a
   // system containing 1+ of a magen_defense_grid-owning player's own
@@ -124,6 +150,15 @@ export function activateSystem(
     return activatedSystem.planets.some((p) => (p.unitsByPlayer[arborecPlayerId] ?? []).some((s) => s.count > 0));
   })();
   players = maybeReturnStymie({ ...state, players }, action.playerId, activatedSystemHasArborecUnits).players;
+
+  // Mentak Coalition "Promise of Protection" (promissory note): same "returned on ANY activation of a system with the owner's own units" shape as Trade Convoys/Stymie above — see rules/mentak.ts's own maybeReturnPromiseOfProtection for the full doc comment.
+  const activatedSystemHasMentakUnits = (() => {
+    const mentakPlayerId = Object.values(players).find((p) => p.factionId === ("mentak" as never))?.id;
+    if (!mentakPlayerId || !activatedSystem) return false;
+    if ((activatedSystem.spaceUnitsByPlayer[mentakPlayerId] ?? []).some((s) => s.count > 0)) return true;
+    return activatedSystem.planets.some((p) => (p.unitsByPlayer[mentakPlayerId] ?? []).some((s) => s.count > 0));
+  })();
+  players = maybeReturnPromiseOfProtection({ ...state, players }, action.playerId, activatedSystemHasMentakUnits).players;
 
   const nextState: GameState = {
     ...state,
@@ -251,6 +286,17 @@ export function moveShips(
       };
     }
 
+    // RR 89: "Fighters and infantry, unless otherwise specified, cannot
+    // move through space without being transported" — must go through
+    // action.transportedFighters instead. Confirmed against the actual
+    // data: base Fighter has move: null (requires transport); Fighter
+    // II (generic) and Naalu Collective's own Hybrid Crystal Fighter II
+    // both have move: 2 printed directly (can move independently) —
+    // Hybrid Crystal Fighter I, like the base fighter, has move: null.
+    // The very next check below (stats.move === null) already
+    // implements this exact distinction correctly for every fighter
+    // variant uniformly — nothing extra needed here.
+
     const stats = getUnitStats(rules, player.factionId, move.unitType, player.unitUpgrades);
     if (!stats || stats.move === null) {
       return { ok: false, error: `${move.unitType} has no move value and cannot move.` };
@@ -302,6 +348,8 @@ export function moveShips(
         ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
         // RR "Circlet of the Void" (relic): same asteroid/supernova/nebula bypass as Nav Suite, but explicitly KEEPS the gravity rift movement bonus (canShipReachSystem's own doc comment covers the distinction) — a standing passive effect, not gated on the relic being exhausted or not.
         circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
+        // Embers of Muaat "GASHLAI PHYSIOLOGY"/"Magmus Reactor" (either grants this): "your ships can move through/into supernovas" -- see rules/muaat.ts's own canMoveThroughSupernova.
+        canMoveThroughSupernova: canMoveThroughSupernova(player),
       }, rules)
     ) {
       return {
@@ -323,6 +371,8 @@ export function moveShips(
           ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId,
           ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
           circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
+        // Embers of Muaat "GASHLAI PHYSIOLOGY"/"Magmus Reactor" (either grants this): "your ships can move through/into supernovas" -- see rules/muaat.ts's own canMoveThroughSupernova.
+        canMoveThroughSupernova: canMoveThroughSupernova(player),
         },
         rules,
         avernusSystemId,
@@ -398,6 +448,8 @@ export function moveShips(
           ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === m.fromSystemId,
           ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
           circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
+        // Embers of Muaat "GASHLAI PHYSIOLOGY"/"Magmus Reactor" (either grants this): "your ships can move through/into supernovas" -- see rules/muaat.ts's own canMoveThroughSupernova.
+        canMoveThroughSupernova: canMoveThroughSupernova(player),
         },
         rules,
         systemId,
@@ -464,12 +516,36 @@ export function moveShips(
   const activeSystemStacksAfterMove = workingState.systems[activeSystemId]?.spaceUnitsByPlayer[player.id] ?? [];
   const totalCapacity = activeSystemStacksAfterMove.reduce((sum, s) => {
     if (s.count <= 0 || !SHIP_TYPES.includes(s.unitType)) return sum;
-    const shipStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+    // Mentak Coalition "The Table's Grace"/Corsair: capacity 2, not Cruiser II's own 3 — see rules/mentak.ts's own getMentakCruiserStats.
+    const shipStats = s.unitType === "cruiser" ? getMentakCruiserStats(rules, player) : getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
     return sum + (shipStats?.capacity ?? 0) * s.count;
   }, 0);
   const totalCargo = activeSystemStacksAfterMove.reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
   if (totalCargo > totalCapacity) {
-    return { ok: false, error: `RR 16.3: this move would leave ${totalCargo} fighters/ground forces in ${activeSystemId}'s space area, exceeding this player's combined ship capacity there (${totalCapacity}).` };
+    // Naalu Collective "Hybrid Crystal Fighter II" (Half Fleet Count):
+    // "Each fighter in excess of your ships' capacity counts as 1/2 of
+    // a ship against your fleet pool." Confirmed text
+    // (data/factions/naalu.json). Rather than rejecting outright like
+    // the general RR 16.3 case above, excess FIGHTERS specifically (not
+    // ground forces — those still can't exceed capacity at all) are
+    // allowed if this player's OWN fighter is this upgrade, folded into
+    // the SAME fleet-pool check as non-fighter ships above, at a 0.5
+    // rate each.
+    const fighterStack = activeSystemStacksAfterMove.find((s) => s.unitType === "fighter");
+    const fighterStats = getUnitStats(rules, player.factionId, "fighter", player.unitUpgrades);
+    const hasHalfFleetCount = fighterStats?.abilities.includes("halfFleetCount" as never);
+    const nonFighterCargo = activeSystemStacksAfterMove.reduce((sum, s) => (GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
+    if (!hasHalfFleetCount || nonFighterCargo > totalCapacity) {
+      return { ok: false, error: `RR 16.3: this move would leave ${totalCargo} fighters/ground forces in ${activeSystemId}'s space area, exceeding this player's combined ship capacity there (${totalCapacity}).` };
+    }
+    const excessFighters = (fighterStack?.count ?? 0) - Math.max(0, totalCapacity - nonFighterCargo);
+    const halfFleetCost = Math.ceil(excessFighters / 2);
+    if (nonFighterShipsAfterMove + halfFleetCost > maxNonFighterShips) {
+      return {
+        ok: false,
+        error: `RR 16.3/Half Fleet Count: ${excessFighters} excess fighters would need ${halfFleetCost} more fleet pool slots (at 1/2 each), putting this player over their own fleet pool of ${maxNonFighterShips}.`,
+      };
+    }
   }
 
   // RR 78.2: after moving, ANY player with a qualifying PDS may use Space
