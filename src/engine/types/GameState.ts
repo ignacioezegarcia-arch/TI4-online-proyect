@@ -305,6 +305,10 @@ export interface GameState {
   pendingGenesisCapacityOverflow?: { playerId: PlayerId; systemId: SystemId }[];
   /** Arborec "MITOSIS": players who still need to choose which controlled planet gets their mandatory 1 infantry this status phase — see phases/actionPhase.ts's own runStatusPhaseBookkeeping and rules/arborec.ts's own resolveMitosisPlacement. */
   pendingMitosisPlacements?: PlayerId[];
+  /** Naalu Collective "TELEPATHIC"/"Gift of Prescience": whoever currently holds the Naalu "0" token, making them first in initiative order — see rules/naalu.ts's own applyTelepathic/useGiftOfPrescience. A player-level flag (not attached to a specific strategy card object) so losing/changing strategy cards never orphans it, per the confirmed ruling that the holder retains it regardless. */
+  naaluZeroTokenHolderId?: PlayerId;
+  /** Yssaril Tribes "SCHEMING": players who still need to discard 1 action card after a qualifying draw — "no other abilities may resolve until the Yssaril player has discarded" (confirmed at tirules2.com/F_yssaril). See rules/yssaril.ts's own discardSchemingCard. */
+  pendingSchemingDiscards?: PlayerId[];
   /** Sol "Military Support" (promissory note): "cannot be played twice in one timing window" (confirmed, yjmrobert.com/tirules/factions/f_sol) — tracks whether it's already been used during THIS specific active-player turn; reset whenever the active player changes (phases/actionPhase.ts's own advanceActivePlayer), same as transactionsThisTurn above. */
   usedMilitarySupportForActivePlayerTurn?: boolean;
   /** TE The Fracture: set by phases/theFracture.ts's own setUpFractureOnEntry right when the Fracture comes into play, cleared once placeIngressTokens resolves the triggering player's own choice. synergyColors mirrors whatever that player's breakthrough synergy was AT THAT MOMENT (null if they have none), since that's what determines whether the 3-per-color or the 4-different-specialties path applies. */
@@ -667,6 +671,10 @@ export interface PendingTacticalAction {
   pendingExplorationChoices?: Partial<Record<PlanetId, import("../phases/exploration").ExplorationCardChoice>>;
   /** Arborec "Duha Menaimon" (flagship): true only if the flagship was actually present in this system at the moment it was activated — see phases/tacticalAction.ts's own activateSystem and rules/arborec.ts's own useDuhaMenaimonProduction. */
   duhaMenaimonPresentAtActivation?: boolean;
+  /** Mentak Coalition "Ipswitch, Loose Cannon — SLEEPER CELL": true once activated for this combat — see rules/mentak.ts's own useSleeperCell/resolveSleeperCellPlacement. */
+  sleeperCellActive?: boolean;
+  /** Naalu Collective "Z'eu Ω": the REAL active player from before this borrowed tactical action started — restored directly (bypassing the normal maybeAdvanceActivePlayer turn-order computation) when this borrowed action finishes, since it was never really the chosen player's own turn. See rules/naalu.ts's own useZeuOmega and phases/production.ts's own finishTacticalAction. */
+  zeuOmegaOriginalActivePlayerId?: PlayerId;
   /**
    * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
    * players actively fighting the CURRENT ground combat on

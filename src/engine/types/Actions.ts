@@ -591,6 +591,12 @@ export type GameAction =
     } // Embers of Muaat's own agent — see rules/muaat.ts
   | { type: "USE_MAGMUS_TRADE_GOOD"; playerId: PlayerId } // Embers of Muaat's own commander — see rules/muaat.ts
   | { type: "USE_NOVA_SEED"; playerId: PlayerId; systemId: SystemId } // Embers of Muaat's own hero — see rules/muaat.ts
+  | { type: "USE_STALL_TACTICS"; playerId: PlayerId; cardId: string; deployMechPlanetId?: PlanetId } // Yssaril Tribes' own faction ability (with Blackshade Infiltrator's own optional Deploy) — see rules/yssaril.ts
+  | { type: "DISCARD_SCHEMING_CARD"; playerId: PlayerId; cardId: string } // Yssaril Tribes' own faction ability — see rules/yssaril.ts
+  | { type: "USE_SPY_NET"; playerId: PlayerId; chosenCardId: string } // Yssaril Tribes' own promissory note — see rules/yssaril.ts
+  | { type: "USE_MAGEON_IMPLANTS"; playerId: PlayerId; targetPlayerId: PlayerId; chosenCardId: string } // Yssaril Tribes' own faction tech — see rules/yssaril.ts
+  | { type: "USE_SSRUU"; playerId: PlayerId; targetFactionId: string; innerAction: GameAction } // Yssaril Tribes' own agent — duplicates another IN-PLAY player's own agent ability, re-dispatching innerAction (with that agent's own playerId/ownerId field already set to THIS player) — see rules/yssaril.ts's own checkSsruuAndTarget and GameEngine.ts's own USE_SSRUU case
+  | { type: "USE_GUILD_OF_SPIES"; playerId: PlayerId; choices: { targetPlayerId: PlayerId; shownCardId: string; take: boolean }[] } // Yssaril Tribes' own hero — see rules/yssaril.ts
   | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain
   /** RR 1.19/1.20: declines this player's current turn in an open priority window (see types/GameState.ts's own PendingPriorityWindow doc comment) — legal any time it's their turn in ANY open window, whichever kind it is. */
   | { type: "PASS_PRIORITY"; playerId: PlayerId }
@@ -708,6 +714,8 @@ export type GameAction =
       };
       /** TE "Black Market Dealings": true if that card (from the caster's own hand) is being spent as part of this same transaction, unlocking relics/action cards/unscored secret objectives on either offer above. */
       blackMarketDealings?: boolean;
+      /** Yssaril Tribes "Deepgloom Executable" (Breakthrough): bypasses BOTH the neighbor requirement and the once-per-turn/agenda transaction limit — see rules/transactions.ts's own canTransact for the full doc comment. */
+      deepgloomExecutableActive?: boolean;
     } // RR (yjmrobert.com/tirules/rules/r_transactions) — binding immediately since both sides confirm client-side before submitting; see rules/transactions.ts's own resolveTransaction.
 
   // --- Status phase (RR 70) — mostly automatic, but objective scoring is a player choice ---
