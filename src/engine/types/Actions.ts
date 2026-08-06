@@ -293,6 +293,8 @@ export type GameAction =
       freelancersActive?: boolean;
       /** "Freelancers": only consulted if reinforcements are empty for the unit type — see phases/production.ts's own executeProduction for the full substitution-rule doc comment. */
       freelancersSubstituteSourceSystemId?: SystemId;
+      /** Naalu Collective "M'aban" (commander): "+1 free fighter, doesn't count against the Production limit" — see phases/production.ts's own executeProduction for the full doc comment. */
+      useMabanBonusFighter?: boolean;
     }
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
@@ -502,6 +504,34 @@ export type GameAction =
       targetSystemId: SystemId;
       moves: { fromSystemId: SystemId; unitType: "flagship" | "dreadnought"; count: number; transportedUnits?: { unitType: UnitType; count: number }[] }[];
     } // L1Z1X's own hero — see rules/l1z1x.ts
+  | { type: "USE_PROMISE_OF_PROTECTION"; playerId: PlayerId } // Mentak Coalition's own promissory note — see rules/mentak.ts
+  | { type: "USE_PILLAGE"; playerId: PlayerId; targetPlayerId: PlayerId; take: "trade_good" | "commodity" } // Mentak Coalition's own faction ability — see rules/mentak.ts
+  | {
+      type: "USE_SALVAGE_OPERATIONS";
+      playerId: PlayerId;
+      won: boolean;
+      systemId: SystemId;
+      unitType?: UnitType;
+      exhaustPlanetIdsForResources?: PlanetId[];
+      substituteSourceSystemId?: SystemId;
+    } // Mentak Coalition's own faction tech — see rules/mentak.ts
+  | { type: "USE_AMBUSH"; playerId: PlayerId; systemId: SystemId; ships: { unitType: "cruiser" | "destroyer"; diceRolls: number[] }[] } // Mentak Coalition's own faction ability — see rules/mentak.ts
+  | { type: "USE_SUFFI_AN"; playerId: PlayerId; pillagedPlayerId: PlayerId } // Mentak Coalition's own agent — see rules/mentak.ts
+  | { type: "USE_SULA_MENTARION"; playerId: PlayerId; opponentId: PlayerId; promissoryNoteId: string } // Mentak Coalition's own commander — see rules/mentak.ts
+  | { type: "USE_SLEEPER_CELL"; playerId: PlayerId } // Mentak Coalition's own hero — see rules/mentak.ts
+  | {
+      type: "RESOLVE_SLEEPER_CELL_PLACEMENT";
+      playerId: PlayerId;
+      destroyedOpponentUnitTypes: UnitType[];
+      removals?: { unitType: UnitType; count: number }[];
+    } // Mentak Coalition's own hero — see rules/mentak.ts
+  | { type: "USE_GIFT_OF_PRESCIENCE"; playerId: PlayerId } // Naalu Collective's own promissory note — see rules/naalu.ts
+  | { type: "USE_ZEU_OMEGA"; playerId: PlayerId; targetPlayerId: PlayerId; systemId: SystemId } // Naalu Collective's own agent (Codex) — see rules/naalu.ts
+  | { type: "USE_ZEU_OMEGA_OMEGA"; playerId: PlayerId; targetPlayerId: PlayerId; systemId: SystemId } // Naalu Collective's own agent (Thunder's Edge) — see rules/naalu.ts
+  | { type: "USE_NEUROGLAIVE"; playerId: PlayerId; activatingPlayerId: PlayerId; systemId: SystemId; removedCommandTokenPool: "tactic" | "fleet" | "strategy" } // Naalu Collective's own faction tech — see rules/naalu.ts
+  | { type: "USE_THE_ORACLE"; playerId: PlayerId; choices: { targetPlayerId: PlayerId; promissoryNoteId: string }[] } // Naalu Collective's own hero — see rules/naalu.ts
+  | { type: "USE_MINDSIEVE"; playerId: PlayerId; strategyCardOwnerId: PlayerId; promissoryNoteId: string } // Naalu Collective's own Breakthrough — see rules/naalu.ts
+  | { type: "USE_FORESIGHT"; playerId: PlayerId; activeSystemId: SystemId; destinationSystemId: SystemId; units: { unitType: UnitType; count: number }[] } // Naalu Collective's own faction ability — see rules/naalu.ts
   | { type: "USE_THE_ACROPOLIS"; playerId: PlayerId; target: { kind: "planet"; planetId: PlanetId } | { kind: "relic"; relicId: string } | { kind: "technology"; techId: TechId } | { kind: "leader"; leaderId: string } } // TE Emelpar's own legendary ability, "at the end of your turn" — usable only during the end_of_turn priority window — see phases/legendaryPlanets.ts
   | { type: "USE_THE_GALACTIC_COUNCIL"; playerId: PlayerId; discardedSecretObjectiveId: string } // TE Mecatol Rex's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
   | { type: "USE_JUPITER_BRAIN"; playerId: PlayerId } // TE Thunder's Edge's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
@@ -546,6 +576,21 @@ export type GameAction =
   | { type: "USE_XXEKIR_GROM_OMEGA_OMEGA"; playerId: PlayerId; placements: { planetId: PlanetId; unitType: "pds" | "mech"; count: number }[] } // Xxcha's own hero (Thunder's Edge version) — see rules/xxcha.ts
   | { type: "USE_STAR_FORGE"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Muaat's own base faction ability — see rules/muaat.ts
   | { type: "USE_THE_NUCLEUS"; playerId: PlayerId; systemId: SystemId; choice: "fighters" | "destroyer" } // Avernus's own legendary ability (Muaat's Breakthrough) — see rules/muaat.ts
+  | { type: "USE_MAGMUS_REACTOR_OMEGA_PRODUCTION"; playerId: PlayerId; systemId: SystemId; units: { unitType: UnitType; count: number }[]; exhaustPlanetIdsForResources: PlanetId[] } // Embers of Muaat's own faction tech (Codex) — see rules/muaat.ts
+  | { type: "USE_FIRES_OF_THE_GASHLAI"; playerId: PlayerId } // Embers of Muaat's own promissory note — see rules/muaat.ts
+  | { type: "USE_FORGE_CRUISER"; playerId: PlayerId; systemId: SystemId } // Embers of Muaat's own flagship — see rules/muaat.ts
+  | { type: "USE_EMBER_COLOSSUS_SPAWN"; playerId: PlayerId; emberColossusSystemId: SystemId; starForgeSystemId: SystemId } // Embers of Muaat's own mech — see rules/muaat.ts
+  | {
+      type: "USE_UMBAT";
+      ownerId: PlayerId;
+      targetPlayerId: PlayerId;
+      systemId: SystemId;
+      units: { unitType: UnitType; count: number }[];
+      exhaustPlanetIdsForResources: PlanetId[];
+      groundForceTargetPlanetId?: PlanetId;
+    } // Embers of Muaat's own agent — see rules/muaat.ts
+  | { type: "USE_MAGMUS_TRADE_GOOD"; playerId: PlayerId } // Embers of Muaat's own commander — see rules/muaat.ts
+  | { type: "USE_NOVA_SEED"; playerId: PlayerId; systemId: SystemId } // Embers of Muaat's own hero — see rules/muaat.ts
   | { type: "APPLY_STELLAR_GENESIS"; playerId: PlayerId; targetSystemId: SystemId } // Muaat's own Breakthrough gain-trigger, placing Avernus — see rules/muaat.ts's own applyStellarGenesisOnGain
   /** RR 1.19/1.20: declines this player's current turn in an open priority window (see types/GameState.ts's own PendingPriorityWindow doc comment) — legal any time it's their turn in ANY open window, whichever kind it is. */
   | { type: "PASS_PRIORITY"; playerId: PlayerId }
@@ -883,6 +928,7 @@ export type GameEvent =
   | { type: "HEART_OF_IXTH_ADJUSTED_ROLL"; playerId: PlayerId; originalRoll: number; adjustedRoll: number }
   | { type: "COMMAND_TOKENS_RETURNED_TO_REINFORCEMENTS"; playerId: PlayerId; count: number }
   | { type: "HARROW_HITS_SCORED"; playerId: PlayerId; targetPlayerId: PlayerId; hits: number }
+  | { type: "PILLAGE_USED"; playerId: PlayerId; targetPlayerId: PlayerId; took: "trade_good" | "commodity" }
   | { type: "GAME_ENDED"; winnerId: PlayerId }
   | { type: "PLAYER_ELIMINATED"; playerId: PlayerId };
 
