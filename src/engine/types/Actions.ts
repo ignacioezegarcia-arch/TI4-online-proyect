@@ -11,7 +11,7 @@ import {
   TechId,
   UnitUpgradeId,
 } from "./ids";
-import { UnitType, ObjectiveKind } from "./enums";
+import { UnitType, ObjectiveKind, WormholeType } from "./enums";
 
 /**
  * Every action a player (or the "bot"/engine acting on a timer, e.g. an
@@ -532,6 +532,14 @@ export type GameAction =
   | { type: "USE_THE_ORACLE"; playerId: PlayerId; choices: { targetPlayerId: PlayerId; promissoryNoteId: string }[] } // Naalu Collective's own hero — see rules/naalu.ts
   | { type: "USE_MINDSIEVE"; playerId: PlayerId; strategyCardOwnerId: PlayerId; promissoryNoteId: string } // Naalu Collective's own Breakthrough — see rules/naalu.ts
   | { type: "USE_FORESIGHT"; playerId: PlayerId; activeSystemId: SystemId; destinationSystemId: SystemId; units: { unitType: UnitType; count: number }[] } // Naalu Collective's own faction ability — see rules/naalu.ts
+  | { type: "USE_WORMHOLE_GENERATOR"; playerId: PlayerId; wormholeType: "alpha" | "beta" | "gamma"; toSystemId: SystemId } // Ghosts of Creuss's own faction tech (base) — see rules/creuss.ts
+  | { type: "USE_WORMHOLE_GENERATOR_OMEGA"; playerId: PlayerId; wormholeType: "alpha" | "beta" | "gamma"; toSystemId: SystemId } // Ghosts of Creuss's own faction tech (Codex) — see rules/creuss.ts
+  | { type: "USE_CREUSS_IFF"; playerId: PlayerId; wormholeType: "alpha" | "beta" | "gamma"; toSystemId: SystemId } // Ghosts of Creuss's own promissory note — see rules/creuss.ts
+  | { type: "USE_ICARUS_DRIVE"; playerId: PlayerId; icarusDriveSystemId: SystemId; wormholeType: "alpha" | "beta" | "gamma" } // Ghosts of Creuss's own mech — see rules/creuss.ts
+  | { type: "USE_DIMENSIONAL_SPLICER"; playerId: PlayerId } // Ghosts of Creuss's own faction tech — see rules/creuss.ts
+  | { type: "USE_EMISSARY_TAIVRA"; playerId: PlayerId; targetSystemId: SystemId } // Ghosts of Creuss's own agent — see rules/creuss.ts
+  | { type: "USE_SAI_SERAVUS"; playerId: PlayerId; destinationSystemId: SystemId; shipsMovedThroughWormholes: { unitType: UnitType; count: number }[] } // Ghosts of Creuss's own commander — see rules/creuss.ts
+  | { type: "USE_RIFTWALKER_MEIAN"; playerId: PlayerId; systemIdA: SystemId; systemIdB: SystemId } // Ghosts of Creuss's own hero — see rules/creuss.ts
   | { type: "USE_THE_ACROPOLIS"; playerId: PlayerId; target: { kind: "planet"; planetId: PlanetId } | { kind: "relic"; relicId: string } | { kind: "technology"; techId: TechId } | { kind: "leader"; leaderId: string } } // TE Emelpar's own legendary ability, "at the end of your turn" — usable only during the end_of_turn priority window — see phases/legendaryPlanets.ts
   | { type: "USE_THE_GALACTIC_COUNCIL"; playerId: PlayerId; discardedSecretObjectiveId: string } // TE Mecatol Rex's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts
   | { type: "USE_JUPITER_BRAIN"; playerId: PlayerId } // TE Thunder's Edge's own legendary ability, "at the end of your turn" — same end_of_turn window gating — see phases/legendaryPlanets.ts

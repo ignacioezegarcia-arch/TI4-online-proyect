@@ -309,6 +309,14 @@ export interface GameState {
   naaluZeroTokenHolderId?: PlayerId;
   /** Yssaril Tribes "SCHEMING": players who still need to discard 1 action card after a qualifying draw — "no other abilities may resolve until the Yssaril player has discarded" (confirmed at tirules2.com/F_yssaril). See rules/yssaril.ts's own discardSchemingCard. */
   pendingSchemingDiscards?: PlayerId[];
+  /** Ghosts of Creuss "Wormhole Generator" (original/base version): players who still need to place/move their mandatory wormhole token at the start of this status phase — see rules/creuss.ts's own useWormholeGenerator. */
+  pendingWormholeGeneratorPlacements?: PlayerId[];
+  /** Ghosts of Creuss's own 3 limited physical wormhole tokens (alpha/beta/gamma) — their own CURRENT system, tracked explicitly rather than inferred from SystemState.wormholes (which doesn't distinguish a printed map wormhole from Creuss's own placed token). See rules/creuss.ts's own placeOrMoveCreussWormholeToken. */
+  creussWormholeTokenLocations?: Partial<Record<"alpha" | "beta" | "gamma", SystemId>>;
+  /** 3 GENERIC gamma wormhole tokens (Cultural "Gamma Wormhole", Frontier "Gamma Relay", "Nexus Sovereignty" agenda) — separate physical components from Creuss's own faction set above. Each has a stable id (for future per-token art) and its own current systemId (null = still in the box). See rules/wormholeTokens.ts's own placeGenericGammaWormholeToken. */
+  genericGammaWormholeTokens: { tokenId: string; systemId: SystemId | null }[];
+  /** Ghosts of Creuss "Hil Colish" (flagship): wherever the delta wormhole this ship's own presence creates currently sits — dynamically recomputed after every move, not a static placed token. See phases/tacticalAction.ts's own moveShips. */
+  hilColishDeltaWormholeSystemId?: SystemId;
   /** Sol "Military Support" (promissory note): "cannot be played twice in one timing window" (confirmed, yjmrobert.com/tirules/factions/f_sol) — tracks whether it's already been used during THIS specific active-player turn; reset whenever the active player changes (phases/actionPhase.ts's own advanceActivePlayer), same as transactionsThisTurn above. */
   usedMilitarySupportForActivePlayerTurn?: boolean;
   /** TE The Fracture: set by phases/theFracture.ts's own setUpFractureOnEntry right when the Fracture comes into play, cleared once placeIngressTokens resolves the triggering player's own choice. synergyColors mirrors whatever that player's breakthrough synergy was AT THAT MOMENT (null if they have none), since that's what determines whether the 3-per-color or the 4-different-specialties path applies. */
@@ -673,6 +681,8 @@ export interface PendingTacticalAction {
   duhaMenaimonPresentAtActivation?: boolean;
   /** Mentak Coalition "Ipswitch, Loose Cannon — SLEEPER CELL": true once activated for this combat — see rules/mentak.ts's own useSleeperCell/resolveSleeperCellPlacement. */
   sleeperCellActive?: boolean;
+  /** Ghosts of Creuss "Hil Colish": true once Space Cannon Offense has already been triggered/skipped for THIS tactical action — confirmed (yjmrobert.com/tirules/factions/f_creuss) moving the Hil Colish separately from the rest of this player's own fleet (before or after) does NOT generate a SECOND Space Cannon Offense step. See phases/tacticalAction.ts's own moveShips. */
+  spaceCannonOffenseResolvedThisAction?: boolean;
   /** Naalu Collective "Z'eu Ω": the REAL active player from before this borrowed tactical action started — restored directly (bypassing the normal maybeAdvanceActivePlayer turn-order computation) when this borrowed action finishes, since it was never really the chosen player's own turn. See rules/naalu.ts's own useZeuOmega and phases/production.ts's own finishTacticalAction. */
   zeuOmegaOriginalActivePlayerId?: PlayerId;
   /**
@@ -782,6 +792,8 @@ export interface PendingTacticalAction {
   shvalHarbingerActive?: boolean;
   /** Jol-Nar "Spatial Conduit Cylinder" (faction tech): set once used, for the rest of THIS system activation only — see rules/adjacency.ts's own getAdjacentSystems. */
   spatialConduitCylinderActive?: { playerId: PlayerId; systemId: SystemId };
+  /** Ghosts of Creuss "Emissary Taivra" (agent): the activated system this ability is currently expanding adjacency for, this tactical action only — see rules/adjacency.ts's own getAdjacentSystems and rules/creuss.ts's own useEmissaryTaivra. */
+  emissaryTaivraActiveSystemId?: SystemId;
   /**
    * RR "Magen Defense Grid" ΩΩ (Codex 4, everywhere except base-only
    * games): NOT optional and doesn't exhaust anything — if the defender
