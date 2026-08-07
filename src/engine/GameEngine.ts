@@ -150,6 +150,7 @@ import { resolveMitosisPlacement, useStymie, useStymieOmega, useDuhaMenaimonProd
 import { resolveAssimilateSubstitute, useHarrow, useCyberneticEnhancements, useCyberneticEnhancementsOmega, useI48s, useTheHelmsman } from "./rules/l1z1x";
 import { usePromiseOfProtection, usePillage, useSalvageOperations, useAmbush, useSuffiAn, useSUlaMentarion, useSleeperCell, resolveSleeperCellPlacement } from "./rules/mentak";
 import { useGiftOfPrescience, useZeuOmega, useZeuOmegaOmega, useNeuroglaive, useTheOracle, useMindsieve, useForesight } from "./rules/naalu";
+import { useWormholeGenerator, useWormholeGeneratorOmega, useCreussIff, useIcarusDrive, useDimensionalSplicer, useEmissaryTaivra, useSaiSeravus, useRiftwalkerMeian } from "./rules/creuss";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
   useSelfAssemblyRoutines,
@@ -1038,6 +1039,30 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_FORESIGHT":
         result = useForesight(state, action, rules);
+        break;
+      case "USE_WORMHOLE_GENERATOR":
+        result = useWormholeGenerator(state, action, rules);
+        break;
+      case "USE_WORMHOLE_GENERATOR_OMEGA":
+        result = useWormholeGeneratorOmega(state, action, rules);
+        break;
+      case "USE_CREUSS_IFF":
+        result = useCreussIff(state, action, rules);
+        break;
+      case "USE_ICARUS_DRIVE":
+        result = useIcarusDrive(state, action, rules);
+        break;
+      case "USE_DIMENSIONAL_SPLICER":
+        result = useDimensionalSplicer(state, action);
+        break;
+      case "USE_EMISSARY_TAIVRA":
+        result = useEmissaryTaivra(state, action);
+        break;
+      case "USE_SAI_SERAVUS":
+        result = useSaiSeravus(state, action, rules);
+        break;
+      case "USE_RIFTWALKER_MEIAN":
+        result = useRiftwalkerMeian(state, action, rules);
         break;
       case "USE_THE_ACROPOLIS":
         result = useTheAcropolis(state, action);
