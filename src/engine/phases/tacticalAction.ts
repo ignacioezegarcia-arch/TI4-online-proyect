@@ -1,6 +1,7 @@
 import { GameState, Player, SystemState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, SystemId, asTechId, asPlanetId } from "../types/ids";
+import { PlayerId, SystemId, asTechId, asPlanetId, asAbilityId } from "../types/ids";
+import { hasAbility } from "../rules/abilities";
 import { STRUCTURE_TYPES, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { canShipReachSystem } from "../rules/movement";
@@ -328,6 +329,24 @@ export function moveShips(
       usedIonianFuelRefinery = true;
       workingState = exhaustLegendaryAbility(workingState, found.systemId, asPlanetId("tempesta"));
     }
+    // Ghosts of Creuss "SLIPSTREAM" (faction ability): "During your
+    // tactical actions, apply +1 to the move value of each of your
+    // ships that starts its movement in your home system or in a
+    // system that contains either an alpha or beta wormhole."
+    // Confirmed (yjmrobert.com/tirules/factions/f_creuss): "does NOT
+    // apply to the Creuss Gate, to the Hil Colish, or to gamma
+    // wormholes" — the Creuss Gate itself contains a DELTA wormhole
+    // (not alpha/beta), so it's naturally excluded here without any
+    // special Gate-detection needed; the Hil Colish is excluded via its
+    // own unitType check.
+    if (move.unitType !== "flagship" && player.factionId === ("creuss" as never) && hasAbility(player, asAbilityId("slipstream"))) {
+      const originSystem = workingState.systems[move.fromSystemId];
+      const isHomeSystem = rules.homeSystemByFaction[player.factionId] === move.fromSystemId;
+      const hasAlphaOrBeta = originSystem?.wormholes.some((w) => w === "alpha" || w === "beta");
+      if (isHomeSystem || hasAlphaOrBeta) {
+        effectiveMove += 1;
+      }
+    }
 
     // Letnev "Gravleash Maneuvers": applied LAST (after Gravity Drive/Flank Speed/Ionian Fuel Refinery above), and only to non-fighter ships — a fighter's own move value is never raised by this ability, even though a Fighter II's OWN value is one of the things that can raise OTHER ships.
     if (move.unitType !== "fighter") {
@@ -558,6 +577,79 @@ export function moveShips(
   // first time, it flips active at the END of this step (not mid-move) —
   // hence doing this last, right before returning.
   workingState = maybeActivateWormholeNexus(workingState, rules, activeSystemId);
+
+  // Ghosts of Creuss "Hil Colish" (flagship, delta wormhole): "This
+  // ship's system contains a delta wormhole. During movement, this
+  // ship may move before or after your other ships." Confirmed
+  // (https://www.yjmrobert.com/tirules/factions/f_creuss/):
+  //  - "The delta wormhole moves WITH the Hil Colish; it cannot move
+  //    back to its origin system using its own delta wormhole" —
+  //    IMPLEMENTED below via dynamic recomputation (not a static
+  //    token): clear "delta" from wherever it previously tracked the
+  //    ship, add it to wherever the ship is now.
+  //  - "Does not generate a second Space Cannon Offense step" if moved
+  //    separately from the rest of this player's fleet — IMPLEMENTED
+  //    via pending.spaceCannonOffenseResolvedThisAction just above.
+  //  - "A unit with Deep Space Cannon may produce hits in systems
+  //    adjacent to that unit via the delta wormhole in Hil Colish's
+  //    system" — CORRECTED from an earlier note here that wrongly
+  //    called this "a faction ability not yet implemented": "Deep Space
+  //    Cannon" isn't a distinct ability at all — it's the community's
+  //    own nickname (used even by tirules2.com/yjmrobert.com) for PDS
+  //    II's own printed Space Cannon "rangesToAdjacent" behavior, which
+  //    IS already implemented (rules/combat.ts's own
+  //    spaceCannonEntriesForPlayer). Since it already reads
+  //    system.wormholes via getAdjacentSystems, and that now correctly
+  //    includes "delta" for Hil Colish's own current system, this
+  //    interaction is IMPLEMENTED, not a forward note. Separately, this
+  //    same investigation also surfaced and fixed a real gap: that
+  //    getAdjacentSystems call didn't thread forPlayerId at all, so
+  //    Ghosts of Creuss's own QUANTUM ENTANGLEMENT never boosted their
+  //    own Deep Space Cannon reach either (confirmed by community
+  //    consensus — "you are Creuss and built [PDS II] on a planet
+  //    that's on the same hex as a wormhole, thus threatening another
+  //    three hexes because of your quantum entanglement") — now fixed
+  //    there too.
+  //  - KNOWN SCOPE LIMIT (declaration order + gravity rift): "The
+  //    Creuss player must declare ALL ships that will be moving BEFORE
+  //    they move the Hil Colish or their other ships... cannot wait to
+  //    see the result of their other ships' gravity rift rolls before
+  //    deciding to move the Hil Colish... if the Hil Colish is moved
+  //    first and destroyed by a gravity rift, other declared ships that
+  //    CAN still reach the destination must do so, even through that
+  //    same gravity rift." This project's own moveShips is a single
+  //    atomic call per invocation, with no "declare now, execute in 2
+  //    batches later" structure, and (as already noted separately for
+  //    Naalu's own Foresight) no gravity-rift-removal-roll mechanism
+  //    exists anywhere in this project yet either. Modeling the full
+  //    declare-then-execute sequencing here would need much deeper
+  //    changes to the movement system than this pass covers — the
+  //    CALLER is trusted to submit Hil Colish's own move (via a
+  //    separate moveShips call, before or after the rest of the fleet)
+  //    in a way that respects these ordering rules, same "trusted
+  //    timing" convention used elsewhere in this project for similar
+  //    gaps, rather than silently claiming this is fully enforced.
+  if (player.factionId === ("creuss" as never)) {
+    const previousDeltaSystemId = workingState.hilColishDeltaWormholeSystemId;
+    if (previousDeltaSystemId && previousDeltaSystemId !== activeSystemId) {
+      const prevSystem = workingState.systems[previousDeltaSystemId];
+      const stillHasHilColishThere = (prevSystem?.spaceUnitsByPlayer[player.id] ?? []).some((s) => s.unitType === "flagship" && s.count > 0);
+      if (prevSystem && !stillHasHilColishThere) {
+        workingState = { ...workingState, systems: { ...workingState.systems, [previousDeltaSystemId]: { ...prevSystem, wormholes: prevSystem.wormholes.filter((w) => w !== "delta") } } };
+      }
+    }
+    const hilColishNowHere = (workingState.systems[activeSystemId]?.spaceUnitsByPlayer[player.id] ?? []).some((s) => s.unitType === "flagship" && s.count > 0);
+    if (hilColishNowHere) {
+      const destSystem = workingState.systems[activeSystemId];
+      if (!destSystem.wormholes.includes("delta")) {
+        workingState = { ...workingState, systems: { ...workingState.systems, [activeSystemId]: { ...destSystem, wormholes: [...destSystem.wormholes, "delta"] } } };
+      }
+      workingState = { ...workingState, hilColishDeltaWormholeSystemId: activeSystemId };
+    } else if (workingState.hilColishDeltaWormholeSystemId === previousDeltaSystemId) {
+      workingState = { ...workingState, hilColishDeltaWormholeSystemId: undefined };
+    }
+  }
+
   // RR "Capture": ship movement is the only way blockade state can change
   // in this engine, so this is the natural place to auto-return any
   // captured non-fighter ship/mech whose original owner is now
@@ -577,17 +669,23 @@ export function moveShips(
     workingState = { ...workingState, pendingPriorityWindow: { kind: "after_ships_moved_in", order: rescueOrder, currentIndex: 0, consecutivePasses: 0 } };
   }
 
-  const spaceCannonResponders = getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
+  // Ghosts of Creuss "Hil Colish": if this player already resolved (or
+  // skipped) Space Cannon Offense earlier in THIS SAME tactical action
+  // — i.e. they're moving the Hil Colish separately, before or after
+  // their other ships, per that ship's own ability — don't trigger it
+  // a second time; go straight to spaceCombat/invasion instead.
+  const spaceCannonAlreadyResolved = pending.spaceCannonOffenseResolvedThisAction === true;
+  const spaceCannonResponders = spaceCannonAlreadyResolved ? [] : getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
   const willHaveCombat = playersWithShipsInSystem(workingState, activeSystemId).length > 1;
 
   workingState = {
     ...workingState,
     pendingTacticalAction:
       spaceCannonResponders.length > 0
-        ? { ...pending, step: "spaceCannonOffense", spaceCannonOffenseRespondersRemaining: spaceCannonResponders }
+        ? { ...pending, step: "spaceCannonOffense", spaceCannonOffenseRespondersRemaining: spaceCannonResponders, spaceCannonOffenseResolvedThisAction: true }
         : willHaveCombat
-          ? { ...pending, step: "spaceCombat", ...computeSpaceCombatEntry(workingState, rules, activeSystemId, player.id) }
-          : { ...pending, step: "invasion" },
+          ? { ...pending, step: "spaceCombat", spaceCannonOffenseResolvedThisAction: true, ...computeSpaceCombatEntry(workingState, rules, activeSystemId, player.id) }
+          : { ...pending, step: "invasion", spaceCannonOffenseResolvedThisAction: true },
   };
   workingState = openInvasionStartWindowIfNeeded(openCombatRoundStartWindowIfNeeded(workingState));
 

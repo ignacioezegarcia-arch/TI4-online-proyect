@@ -190,6 +190,24 @@ export function executeProduction(
   if (!hasAnyProducer) {
     return { ok: false, error: `RR 58: no Production-capable unit (e.g. a Space Dock) on ${planetId}.` };
   }
+  // Ghosts of Creuss "Particle Synthesis" (Breakthrough ability): "Each
+  // wormhole in a system that contains your ships gains PRODUCTION 1
+  // as if it were a unit you control." Confirmed
+  // (yjmrobert.com/tirules/factions/f_creuss): "each wormhole provides
+  // its own Production and cost reduction EVEN IF they're the same
+  // type" — every wormhole in the system counts separately, added here
+  // to the non-space-dock pool (each wormhole's own "Production 1",
+  // not gated behind any OTHER producer already existing there —
+  // hasAnyProducer above was already satisfied by whatever unit is
+  // actually on this planet, so this is purely additive).
+  let particleSynthesisWormholeCount = 0;
+  if (player.factionId === ("creuss" as never) && player.hasBreakthrough) {
+    const hasShipsHere = (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0);
+    if (hasShipsHere) {
+      particleSynthesisWormholeCount = system.wormholes.length;
+      nonSpaceDockLimit += particleSynthesisWormholeCount;
+    }
+  }
   // RR "War Machine": +4 to the total Production value for this 1 use — a general combat-support bonus, not specifically FROM a space dock, so it goes toward the non-space-dock pool (usable for infantry too, relevant for Arborec's own MITOSIS restriction below).
   if (player.warMachineActive) {
     nonSpaceDockLimit += 4;
@@ -263,6 +281,15 @@ export function executeProduction(
   // RR "War Machine": reduce the combined cost by 1 too (stacks with Sarween Tools — 2 separate, independent reductions).
   if (totalCost > 0 && player.warMachineActive) {
     totalCost = Math.max(0, totalCost - 1);
+  }
+  // Ghosts of Creuss "Particle Synthesis" (Breakthrough ability):
+  // "Reduce the combined cost of units you produce in systems that
+  // contain wormholes by 1 for each wormhole in that system." Stacks
+  // with Sarween Tools/War Machine (separate, independent reduction),
+  // using the SAME wormhole count computed above for the Production
+  // bonus half of this same ability.
+  if (totalCost > 0 && particleSynthesisWormholeCount > 0) {
+    totalCost = Math.max(0, totalCost - particleSynthesisWormholeCount);
   }
 
   // RR "AI Development Algorithm"'s OTHER ability: exhaust to reduce the

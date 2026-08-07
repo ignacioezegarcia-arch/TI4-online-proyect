@@ -11,6 +11,7 @@ import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { effectiveCommoditiesMax } from "../rules/spaceStations";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
 import { applyIconoclastOmegaOmegaDeploy } from "../rules/naalu";
+import { placeGenericGammaWormholeToken } from "../rules/wormholeTokens";
 import { checkTechPrerequisites, spendForCost } from "./technology";
 
 /**
@@ -352,11 +353,9 @@ export function applyExplorationCard(
       nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) } } };
     }
   } else if (cardId === "gamma_wormhole_explore" || cardId === "gamma_relay") {
-    // "Place a gamma wormhole token in this system. Then, purge this card." (the purge itself is handled by every caller's own goesToDiscard check reading card.purge — nothing further needed here.)
-    const system = nextState.systems[systemId];
-    if (!system.wormholes.includes("gamma")) {
-      nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...system, wormholes: [...system.wormholes, "gamma"] } } };
-    }
+    // "Place a gamma wormhole token in this system. Then, purge this card." (the purge itself is handled by every caller's own goesToDiscard check reading card.purge — nothing further needed here.) Uses ONE of the 3 shared generic gamma tokens — see rules/wormholeTokens.ts's own placeGenericGammaWormholeToken.
+    const placed = placeGenericGammaWormholeToken(nextState, systemId);
+    if (placed.ok) nextState = placed.state;
   } else if (cardId === "ion_storm") {
     // "Place the ion storm token in this system with either side face up. Then, place this card in the common play area. At the end of a 'Move Ships' or 'Retreat' sub-step... during which 1 or more of your ships use the ion storm wormhole, flip the ion storm token to its opposing side."
     // KNOWN SCOPE LIMIT: the token's initial placement (with the chosen face) is tracked here; the "place this card in the COMMON play area" (visible/usable by all players, not just this one) and the flip-on-wormhole-use trigger aren't wired into this project's own movement resolution yet — flagged rather than silently dropped.

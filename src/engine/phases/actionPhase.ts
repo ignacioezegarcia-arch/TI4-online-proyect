@@ -15,6 +15,7 @@ import { maybeUnlockHero, purgeHero } from "../rules/leaders";
 import { placeRespawnedSpecOps } from "../rules/sol";
 import { maybeReturnGiftOfPrescience } from "../rules/naalu";
 import { applySchemingToDrawCount, drawActionCardsForPlayer } from "../rules/yssaril";
+import { hasCodex } from "../rules/gameMode";
 import { use4X41DHyperionVI, useMaxisCentralControl, useDokNPicsSalvageYardStore, useAeurexMechanica } from "./legendaryPlanets";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
@@ -742,7 +743,16 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
   let players: GameState["players"] = {};
   const pendingCommandTokenGains: Partial<Record<PlayerId, number>> = {};
   const pendingSchemingDiscards: PlayerId[] = [];
+  const pendingWormholeGeneratorPlacements: PlayerId[] = [];
   for (const [id, player] of Object.entries(state.players)) {
+    // Ghosts of Creuss "Wormhole Generator" (original/base version):
+    // "At the start of the status phase, place or move a Creuss
+    // wormhole token..." — confirmed mandatory (yjmrobert.com/tirules/factions/f_creuss).
+    // The Codex Ω version is an exhaustable ACTION instead, not tied to
+    // this trigger at all — see rules/creuss.ts's own useWormholeGeneratorOmega.
+    if (player.factionId === ("creuss" as never) && player.technologies.includes("wormhole_generator" as never) && !hasCodex(state.mode) && !player.eliminated) {
+      pendingWormholeGeneratorPlacements.push(id as PlayerId);
+    }
     let updatedPlayer: Player = {
       ...player,
       // RR 70.4: command tokens on the board return to reinforcements (i.e. just removed; they're re-gained as fresh tokens in 70.5, not literally recycled).
@@ -907,6 +917,7 @@ function runStatusPhaseBookkeeping(state: GameState, rules: RuleData): { state: 
     ...(genesisCapacityOverflow.length > 0 ? { pendingGenesisCapacityOverflow: genesisCapacityOverflow } : {}),
     ...(pendingMitosisPlacements.length > 0 ? { pendingMitosisPlacements } : {}),
     ...(pendingSchemingDiscards.length > 0 ? { pendingSchemingDiscards } : {}),
+    ...(pendingWormholeGeneratorPlacements.length > 0 ? { pendingWormholeGeneratorPlacements } : {}),
   };
   // Naalu Collective "Gift of Prescience": "return this card to the Naalu player at the end of the status phase" — see rules/naalu.ts's own maybeReturnGiftOfPrescience.
   return {

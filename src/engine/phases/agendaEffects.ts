@@ -5,6 +5,7 @@ import { UnitType, UnitAbility, SHIP_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { startNewRound, maybeAdvanceActivePlayer } from "./actionPhase";
 import { arePlayersNeighbors } from "../rules/adjacency";
+import { placeGenericGammaWormholeToken } from "../rules/wormholeTokens";
 import { buildGroundCombatEntries, buildSpaceCombatEntries } from "../rules/combat";
 import { fisherYatesShuffle } from "../setup/mapGeneration";
 import { finalizeAgendaResolution, revealAgenda } from "./agendaPhase";
@@ -103,12 +104,10 @@ export function applyAgendaResolutionSideEffects(state: GameState, rules: RuleDa
     }
   }
 
-  // RR "Nexus Sovereignty" ("against"): place a gamma wormhole token in the Mecatol Rex system.
+  // RR "Nexus Sovereignty" ("against"): place a gamma wormhole token in the Mecatol Rex system. Uses ONE of the 3 shared generic gamma tokens — see rules/wormholeTokens.ts's own placeGenericGammaWormholeToken.
   if (agendaId === "nexus_sovereignty" && winner === "against") {
-    const mecatol = nextState.systems[rules.mecatolSystemId as SystemId];
-    if (mecatol && !mecatol.wormholes.includes("gamma")) {
-      nextState = { ...nextState, systems: { ...nextState.systems, [rules.mecatolSystemId]: { ...mecatol, wormholes: [...mecatol.wormholes, "gamma"] } } };
-    }
+    const placed = placeGenericGammaWormholeToken(nextState, rules.mecatolSystemId as SystemId);
+    if (placed.ok) nextState = placed.state;
   }
 
   // RR "Publicize Weapon Schematics" ("against"): each player who owns a war sun technology discards their entire action-card hand.
