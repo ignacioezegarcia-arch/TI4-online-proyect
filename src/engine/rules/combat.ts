@@ -4,7 +4,7 @@ import { GROUND_FORCE_TYPES, SHIP_TYPES, UnitType } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getDefenderCombatBonus, hasEntropicScar } from "./anomalies";
 import { getAdjacentSystems } from "./adjacency";
-import { usesCodex4Version } from "./gameMode";
+import { usesCodex4Version, hasCodex, hasThundersEdge } from "./gameMode";
 import { getEffectiveUnitAbilities, getLawOwner } from "../phases/agendaEffects";
 import { hasAbility } from "./abilities";
 
@@ -289,7 +289,20 @@ export function buildGroundCombatEntries(
       const fragileBonus = hasAbility(player, asAbilityId("fragile")) && !hasShieldPalingOnPlanet ? -1 : 0;
       // Sardakk N'orr "Tekklar Legion" (promissory note): +1 for the holder, -1 for their opponent specifically if that opponent is the N'orr player.
       const tekklarLegionBonus = tekklarLegionHolderId === playerId ? 1 : tekklarLegionHolderId !== undefined && player.factionId === ("sardakk" as never) ? -1 : 0;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus - unrelentingBonus - fragileBonus - tekklarLegionBonus, unitType: stack.unitType });
+      // Naalu Collective "Iconoclast" (mech, original): "During combat
+      // against an opponent who has at least 1 relic fragment, apply +2
+      // to the results of this unit's combat rolls." Confirmed
+      // (yjmrobert.com/tirules/factions/f_naalu): "does NOT apply if the
+      // opponent has a relic but ZERO relic fragments" — checked against
+      // relicFragments specifically, never relics themselves. Only the
+      // ORIGINAL (base/PoK) version has this — Ω/ΩΩ replace it with
+      // Barrage Immunity/a Deploy trigger instead (see rules/naalu.ts's
+      // own game-mode gating for those).
+      const opponentId = playerIds.find((id) => id !== playerId);
+      const opponentPlayer = opponentId ? state.players[opponentId] : undefined;
+      const opponentHasRelicFragments = !!opponentPlayer && Object.values(opponentPlayer.relicFragments).some((n) => n > 0);
+      const iconoclastRelicBonus = stack.unitType === "mech" && player.factionId === ("naalu" as never) && !hasCodex(state.mode) && opponentHasRelicFragments ? 2 : 0;
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus - unrelentingBonus - fragileBonus - tekklarLegionBonus - iconoclastRelicBonus, unitType: stack.unitType });
     }
   }
   return entries;
@@ -517,6 +530,8 @@ export function applyHitAssignments(
    * exact.
    */
   mustPreferNonFighterTargets = false,
+  /** Mentak Coalition "Fourth Moon" (flagship, Suppress Sustain) / "Moll Terminus" (mech, Suppress Ground Sustain): "Other players' [ships in this system | ground forces on this planet] cannot use SUSTAIN DAMAGE." Confirmed (yjmrobert.com/tirules/factions/f_mentak): Moll Terminus's own suppression ALSO applies to Space Cannon Defense specifically (a mech committed to a planet with both a Moll Terminus and a Mentak PDS cannot use Sustain Damage to cancel Space Cannon hits there either) — since this flag just blocks the "flip" outcome generically for whichever hit-assignment context calls this function, that carries over automatically to every call site (ground combat AND Space Cannon Defense) without extra plumbing. True when the OWNER of these `stacks` (being hit) is NOT Mentak, and Mentak has the relevant unit (Fourth Moon for ships, Moll Terminus for ground forces) present — computed by the caller. */
+  sustainDamageSuppressed = false,
 ): ApplyHitAssignmentsResult {
   const updated = stacks.map((s) => ({ ...s }));
   const unitsLeft = updated.reduce((sum, s) => sum + s.count, 0);
@@ -556,6 +571,10 @@ export function applyHitAssignments(
     if (outcome === "flip") {
       if (hasEntropicScar(systemAnomalies)) {
         return { ok: false, error: 'TE ENTROPIC SCAR: Sustain Damage cannot be used by units inside an entropic scar.' };
+      }
+      // Mentak Coalition "Fourth Moon" / "Moll Terminus": mandatory block — see this function's own param doc above.
+      if (sustainDamageSuppressed) {
+        return { ok: false, error: "Mentak Coalition's Fourth Moon/Moll Terminus suppresses Sustain Damage here." };
       }
       const effectiveAbilities = getEffectiveUnitAbilities(state, rules, factionId, unitType, ownedUnitUpgrades);
       const usingMetaliShielding = !effectiveAbilities.includes("sustainDamage") && unitType !== "fighter" && metaliVoidShieldingAvailable && !metaliShieldingUsed;
@@ -664,7 +683,15 @@ function spaceCannonEntriesForPlayer(
   };
 
   scanSystem(targetSystemId, false);
-  for (const adjId of getAdjacentSystems(state, targetSystemId, rules)) {
+  // Ghosts of Creuss "QUANTUM ENTANGLEMENT": confirmed (community/FAQ
+  // consensus, cross-referenced against yjmrobert.com's own Creuss page)
+  // — this expands the FIRING player's own "Deep Space Cannon" reach
+  // too (PDS II's own rangesToAdjacent ability), same as it expands
+  // movement/neighbor status elsewhere, but is NEVER usable BY OTHER
+  // players AGAINST Creuss (since it's Creuss's own ability) — achieved
+  // here simply by passing firingPlayerId as forPlayerId, so it only
+  // ever applies when the FIRING player themselves is Creuss.
+  for (const adjId of getAdjacentSystems(state, targetSystemId, rules, firingPlayerId)) {
     scanSystem(adjId, true);
   }
 
@@ -763,6 +790,20 @@ export function buildAntiFighterBarrageEntries(
   if (!system) return [];
   // TE ENTROPIC SCAR (rulebook p.11): Anti-Fighter Barrage "cannot be used by or against units inside of an entropic scar."
   if (hasEntropicScar(system.anomalies)) return [];
+  // Naalu Collective "Iconoclast Ω" (mech, Codex version): "Other players
+  // cannot use ANTI-FIGHTER BARRAGE against your units in this system."
+  // Confirmed (yjmrobert.com/tirules/factions/f_naalu): "applies
+  // regardless of if the Iconoclast is in the space area or on a planet
+  // in the system" — checked across BOTH here. Gated to exactly the
+  // Codex version (superseded by ΩΩ under Thunder's Edge, which has no
+  // such immunity of its own).
+  const hasIconoclastOmegaHere = Object.entries(state.players).some(([pid, p]) => {
+    if (pid === firingPlayerId || p.factionId !== ("naalu" as never) || !hasCodex(state.mode) || hasThundersEdge(state.mode)) return false;
+    const inSpace = (system.spaceUnitsByPlayer[pid as PlayerId] ?? []).some((s) => s.unitType === "mech" && s.count > 0);
+    const onPlanet = system.planets.some((p2) => (p2.unitsByPlayer[pid as PlayerId] ?? []).some((s) => s.unitType === "mech" && s.count > 0));
+    return inSpace || onPlanet;
+  });
+  if (hasIconoclastOmegaHere) return [];
   const player = state.players[firingPlayerId];
   const stacks = (system.spaceUnitsByPlayer[firingPlayerId] ?? []) as UnitStack[];
 

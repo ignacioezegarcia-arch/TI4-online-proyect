@@ -39,10 +39,21 @@ export function getAdjacentSystems(
 
   let wormholeLinked: SystemId[] = [];
   if (bySystemWormholes.length > 0) {
+    // Ghosts of Creuss "QUANTUM ENTANGLEMENT" (faction ability): "You
+    // treat all systems that contain either an alpha or beta wormhole
+    // as adjacent to each other. Game effects cannot prevent you from
+    // using this ability." Confirmed (yjmrobert.com/tirules/factions/f_creuss):
+    // "the effect of the Enforced Travel Ban law does not affect the
+    // Creuss player" — bypasses that filter entirely, below, when
+    // forPlayerId is the Creuss player specifically (never for anyone
+    // else — this is explicitly THEIR OWN ability, unlike Wormhole
+    // Reconstruction's own global version of the same union rule).
+    const quantumEntanglementActive = !!forPlayerId && rules?.factions[state.players[forPlayerId]?.factionId]?.factionAbilityIds?.includes("quantum_entanglement" as never);
+
     // RR "Enforced Travel Ban" ("for"): alpha and beta wormholes have no
     // effect during movement while this law is active — filtered out
     // entirely before the matching-type check below even runs.
-    const enforcedTravelBan = isLawActiveWithOutcome(state, "enforced_travel_ban" as AgendaId, "for");
+    const enforcedTravelBan = isLawActiveWithOutcome(state, "enforced_travel_ban" as AgendaId, "for") && !quantumEntanglementActive;
     // RR "Nexus Sovereignty" ("for"): same idea, but scoped to JUST the
     // Wormhole Nexus's own alpha/beta wormholes (its gamma wormhole, and
     // every other system's own alpha/beta wormholes, are unaffected).
@@ -67,7 +78,7 @@ export function getAdjacentSystems(
       // mechanic, just a permanent law vs. a 1-tactical-action card — no
       // need to distinguish them past this line.
       const wormholeReconstruction =
-        isLawActiveWithOutcome(state, "wormhole_reconstruction" as AgendaId, "for") || Boolean(state.pendingTacticalAction?.lostStarChartActive);
+        isLawActiveWithOutcome(state, "wormhole_reconstruction" as AgendaId, "for") || Boolean(state.pendingTacticalAction?.lostStarChartActive) || quantumEntanglementActive;
       const hasAlphaOrBeta = effectiveWormholes.some((w) => w === "alpha" || w === "beta");
 
       wormholeLinked = Object.values(state.systems)
@@ -123,7 +134,30 @@ export function getAdjacentSystems(
       .map(([sysId]) => sysId as SystemId);
   }
 
-  return Array.from(new Set([...physical, ...wormholeLinked, ...breachLinked, ...fractureLinked, ...spatialConduitLinked]));
+  // Ghosts of Creuss "Emissary Taivra" (agent): "After a player
+  // activates a system that contains a non-delta wormhole: You may
+  // exhaust this card; if you do, that system is adjacent to all other
+  // systems that contain a wormhole during this tactical action."
+  // Confirmed (yjmrobert.com/tirules/factions/f_creuss): "a delta
+  // wormhole in the system (such as from the Hil Colish) does NOT
+  // prevent this ability from being usable" (only relevant to the
+  // TRIGGER condition — must have a NON-delta wormhole to activate,
+  // checked in rules/creuss.ts's own useEmissaryTaivra, not here) —
+  // "if used, the active system will be adjacent to systems with delta
+  // wormholes" too (this adjacency expansion below is NOT restricted to
+  // non-delta targets, only the trigger condition is). Same
+  // per-activation flag shape as Spatial Conduit Cylinder above, but
+  // NOT player-specific (any player querying adjacency from THIS
+  // system sees the expanded set, since the ability changes the
+  // system's own adjacency, not just this player's perception of it).
+  let emissaryTaivraLinked: SystemId[] = [];
+  if (state.pendingTacticalAction?.emissaryTaivraActiveSystemId === systemId) {
+    emissaryTaivraLinked = Object.entries(state.systems)
+      .filter(([sysId, sys]) => sysId !== systemId && sys.wormholes.length > 0)
+      .map(([sysId]) => sysId as SystemId);
+  }
+
+  return Array.from(new Set([...physical, ...wormholeLinked, ...breachLinked, ...fractureLinked, ...spatialConduitLinked, ...emissaryTaivraLinked]));
 }
 
 export function isAdjacent(state: GameState, a: SystemId, b: SystemId, rules?: RuleData): boolean {
@@ -146,9 +180,27 @@ export function arePlayersNeighbors(state: GameState, playerIdA: import("../type
     system.planets.some((p) => p.controllerId === playerId) ||
     (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.count > 0) ||
     system.planets.some((p) => (p.unitsByPlayer[playerId] ?? []).some((s) => s.count > 0));
-  const aSystems = Object.entries(state.systems).filter(([, s]) => hasPresence(s, playerIdA));
-  const bSystemIds = new Set(Object.entries(state.systems).filter(([, s]) => hasPresence(s, playerIdB)).map(([id]) => id));
-  return aSystems.some(([sysId]) => [sysId, ...getAdjacentSystems(state, sysId as SystemId, rules)].some((id) => bSystemIds.has(id)));
+  const aSystems = Object.entries(state.systems).filter(([, s]) => hasPresence(s, playerIdA)).map(([id]) => id as SystemId);
+  const bSystems = Object.entries(state.systems).filter(([, s]) => hasPresence(s, playerIdB)).map(([id]) => id as SystemId);
+  const bSystemIds = new Set(bSystems);
+  const aSystemIds = new Set(aSystems);
+  // Ghosts of Creuss "QUANTUM ENTANGLEMENT": confirmed
+  // (yjmrobert.com/tirules/factions/f_creuss) — "if the Creuss player
+  // has units or controls planets in a system with an alpha wormhole,
+  // and another player has units or controls planets in a system with
+  // a beta wormhole, or vice versa, then the Creuss player and that
+  // player are neighbors" (enabling e.g. Mentak's own Pillage against
+  // Creuss this way). Checked symmetrically here — FROM each of A's own
+  // systems using A's own forPlayerId (so A's own Quantum Entanglement,
+  // if they have it, applies), AND separately FROM each of B's own
+  // systems using B's own forPlayerId — never applying one player's
+  // own ability to the OTHER player's systems, which wouldn't make
+  // sense (this ability only ever expands the OWNER's own perception of
+  // adjacency from THEIR OWN presence).
+  return (
+    aSystems.some((sysId) => [sysId, ...getAdjacentSystems(state, sysId, rules, playerIdA)].some((id) => bSystemIds.has(id))) ||
+    bSystems.some((sysId) => [sysId, ...getAdjacentSystems(state, sysId, rules, playerIdB)].some((id) => aSystemIds.has(id)))
+  );
 }
 
 /**
