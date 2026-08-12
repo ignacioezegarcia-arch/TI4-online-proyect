@@ -27,15 +27,15 @@ export interface RawUnitEntry {
   combatDiceCount?: number;
   move: number | null;
   capacity: number;
-  /** Matches data/units.json's & unitUpgrades.json's actual shape: value/diceCount are present for abilities with a numeric effect (AFB, Bombardment, Space Cannon); absent for flat abilities (Sustain Damage, Planetary Shield, Production). NOTE: earlier version of this file assumed a free-text `effect` field that doesn't exist in the real data, silently dropping these numbers — see anomalies.ts-adjacent combat work for why this was caught now. */
-  abilities: { name: string; value?: number; diceCount?: number; rangesToAdjacent?: boolean; text?: string }[];
+  /** Matches data/units.json's & unitUpgrades.json's actual shape: value/diceCount are present for abilities with a numeric effect (AFB, Bombardment, Space Cannon); absent for flat abilities (Sustain Damage, Planetary Shield, Production). NOTE: earlier version of this file assumed a free-text `effect` field that doesn't exist in the real data, silently dropping these numbers — see anomalies.ts-adjacent combat work for why this was caught now. `productionResourceBonus` is Space Dock/Space Dock II's own distinct shape (a bonus ADDED TO THE PLANET'S resources, "planet resources + 2"/"+3" — never a flat standalone value like Letani Warrior's own plain "Production 1"), present only on those 2 entries. */
+  abilities: { name: string; value?: number; diceCount?: number; rangesToAdjacent?: boolean; productionResourceBonus?: number; text?: string }[];
 }
 
 export function unitEntryToStats(raw: Partial<RawUnitEntry>, unitType: UnitType): UnitStats {
   const rawAbilities = raw.abilities ?? [];
   const abilities = rawAbilities.map((a) => ABILITY_NAME_TO_ENUM[a.name]).filter((a): a is UnitAbility => Boolean(a));
 
-  const abilityValues: Partial<Record<UnitAbility, { value: number; dice: number; rangesToAdjacent?: boolean }>> = {};
+  const abilityValues: Partial<Record<UnitAbility, { value: number; dice: number; rangesToAdjacent?: boolean; productionResourceBonus?: number }>> = {};
   for (const a of rawAbilities) {
     const key = ABILITY_NAME_TO_ENUM[a.name];
     if (!key) continue;
@@ -51,7 +51,19 @@ export function unitEntryToStats(raw: Partial<RawUnitEntry>, unitType: UnitType)
     // caught only once that computation was actually built out for
     // Arborec specifically, but this bug applies to ANY faction/unit
     // with a plain "Production N" ability, not just Arborec.
-    if (key === "production" && a.value !== undefined) {
+    //
+    // Space Dock / Space Dock II are a THIRD shape, distinct from both of
+    // the above: their Production value isn't a flat number OR an
+    // AFB-style dice roll, it's "planet resources + 2"/"+3" — previously
+    // this bonus lived only in each entry's own free-text `text` field
+    // (data/units.json / data/unitUpgrades.json), never actually reached
+    // phases/production.ts's own spaceDockLimit computation at all, which
+    // silently produced a limit of 0 for every space dock in the game.
+    // Confirmed distinct bonuses (+2 base, +3 upgraded) now carried
+    // through as their own `productionResourceBonus` raw field instead.
+    if (key === "production" && a.productionResourceBonus !== undefined) {
+      abilityValues[key] = { value: 0, dice: 1, productionResourceBonus: a.productionResourceBonus };
+    } else if (key === "production" && a.value !== undefined) {
       abilityValues[key] = { value: a.value, dice: a.diceCount ?? 1, rangesToAdjacent: a.rangesToAdjacent };
     } else if (a.value !== undefined && a.diceCount !== undefined) {
       abilityValues[key] = { value: a.value, dice: a.diceCount, rangesToAdjacent: a.rangesToAdjacent };

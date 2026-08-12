@@ -7,6 +7,7 @@ import { getAdjacentSystems } from "./adjacency";
 import { exploreFrontier } from "../phases/exploration";
 import { grantBreakthrough } from "./breakthroughs";
 import { setUpFractureOnEntry } from "../phases/theFracture";
+import { applyIconoclastOmegaOmegaDeploy } from "./naalu";
 
 /**
  * TI4 history note (confirmed by this project's own user): Shard of the
@@ -37,7 +38,7 @@ function transferRelicAndVp(state: GameState, relicId: RelicId, previousOwnerId:
   const previousOwner = state.players[previousOwnerId];
   const newOwner = state.players[newOwnerId];
   if (!previousOwner || !newOwner) return state;
-  return {
+  const nextState: GameState = {
     ...state,
     players: {
       ...state.players,
@@ -53,6 +54,8 @@ function transferRelicAndVp(state: GameState, relicId: RelicId, previousOwnerId:
       },
     },
   };
+  // Naalu Collective "Iconoclast ΩΩ" (mech, Deploy): "when another player gains a relic, place 1 mech" — see rules/naalu.ts's own applyIconoclastOmegaOmegaDeploy. Confirmed this counts too: the NEW owner "gains" the relic just as much as a fresh draw, even though it's changing hands rather than coming from the deck.
+  return applyIconoclastOmegaOmegaDeploy(nextState, newOwnerId);
 }
 
 /**
@@ -675,11 +678,44 @@ export function hasQuantumcoreUniversalSynergy(state: GameState, playerId: Playe
  * readies at the end of the agenda phase specifically (in addition to
  * the normal status-phase readying every other exhausted thing gets).
  *
- * Modeled as its own tracked exhausted/readied boolean (separate from
- * exhaustedRelics, since unlike every other exhaustable relic this one
- * is genuinely usable for resources/influence/votes the same way a
- * planet is, and this project's own resource/influence/vote-casting
- * code all expects planet-shaped state, not a relic id in a list).
+ * Modeled as its own tracked exhausted/readied state via the SAME
+ * player.exhaustedRelics list every other relic already uses (pushing/
+ * filtering the sentinel id "the_triad"), NOT a real planet anywhere in
+ * `systems` — this is what makes it structurally exempt, for free, from
+ * every "NOT a planet for X" exclusion above (planet-count/type
+ * objectives, attachments, exploration, unit-holding all iterate real
+ * SystemState.planets, which The Triad never enters). Wired into every
+ * "spend/ready as if it were a planet" call site that actually spends
+ * resources or influence for a cost, or casts votes, or readies planets:
+ * phases/technology.ts's own spendForCost (production + research, both
+ * routes), phases/strategyCardAbilities.ts's own exhaustPlanetsForInfluence
+ * (Leadership) and readyPlanets (Diplomacy primary+secondary),
+ * phases/agendaPhase.ts's own castVotes, its own extra end-of-agenda-
+ * phase readying in phases/actionPhase.ts's own startNewRound, RR "Checks
+ * and Balances" ("against")'s own planet-readying in
+ * phases/agendaEffects.ts, and RR "Reparations"'s own ready-half in
+ * phases/actionCardEffects.ts (its exhaust-half correctly stays real-
+ * planets-only, per the confirmed exemption above).
+ * phases/legendaryPlanets.ts's own useTheAcropolis (The Acropolis) needed
+ * NO change at all — it already readies by generic relic id via
+ * player.exhaustedRelics, which "the_triad" already flows through
+ * correctly.
+ *
+ * Individually verified and confirmed EXEMPT (not silently missed) at
+ * every other "ready/exhaust a planet" site in the codebase: RR
+ * "Uprising" and Reparations's own exhaust-half only ever look up real
+ * board planets via findPlanet, so The Triad — never present in
+ * `systems` — is structurally unreachable there, matching the confirmed
+ * "can't be exhausted by Reparations/Uprising" ruling for free. Bio-
+ * Stims, TE "Brilliance" (ready_planet mode), and RR "Economic
+ * Initiative" each require a real printed trait/tech-specialty The Triad
+ * doesn't have. TE "Expedition"/"Core Mine"/"Volatile Fuel Source"
+ * exploration cards and TE "Mercenary Contract" operate on the specific
+ * planet being explored or targeted directly, never The Triad
+ * (uncontrolled/unexplorable). Xxcha's own "Ggrucoto Rinn" and
+ * "Planetary Defense Nexus" are both fundamentally spatial (system
+ * adjacency / unit placement), which The Triad — with no board position
+ * or unit-holding capacity at all — can never satisfy either way.
  */
 export function getTriadResourcesAndInfluence(player: Player): { resources: number; influence: number } {
   const fragmentTypesOwned = (["cultural", "industrial", "hazardous", "unknown"] as const).filter((t) => player.relicFragments[t] > 0).length;
@@ -705,6 +741,74 @@ export function applyJrXs455OOnGain(state: GameState, playerId: PlayerId): GameS
   const leaderId = asLeaderId("jr_xs4_55_0");
   if (player.leaders.some((l) => l.leaderId === leaderId)) return state;
   return { ...state, players: { ...state.players, [playerId]: { ...player, leaders: [...player.leaders, { leaderId, locked: false, exhausted: false }] } } };
+}
+
+/**
+ * Shared dispatcher for every relic's own "when you gain this card"
+ * trigger — called from every genuine "a player gains a fresh relic"
+ * site (phases/exploration.ts's own Dead World draw, phases/
+ * directiveEffects.ts's own Minister of Antiques, phases/invasion.ts's
+ * own first-ever-control-of-a-relic-icon-planet), same call sites as
+ * rules/naalu.ts's own applyIconoclastOmegaOmegaDeploy (called alongside
+ * this, not by it — Iconoclast belongs to Naalu, this file owns every
+ * relic's own trigger). NOT called from this file's own
+ * transferRelicAndVp: that function is scoped to the 3 VP-carrying
+ * relics only (Shard of the Throne/Crown of Emphidia/Crown of Thalnos),
+ * none of which have an "on gain" trigger of their own.
+ *
+ *  - The Obsidian / The Quantumcore / JR-XS455-O: deterministic, no
+ *    player choice needed — applied immediately.
+ *  - The Obsidian's own secret objective draw is a random deck pop (same
+ *    "trusted context's own random pick" convention as this project's
+ *    Executive Sanctions discard), which is why maybeQueueSecretObjectiveLimit
+ *    (phases/agendaEffects.ts) needs to already know about this player's
+ *    new +1 capacity BEFORE that draw would ever risk tripping the
+ *    generic 3-total limit — checked there via player.relics directly,
+ *    not through this function.
+ *  - Book of Latvinia: the one exception, a genuine "up to 2" player
+ *    choice — queued in pendingBookOfLatviniaChoice instead of resolved
+ *    here, consumed by this file's own separate resolveBookOfLatviniaOnGain.
+ */
+export function applyRelicOnGainEffects(state: GameState, playerId: PlayerId, relicId: RelicId, rules: RuleData): { state: GameState; events: GameEvent[] } {
+  const events: GameEvent[] = [];
+  let nextState = state;
+
+  if (relicId === ("the_obsidian" as never)) {
+    const deck = nextState.secretObjectiveDeck ?? [];
+    const [drawnId, ...rest] = deck;
+    if (drawnId) {
+      nextState = { ...nextState, secretObjectiveDeck: rest };
+      nextState = applyTheObsidianOnGain(nextState, playerId, drawnId);
+    }
+  } else if (relicId === ("the_quantumcore" as never)) {
+    const result = applyTheQuantumcoreOnGain(nextState, playerId, rules);
+    nextState = result.state;
+    events.push(...result.events);
+  } else if (relicId === ("jr_xs4_55_0" as never)) {
+    nextState = applyJrXs455OOnGain(nextState, playerId);
+  } else if (relicId === ("book_of_latvinia" as never)) {
+    const already = nextState.pendingBookOfLatviniaChoice ?? [];
+    if (!already.includes(playerId)) {
+      nextState = { ...nextState, pendingBookOfLatviniaChoice: [...already, playerId] };
+    }
+  }
+
+  return { state: nextState, events };
+}
+
+/** The player's own choice half of "Book of Latvinia" — see applyBookOfLatviniaOnGain above for the actual research logic and pendingBookOfLatviniaChoice's own doc comment (GameState.ts) for why this needs its own pending+resolve pair unlike this file's other 3 "on gain" relics. Passing an empty array is the confirmed-legal "research 0" case (RR: not an error, e.g. if the player already owns every no-prerequisite tech). */
+export function resolveBookOfLatviniaOnGain(state: GameState, action: { type: "RESOLVE_BOOK_OF_LATVINIA_ON_GAIN"; playerId: PlayerId; techIds: import("../types/ids").TechId[] }, rules: RuleData): ActionResult {
+  if (!(state.pendingBookOfLatviniaChoice ?? []).includes(action.playerId)) {
+    return { ok: false, error: "This player has no pending Book of Latvinia gain-choice owed right now." };
+  }
+  if (action.techIds.length > 2) return { ok: false, error: "Book of Latvinia: research up to 2 technologies, not more." };
+
+  const nextState = applyBookOfLatviniaOnGain(state, action.playerId, action.techIds, rules);
+  return {
+    ok: true,
+    state: { ...nextState, pendingBookOfLatviniaChoice: (nextState.pendingBookOfLatviniaChoice ?? []).filter((id) => id !== action.playerId) },
+    events: [],
+  };
 }
 
 /**

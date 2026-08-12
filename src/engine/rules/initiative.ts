@@ -13,13 +13,20 @@ import { STRATEGY_CARDS, BaseStrategyCard } from "../types/enums";
  */
 export function computeInitiativeOrder(state: GameState): PlayerId[] {
   const playersWithCards = Object.values(state.players).filter((p) => p.strategyCards.length > 0);
-  return playersWithCards
+  const sorted = playersWithCards
     .map((p) => ({
       playerId: p.id,
       initiative: Math.min(...p.strategyCards.map((c) => getInitiativeNumber(c.cardId))),
     }))
     .sort((a, b) => a.initiative - b.initiative)
     .map((entry) => entry.playerId);
+
+  // Naalu Collective "TELEPATHIC"/"Gift of Prescience": whoever holds the Naalu "0" token goes first, overriding their own strategy card's numeric initiative entirely — see rules/naalu.ts's own applyTelepathic/useGiftOfPrescience, which set GameState.naaluZeroTokenHolderId.
+  const zeroTokenHolderId = state.naaluZeroTokenHolderId;
+  if (zeroTokenHolderId && sorted.includes(zeroTokenHolderId)) {
+    return [zeroTokenHolderId, ...sorted.filter((id) => id !== zeroTokenHolderId)];
+  }
+  return sorted;
 }
 
 function getInitiativeNumber(cardId: string): number {
