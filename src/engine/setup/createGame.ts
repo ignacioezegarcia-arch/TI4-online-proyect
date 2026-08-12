@@ -40,8 +40,10 @@ export interface RawTileEntry {
   homeFaction?: string;
   isHyperlane?: boolean;
   isBlank?: boolean;
-  /** True only for the Wormhole Nexus (RR PoK) — never part of the physical hex board, placed as a separate off-map system instead. See wormholesInactive/wormholesActive below. */
+  /** True for the Wormhole Nexus (RR PoK) and for the Ghosts of Creuss's own real home system (tile 51, "Creuss") — neither is ever part of the physical hex board; both are placed as a separate off-map system instead. See wormholesInactive/wormholesActive below (Nexus) and gateSystemId below (Creuss). */
   isOffMap?: boolean;
+  /** RR Ghosts of Creuss faction ability "CREUSS GATE": only set on an isOffMap home tile (currently just tile 51). The tile id that stands in for THIS tile at the physical board's home-system slot — for Creuss, tile 17 ("Creuss Gate": no planets, a lone delta wormhole). The real off-map tile (this one) still gets its own SystemState (see setup/createGame.ts's off-map-home-systems block), just never a board slot of its own; the two end up adjacent "for free" via the generic matching-wormhole-type rule in rules/adjacency.ts, since both share a delta wormhole in data/tiles.json. Generalized rather than Creuss-hardcoded, in case a future faction/expansion reuses the same off-map-home-behind-a-gate shape. */
+  gateSystemId?: number;
   wormholesInactive?: string[];
   wormholesActive?: string[];
   planets?: RawTilePlanetEntry[];
@@ -146,12 +148,34 @@ export function createGame(input: CreateGameInput): GameState {
   for (const t of input.allTiles) {
     if (t.homeFaction) homeTileByFaction.set(t.homeFaction, t);
   }
+  // RR Ghosts of Creuss "CREUSS GATE": tile 17 is Creuss's own exclusive
+  // faction component (data/factions/creuss.json's factionSpecificComponents),
+  // never a normal board-filler tile — reserved here (like every home tile
+  // already is, via !t.homeFaction below) regardless of whether Creuss is
+  // actually in this particular game, same as how a non-playing faction's
+  // OWN home tile is still excluded from the generic pool. Derived from
+  // every home tile's own gateSystemId rather than hardcoding "17", so this
+  // stays correct if a future off-map-home faction adds a second one.
+  const gateTileIds = new Set([...homeTileByFaction.values()].filter((t) => t.isOffMap && t.gateSystemId != null).map((t) => String(t.gateSystemId)));
   const nonHomeTiles: PlaceableTile[] = input.allTiles
-    .filter((t) => !t.homeFaction && !t.isHyperlane && !t.isBlank && !t.isOffMap && t !== mecatolTile)
+    .filter((t) => !t.homeFaction && !t.isHyperlane && !t.isBlank && !t.isOffMap && !gateTileIds.has(String(t.id)) && t !== mecatolTile)
     .map(rawTileToPlaceableTile);
 
   // 6. CREATE GAME BOARD
-  const homeSystemsBySeat = seatOrder.map((id) => asSystemId(String(homeTileByFaction.get(factionByPlayer[id])!.id)));
+  // Board-slot tile per seat: normally the faction's own home tile — UNLESS
+  // that tile isOffMap (RR Ghosts of Creuss), in which case its gateSystemId
+  // tile (17, "Creuss Gate": no planets, a lone delta wormhole) takes the
+  // physical slot instead. The real off-map home tile (51, "Creuss" — the
+  // actual home planet) is never placed on the board at all; it gets added
+  // to `systems` separately below, off-map, once the player's faction is
+  // known to actually be in this game. This was a known gap (previously
+  // tile 51 itself was placed at the home slot, which is wrong per RR: "the
+  // Creuss Gate system is not a home system").
+  const homeSystemsBySeat = seatOrder.map((id) => {
+    const homeTile = homeTileByFaction.get(factionByPlayer[id])!;
+    const boardTileId = homeTile.isOffMap && homeTile.gateSystemId != null ? homeTile.gateSystemId : homeTile.id;
+    return asSystemId(String(boardTileId));
+  });
   const generated = generateMap({
     playerCount: input.players.length,
     boardLayouts: input.boardLayouts,
@@ -208,6 +232,25 @@ export function createGame(input: CreateGameInput): GameState {
         const fractureSystemId = asSystemId(fractureTileId);
         systems[fractureSystemId] = rawTileToSystemState(raw, fractureSystemId, input.mode);
       }
+    }
+  }
+
+  // RR Ghosts of Creuss "CREUSS GATE": each isOffMap home tile (currently
+  // just tile 51, "Creuss") never gets a slotToSystemId entry above (its
+  // own gateSystemId tile took its board slot instead, back in
+  // homeSystemsBySeat) — added here as its own SystemState instead, exactly
+  // once per game and ONLY when that faction is actually being played
+  // (unlike the always-present homeTileByFaction map itself, which lists
+  // every faction's home tile regardless of whether they're in this game).
+  // No special adjacency wiring needed: this tile and its gate both carry a
+  // delta wormhole in data/tiles.json, so rules/adjacency.ts's generic
+  // matching-wormhole-type rule already links them — the RR "always
+  // adjacent to the Creuss Gate" behavior, for free.
+  const factionsInPlay = new Set(Object.values(factionByPlayer));
+  for (const [factionId, homeTile] of homeTileByFaction.entries()) {
+    if (homeTile.isOffMap && factionsInPlay.has(factionId as FactionId)) {
+      const offMapHomeSystemId = asSystemId(String(homeTile.id));
+      systems[offMapHomeSystemId] = rawTileToSystemState(homeTile, offMapHomeSystemId, input.mode);
     }
   }
 
@@ -386,6 +429,17 @@ export function createGame(input: CreateGameInput): GameState {
     pendingAgendaVote: null,
     pendingPriorityWindow: null,
     winnerId: null,
+    // 3 GENERIC gamma wormhole tokens (Cultural "Gamma Wormhole", Frontier
+    // "Gamma Relay", "Nexus Sovereignty" agenda) — all start in the box.
+    // Previously missing here entirely (a required GameState field with no
+    // initializer), which would have thrown at runtime the first time any
+    // of those 3 sources tried to place one — see rules/wormholeTokens.ts's
+    // own placeGenericGammaWormholeToken, which reads this array directly.
+    genericGammaWormholeTokens: [
+      { tokenId: "generic_gamma_1", systemId: null },
+      { tokenId: "generic_gamma_2", systemId: null },
+      { tokenId: "generic_gamma_3", systemId: null },
+    ],
   };
 }
 
