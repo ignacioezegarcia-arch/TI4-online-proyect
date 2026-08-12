@@ -25,6 +25,8 @@ import { maybeActivateWormholeNexus } from "../rules/adjacency";
 import { hasEntropicScar } from "../rules/anomalies";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { hasAbility } from "../rules/abilities";
+import { applyIconoclastOmegaOmegaDeploy } from "../rules/naalu";
+import { applyRelicOnGainEffects } from "../rules/relics";
 
 /**
  * RR 78 STEP 4 — INVASION (RR 44).
@@ -1499,6 +1501,11 @@ export function setPlanetController(
         players: { ...nextState.players, [controllerId]: { ...gainingPlayer, relics: [...gainingPlayer.relics, relicId] } },
       };
       events.push({ type: "RELIC_GAINED", playerId: controllerId, relicId });
+      // Naalu Collective "Iconoclast ΩΩ" (mech, Deploy): "when another player gains a relic, place 1 mech" — see rules/naalu.ts's own applyIconoclastOmegaOmegaDeploy.
+      nextState = applyIconoclastOmegaOmegaDeploy(nextState, controllerId);
+      // Every relic's own "when you gain this card" trigger — see rules/relics.ts's own applyRelicOnGainEffects.
+      const onGain = applyRelicOnGainEffects(nextState, controllerId, relicId, rules);
+      nextState = onGain.state;
     }
   }
 

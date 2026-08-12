@@ -8,6 +8,8 @@ import { researchTechnology } from "./technology";
 import { resolveStrategySecondary } from "./strategyCardAbilities";
 import { maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
+import { applyIconoclastOmegaOmegaDeploy } from "../rules/naalu";
+import { applyRelicOnGainEffects } from "../rules/relics";
 
 /**
  * RR 7 DIRECTIVES — the actual per-directive mechanics, mirroring
@@ -230,6 +232,11 @@ export function applyDirectiveResolutionSideEffects(
     if (elected && deck.length > 0) {
       const [relicId, ...rest] = deck;
       nextState = { ...nextState, relicDeck: rest, players: { ...nextState.players, [electedId]: { ...elected, relics: [...elected.relics, relicId] } } };
+      // Naalu Collective "Iconoclast ΩΩ" (mech, Deploy): "when another player gains a relic, place 1 mech" — see rules/naalu.ts's own applyIconoclastOmegaOmegaDeploy.
+      nextState = applyIconoclastOmegaOmegaDeploy(nextState, electedId);
+      // Every relic's own "when you gain this card" trigger — see rules/relics.ts's own applyRelicOnGainEffects.
+      const onGain = applyRelicOnGainEffects(nextState, electedId, relicId, rules);
+      nextState = onGain.state;
     }
   }
 

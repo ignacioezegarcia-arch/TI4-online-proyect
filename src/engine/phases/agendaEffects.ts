@@ -78,10 +78,14 @@ export function applyAgendaResolutionSideEffects(state: GameState, rules: RuleDa
     }
   }
 
-  // RR "Checks and Balances" ("against"): each player readies only 3 of their planets — the player's own choice of WHICH 3 isn't offered here (no dedicated action exists for this yet); as a reasonable default, this readies the first 3 currently-exhausted planets found, flagged as a simplification.
+  // RR "Checks and Balances" ("against"): each player readies only 3 of their planets — the player's own choice of WHICH 3 isn't offered here (no dedicated action exists for this yet); as a reasonable default, this readies the first 3 currently-exhausted planets found, flagged as a simplification. RR "The Triad" (relic): counts as one of this player's own "planets" for readying purposes too (rules/relics.ts's own getTriadResourcesAndInfluence doc comment) — checked first, ahead of real planets, consistent with this same "first N found" default.
   if (agendaId === "checks_and_balances" && winner === "against") {
     for (const p of Object.values(nextState.players)) {
       let readiedSoFar = 0;
+      if ((p.exhaustedRelics ?? []).includes("the_triad" as never)) {
+        nextState = { ...nextState, players: { ...nextState.players, [p.id]: { ...nextState.players[p.id], exhaustedRelics: (p.exhaustedRelics ?? []).filter((r) => r !== ("the_triad" as never)) } } };
+        readiedSoFar += 1;
+      }
       const systems = { ...nextState.systems };
       for (const [systemId, system] of Object.entries(systems)) {
         if (readiedSoFar >= 3) break;
@@ -426,13 +430,22 @@ export function getEffectiveUnitAbilities(
  * one to return to the deck (see returnSecretObjective below). Shared
  * here (not duplicated per grant site) since all 4 current sources of
  * secret objectives already import from this file.
+ *
+ * RR "The Obsidian" (relic): "You can have 1 additional scored or
+ * unscored secret objective" — raises this player's own limit to 4
+ * while they own it. Checked directly against player.relics here rather
+ * than through rules/relics.ts's own applyRelicOnGainEffects, since this
+ * needs to apply to EVERY call site that grants a secret objective (not
+ * just the relic-gain moment itself — an Obsidian owner who later also
+ * draws one from Imperial's secondary needs the raised limit too).
  */
 export function maybeQueueSecretObjectiveLimit(state: GameState, rules: RuleData, playerId: PlayerId): GameState {
   const player = state.players[playerId];
   if (!player) return state;
   const scoredSecretCount = player.victoryPoints.scoredObjectiveIds.filter((id) => rules.objectives[id]?.kind === "secret").length;
   const total = player.secretObjectives.length + scoredSecretCount;
-  if (total <= 3) return state;
+  const limit = player.relics.includes("the_obsidian" as never) ? 4 : 3;
+  if (total <= limit) return state;
   const already = state.pendingSecretObjectiveReturn ?? [];
   if (already.includes(playerId)) return state;
   return { ...state, pendingSecretObjectiveReturn: [...already, playerId] };

@@ -4,6 +4,7 @@ import { PlayerId, StrategyCardId, AgendaId } from "../types/ids";
 import { computeInitiativeOrder } from "../rules/initiative";
 import { isLawActiveWithOutcome } from "./agendaEffects";
 import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
+import { applyTelepathic } from "../rules/naalu";
 
 /**
  * RR 73.1c/33.9: how many strategy cards each player picks this round — 2
@@ -114,12 +115,14 @@ export function finishStrategyCardChoiceIfPhaseComplete(state: GameState, events
   for (const [id, p] of Object.entries(state.players)) {
     clearedSkips[id as PlayerId] = p.skipsNextStrategyPick ? { ...p, skipsNextStrategyPick: false } : p;
   }
-  const nextState: GameState = {
+  let nextState: GameState = {
     ...state,
     players: clearedSkips,
     unclaimedStrategyCards: state.unclaimedStrategyCards.map((c) => ({ ...c, tradeGoods: c.tradeGoods + 1 })),
     phase: "action",
   };
+  // Naalu Collective "TELEPATHIC": "at the end of the strategy phase" — exactly here, right before initiative order is actually computed/consumed. A no-op for games without a Naalu player.
+  nextState = applyTelepathic(nextState);
   const initiativeOrder = computeInitiativeOrder(nextState);
   const finalState: GameState = { ...nextState, initiativeOrder, activePlayerId: initiativeOrder[0] ?? null };
   return { ok: true, state: finalState, events: [...events, { type: "PHASE_CHANGED", from: "strategy", to: "action", round: finalState.round }] };

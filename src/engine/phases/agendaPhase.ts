@@ -4,11 +4,13 @@ import { PlayerId, AgendaId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
 import { getElderQanojVoteBonus } from "../rules/xxcha";
+import { getTriadResourcesAndInfluence } from "../rules/relics";
 import { hasCodex, hasThundersEdge } from "../rules/gameMode";
 import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { applyDirectiveResolutionSideEffects } from "./directiveEffects";
 import { applyAgendaPredictionRewards } from "./actionCardEffects";
 import { agendaPhaseWindowOrder } from "../rules/priorityWindow";
+import { hasUnlimitedActionCardHand } from "../rules/yssaril";
 
 /**
  * RR 8 AGENDA PHASE. Exactly 2 agendas resolve per phase (fewer if the deck
@@ -199,6 +201,14 @@ export function castVotes(
 
   let votes = 0;
   for (const planetId of action.exhaustPlanetIds) {
+    // RR "The Triad" (relic): same "spent as if it were a planet card" sentinel-id special-case as phases/technology.ts's own spendForCost — see that function's own doc comment for the full reasoning.
+    if (planetId === ("the_triad" as never)) {
+      if (!player.relics.includes("the_triad" as never)) return { ok: false, error: "This player doesn't own The Triad." };
+      if ((player.exhaustedRelics ?? []).includes("the_triad" as never)) return { ok: false, error: "The Triad is already exhausted." };
+      const triadValue = getTriadResourcesAndInfluence(player);
+      votes += triadValue.influence;
+      continue;
+    }
     const owningSystem = Object.values(state.systems).find((s) => s.planets.some((p) => p.planetId === planetId));
     const planet = owningSystem?.planets.find((p) => p.planetId === planetId);
     if (!planet || planet.controllerId !== action.playerId) {
@@ -223,7 +233,7 @@ export function castVotes(
 
   let nextState: GameState = state;
   for (const planetId of action.exhaustPlanetIds) {
-    nextState = exhaustPlanet(nextState, planetId);
+    nextState = planetId === ("the_triad" as never) ? exhaustTriad(nextState, action.playerId) : exhaustPlanet(nextState, planetId);
   }
 
   let predictiveIntelligenceBonusUsedBy = pending.predictiveIntelligenceBonusUsedBy;
@@ -289,6 +299,13 @@ function exhaustPlanet(state: GameState, planetId: PlanetId): GameState {
       },
     },
   };
+}
+
+/** RR "The Triad" (relic): same sentinel-id special-case as phases/technology.ts's own spendForCost — tracked via player.exhaustedRelics (same mechanism every other relic already uses), not a real planet. */
+function exhaustTriad(state: GameState, playerId: PlayerId): GameState {
+  const player = state.players[playerId];
+  if (!player) return state;
+  return { ...state, players: { ...state.players, [playerId]: { ...player, exhaustedRelics: [...(player.exhaustedRelics ?? []), "the_triad" as never] } } };
 }
 
 /** RR 8.4/8.5: tally votes, resolve the winning outcome, then either reveal the next agenda or end the agenda phase (RR 8 always resolves exactly 2, or fewer once the deck runs dry). */
@@ -405,11 +422,17 @@ export function finalizeAgendaResolution(
   // RR "Executive Sanctions" ("against"): queues the mandatory random
   // discard for every player — see phases/agendaEffects.ts's own note on
   // why this still needs a pending+action pair despite being "random".
+  // Yssaril Tribes "CRAFTY" is a confirmed exemption (tirules2.com/
+  // F_yssaril: "the effect of the Executive Sanctions law does not affect
+  // the Yssaril player") — this was previously documented on
+  // rules/yssaril.ts's own hasUnlimitedActionCardHand but never actually
+  // wired in here, so Yssaril was silently getting hit by the discard
+  // like everyone else.
   if (agendaId === "executive_sanctions" && winner === "against") {
     nextState = {
       ...nextState,
       pendingExecutiveSanctionsRandomDiscard: Object.values(nextState.players)
-        .filter((p) => p.actionCards.length > 0)
+        .filter((p) => p.actionCards.length > 0 && !hasUnlimitedActionCardHand(p))
         .map((p) => p.id),
     };
   }

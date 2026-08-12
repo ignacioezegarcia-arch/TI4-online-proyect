@@ -12,6 +12,7 @@ import { drawActionCard } from "./actionCards";
 import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { checkReinforcementsAvailable, COMMAND_TOKEN_TOTAL_SUPPLY } from "../rules/reinforcements";
 import { effectiveCommoditiesMax } from "../rules/spaceStations";
+import { getTriadResourcesAndInfluence } from "../rules/relics";
 
 /**
  * RR 20-ish, one section per strategy card (data/strategyCards.json has the
@@ -52,6 +53,15 @@ function exhaustPlanetsForInfluence(
   let influence = 0;
   let next = state;
   for (const planetId of planetIds) {
+    // RR "The Triad" (relic): same "spent as if it were a planet card" sentinel-id special-case as phases/technology.ts's own spendForCost.
+    if (planetId === ("the_triad" as never)) {
+      const triadPlayer = next.players[playerId];
+      if (!triadPlayer.relics.includes("the_triad" as never)) return { ok: false, error: "This player doesn't own The Triad." };
+      if ((triadPlayer.exhaustedRelics ?? []).includes("the_triad" as never)) return { ok: false, error: "The Triad is already exhausted." };
+      influence += getTriadResourcesAndInfluence(triadPlayer).influence;
+      next = { ...next, players: { ...next.players, [playerId]: { ...triadPlayer, exhaustedRelics: [...(triadPlayer.exhaustedRelics ?? []), "the_triad" as never] } } };
+      continue;
+    }
     const entry = Object.entries(next.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
     const planet = entry?.[1].planets.find((p) => p.planetId === planetId);
     if (!planet || planet.controllerId !== playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
@@ -74,6 +84,14 @@ function exhaustPlanetsForInfluence(
 function readyPlanets(state: GameState, playerId: PlayerId, planetIds: PlanetId[]): GameState {
   let next = state;
   for (const planetId of planetIds) {
+    // RR "The Triad" (relic): "can be readied... as if it were a planet card" — confirmed by planet-readying effects like Diplomacy's own secondary here. Same sentinel-id special-case as phases/technology.ts's own spendForCost.
+    if (planetId === ("the_triad" as never)) {
+      const triadPlayer = next.players[playerId];
+      if (triadPlayer && (triadPlayer.exhaustedRelics ?? []).includes("the_triad" as never)) {
+        next = { ...next, players: { ...next.players, [playerId]: { ...triadPlayer, exhaustedRelics: (triadPlayer.exhaustedRelics ?? []).filter((r) => r !== ("the_triad" as never)) } } };
+      }
+      continue;
+    }
     const entry = Object.entries(next.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
     if (!entry) continue;
     const [systemId, system] = entry;

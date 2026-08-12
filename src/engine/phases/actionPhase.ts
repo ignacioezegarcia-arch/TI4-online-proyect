@@ -946,6 +946,21 @@ export function startNewRound(state: GameState, rules: RuleData): GameState {
     players[id as PlayerId] = { ...player, hasPassed: false, strategyCards: [] };
   }
 
+  // RR "The Triad" (relic): "readied... at the end of the agenda phase"
+  // (confirmed) — a SECOND readying beyond the normal status-phase-only
+  // one everything else gets, since it can be exhausted again mid-agenda-
+  // phase to cast votes. This function is exactly RR's own "end of the
+  // game round" moment (see darktalonTreillaActive's own doc comment
+  // above, confirming this same call site) — safe to run unconditionally
+  // even on rounds where the agenda phase was skipped entirely (deck
+  // empty), since readying an already-readied relic is a harmless no-op.
+  for (const id of Object.keys(players) as PlayerId[]) {
+    const p = players[id];
+    if ((p.exhaustedRelics ?? []).includes("the_triad" as never)) {
+      players[id] = { ...p, exhaustedRelics: (p.exhaustedRelics ?? []).filter((r) => r !== ("the_triad" as never)) };
+    }
+  }
+
   // RR 70.8: strategy cards return to the common play area (RR 73.2's trade
   // goods only accrue on cards that go unchosen for a full round — cards
   // that were just used carry no residual trade goods forward).

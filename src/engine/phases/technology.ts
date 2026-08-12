@@ -3,7 +3,7 @@ import { ActionResult } from "../types/Actions";
 import { PlayerId, TechId, UnitUpgradeId, PlanetId, AgendaId, asTechId, asAbilityId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { maybeQueueAntiIntellectualRevolutionDestruction, isLawActiveWithOutcome } from "./agendaEffects";
-import { hasQuantumcoreUniversalSynergy } from "../rules/relics";
+import { hasQuantumcoreUniversalSynergy, getTriadResourcesAndInfluence } from "../rules/relics";
 import { hasAbility } from "../rules/abilities";
 import { hasCodex, hasThundersEdge } from "../rules/gameMode";
 
@@ -432,6 +432,23 @@ export function spendForCost(
   let resources = 0;
   let nextState = state;
   for (const planetId of exhaustPlanetIdsForResources) {
+    // RR "The Triad" (relic): "This card can be readied and spent as if
+    // it were a planet card." Confirmed (this project's own prior
+    // research, rules/relics.ts's own getTriadResourcesAndInfluence):
+    // its value is "3 + number of different relic fragment types owned"
+    // for BOTH resources and influence — tracked via player.exhaustedRelics
+    // (same mechanism every other relic already uses), not a real planet,
+    // so it's special-cased here via the sentinel id "the_triad" rather
+    // than a systems/planets lookup.
+    if (planetId === ("the_triad" as never)) {
+      const triadPlayer = nextState.players[playerId];
+      if (!triadPlayer.relics.includes("the_triad" as never)) return { ok: false, error: "This player doesn't own The Triad." };
+      if ((triadPlayer.exhaustedRelics ?? []).includes("the_triad" as never)) return { ok: false, error: "The Triad is already exhausted." };
+      const triadValue = getTriadResourcesAndInfluence(triadPlayer);
+      resources += xxekirGromOmegaActive ? triadValue.resources + triadValue.influence : archonsGiftActive ? Math.max(triadValue.resources, triadValue.influence) : triadValue.resources;
+      nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...triadPlayer, exhaustedRelics: [...(triadPlayer.exhaustedRelics ?? []), "the_triad" as never] } } };
+      continue;
+    }
     const entry = Object.entries(nextState.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
     const planet = entry?.[1].planets.find((p) => p.planetId === planetId);
     if (!planet || planet.controllerId !== playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };

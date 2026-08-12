@@ -2210,7 +2210,7 @@ export function playInfiltrate(
   return { ok: true, state: nextState, events };
 }
 
-/** RR "Reparations": after another player gains control of a planet this player controls, exhaust 1 planet that player controls and ready 1 planet this player controls. */
+/** RR "Reparations": after another player gains control of a planet this player controls, exhaust 1 planet that player controls and ready 1 planet this player controls. RR "The Triad" (relic): confirmed EXEMPT from the exhaust half specifically ("can't be exhausted by Reparations/Uprising") — never a legal exhaustPlanetId target below — but IS a legal readyPlanetId target (a generic "readied by planet-readying effects" candidate, see rules/relics.ts's own getTriadResourcesAndInfluence doc comment), via the same sentinel id "the_triad" used everywhere else The Triad is spent/readied. */
 export function playReparations(
   state: GameState,
   action: { type: "PLAY_REPARATIONS"; playerId: PlayerId; exhaustPlanetId?: PlanetId; readyPlanetId?: PlanetId },
@@ -2231,18 +2231,21 @@ export function playReparations(
     }
   }
   let readyFound: ReturnType<typeof findPlanet> = null;
-  if (action.readyPlanetId) {
+  const readyTriad = action.readyPlanetId === ("the_triad" as never) && (state.players[action.playerId]?.exhaustedRelics ?? []).includes("the_triad" as never);
+  if (action.readyPlanetId && !readyTriad) {
     const found = findPlanet(state, action.readyPlanetId);
     if (found && found.planet.controllerId === action.playerId && found.planet.exhausted) {
       readyFound = found;
     }
   }
-  if (!exhaustFound && !readyFound) {
-    return { ok: false, error: "Reparations needs at least 1 valid target — a readied planet of the other player's to exhaust, or an exhausted planet of this player's to ready." };
+  if (!exhaustFound && !readyFound && !readyTriad) {
+    return { ok: false, error: "Reparations needs at least 1 valid target — a readied planet of the other player's to exhaust, or an exhausted planet (or The Triad) of this player's to ready." };
   }
 
   const played = playCard(state, action.playerId, "reparations");
   if (!played.ok) return played;
+
+  let workingState = played.state;
 
   let systems = played.state.systems;
   const events: GameEvent[] = [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("reparations") }];
@@ -2264,9 +2267,13 @@ export function playReparations(
       [readyRefound.systemId]: { ...readyRefound.system, planets: readyRefound.system.planets.map((p) => (p.planetId === readyFound!.planet.planetId ? { ...p, exhausted: false } : p)) },
     };
     events.push({ type: "PLANET_READIED", playerId: action.playerId, planetId: readyFound.planet.planetId });
+  } else if (readyTriad) {
+    const triadPlayer = workingState.players[action.playerId];
+    workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...triadPlayer, exhaustedRelics: (triadPlayer.exhaustedRelics ?? []).filter((r) => r !== ("the_triad" as never)) } } };
+    events.push({ type: "PLANET_READIED", playerId: action.playerId, planetId: "the_triad" as never });
   }
 
-  const nextState = advancePriorityWindowAfterAction({ ...played.state, systems }, action.playerId);
+  const nextState = advancePriorityWindowAfterAction({ ...workingState, systems }, action.playerId);
   return { ok: true, state: nextState, events };
 }
 

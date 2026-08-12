@@ -11,6 +11,7 @@ import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { effectiveCommoditiesMax } from "../rules/spaceStations";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
 import { applyIconoclastOmegaOmegaDeploy } from "../rules/naalu";
+import { applyRelicOnGainEffects } from "../rules/relics";
 import { placeGenericGammaWormholeToken } from "../rules/wormholeTokens";
 import { checkTechPrerequisites, spendForCost } from "./technology";
 
@@ -259,6 +260,11 @@ export function applyExplorationCard(
         relicDeck: rest,
         players: { ...nextState.players, [playerId]: { ...player, relics: [...player.relics, relicId] as never } },
       };
+      // Naalu Collective "Iconoclast ΩΩ" (mech, Deploy): "when another player gains a relic, place 1 mech" — see rules/naalu.ts's own applyIconoclastOmegaOmegaDeploy.
+      nextState = applyIconoclastOmegaOmegaDeploy(nextState, playerId);
+      // Every relic's own "when you gain this card" trigger (The Obsidian/The Quantumcore/JR-XS455-O immediate, Book of Latvinia queued) — see rules/relics.ts's own applyRelicOnGainEffects.
+      const onGain = applyRelicOnGainEffects(nextState, playerId, relicId, rules);
+      nextState = onGain.state;
     }
   } else if (cardId === "abandoned_warehouses") {
     // "You may gain 2 commodities, or you may convert up to 2 of your commodities to trade goods."
