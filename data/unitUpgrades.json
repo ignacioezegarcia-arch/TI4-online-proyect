@@ -105,11 +105,11 @@
       "capacity": 0,
       "abilities": [
         {
-  "name": "Space Cannon",
-  "value": 5,
-  "diceCount": 1,
-  "rangesToAdjacent": true,
-  "text": "..."
+          "name": "Space Cannon",
+          "value": 5,
+          "diceCount": 1,
+          "rangesToAdjacent": true,
+          "text": "..."
         },
         {
           "name": "Planetary Shield",
@@ -223,7 +223,8 @@
       "abilities": [
         {
           "name": "Production",
-          "text": "PRODUCTION (planet resources + 3): igual que el Space Dock base pero sumando 3 en vez de 2. Además, tu ability de PRODUCTION nunca produce unidades en exceso de tus reinforcements disponibles."
+          "text": "PRODUCTION (planet resources + 3): igual que el Space Dock base pero sumando 3 en vez de 2. Además, tu ability de PRODUCTION nunca produce unidades en exceso de tus reinforcements disponibles.",
+          "productionResourceBonus": 3
         }
       ],
       "cost": null

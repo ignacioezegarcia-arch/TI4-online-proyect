@@ -151,7 +151,8 @@
       "abilities": [
         {
           "name": "Production",
-          "text": "PRODUCTION (planet resources + 2): Durante tu turno en la fase de acción, podés gastar recursos para producir unidades en este sistema, hasta un total combinado de costo igual al valor de Production. X = recursos del planeta donde está el space dock."
+          "text": "PRODUCTION (planet resources + 2): Durante tu turno en la fase de acción, podés gastar recursos para producir unidades en este sistema, hasta un total combinado de costo igual al valor de Production. X = recursos del planeta donde está el space dock.",
+          "productionResourceBonus": 2
         }
       ],
       "requiresTech": null,
