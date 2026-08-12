@@ -305,8 +305,23 @@ export interface GameState {
   pendingGenesisCapacityOverflow?: { playerId: PlayerId; systemId: SystemId }[];
   /** Arborec "MITOSIS": players who still need to choose which controlled planet gets their mandatory 1 infantry this status phase — see phases/actionPhase.ts's own runStatusPhaseBookkeeping and rules/arborec.ts's own resolveMitosisPlacement. */
   pendingMitosisPlacements?: PlayerId[];
-  /** Naalu Collective "TELEPATHIC"/"Gift of Prescience": whoever currently holds the Naalu "0" token, making them first in initiative order — see rules/naalu.ts's own applyTelepathic/useGiftOfPrescience. A player-level flag (not attached to a specific strategy card object) so losing/changing strategy cards never orphans it, per the confirmed ruling that the holder retains it regardless. */
+  /** Naalu Collective "TELEPATHIC"/"Gift of Prescience": whoever currently holds the Naalu "0" token, making them first in initiative order — see rules/naalu.ts's own applyTelepathic/useGiftOfPrescience. A player-level flag (not attached to a specific strategy card object) so losing/changing strategy cards never orphans it, per the confirmed ruling that the holder retains it regardless. Recomputed fresh at the end of every strategy phase (phases/strategyPhase.ts's own finishStrategyCardChoiceIfPhaseComplete), not simply carried over round to round. */
   naaluZeroTokenHolderId?: PlayerId;
+  /** Naalu Collective "Mindsieve" (Breakthrough ability): "When you would resolve the secondary ability of another player's strategy card, you may give them a promissory note to resolve it without spending a command token." Set by rules/naalu.ts's own useMindsieve (which itself only hands over the note), consumed by the very next RESOLVE_STRATEGY_SECONDARY this player submits (phases/strategyCardAbilities.ts's own resolveStrategySecondaryEffect) and cleared there — same "banked now, consumed by a later separate call" shape as zeuOmegaOriginalActivePlayerId below. */
+  mindsieveFreeSecondaryPlayerId?: PlayerId;
+  /**
+   * RR "Book of Latvinia" (relic): "When you gain this card, research up
+   * to 2 technologies that have no prerequisites." Confirmed elsewhere
+   * (rules/relics.ts's own applyBookOfLatviniaOnGain doc comment) this
+   * genuinely needs the player's own choice of which (if any) — unlike
+   * this project's other 3 relic "on gain" triggers (The Obsidian, The
+   * Quantumcore, JR-XS455-O — all deterministic, no choice, applied
+   * immediately wherever a relic is gained), so this one alone needs a
+   * real pending+resolve pair. See rules/relics.ts's own
+   * applyRelicOnGainEffects (queues here) and resolveBookOfLatviniaOnGain
+   * (consumes/clears here).
+   */
+  pendingBookOfLatviniaChoice?: PlayerId[];
   /** Yssaril Tribes "SCHEMING": players who still need to discard 1 action card after a qualifying draw — "no other abilities may resolve until the Yssaril player has discarded" (confirmed at tirules2.com/F_yssaril). See rules/yssaril.ts's own discardSchemingCard. */
   pendingSchemingDiscards?: PlayerId[];
   /** Ghosts of Creuss "Wormhole Generator" (original/base version): players who still need to place/move their mandatory wormhole token at the start of this status phase — see rules/creuss.ts's own useWormholeGenerator. */

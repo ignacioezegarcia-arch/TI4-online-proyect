@@ -29,7 +29,7 @@ export interface UnitStats {
   producesQuantity?: number;
   abilities: UnitAbility[];
   /** e.g. Anti-Fighter Barrage X(Y) -> {value: X, dice: Y}; Bombardment 5 -> {value:5, dice:1}. Keyed by ability for units with more than one. `rangesToAdjacent` is Space-Cannon-specific (RR: PDS II's own upgrade text) — true means this unit's Space Cannon can target ships in adjacent systems too, not just its own. */
-  abilityValues?: Partial<Record<UnitAbility, { value: number; dice: number; rangesToAdjacent?: boolean }>>;
+  abilityValues?: Partial<Record<UnitAbility, { value: number; dice: number; rangesToAdjacent?: boolean; productionResourceBonus?: number }>>;
 }
 
 export interface FactionUnitStats {

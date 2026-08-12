@@ -455,6 +455,7 @@ export type GameAction =
   | { type: "USE_CROWN_OF_EMPHIDIA"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous" } // RR relic — see rules/relics.ts's own useCrownOfEmphidia
   | { type: "USE_MAW_OF_WORLDS"; playerId: PlayerId; techId: TechId } // RR relic — see rules/relics.ts's own useMawOfWorlds
   | { type: "USE_BOOK_OF_LATVINIA"; playerId: PlayerId } // RR relic — see rules/relics.ts's own useBookOfLatvinia
+  | { type: "RESOLVE_BOOK_OF_LATVINIA_ON_GAIN"; playerId: PlayerId; techIds: TechId[] } // RR relic, "when you gain this card" — see rules/relics.ts's own resolveBookOfLatviniaOnGain (distinct from USE_BOOK_OF_LATVINIA above, its own later purge action)
   | { type: "USE_THE_CODEX"; playerId: PlayerId; cardIds: string[] } // RR relic — see rules/relics.ts's own useTheCodex
   | { type: "USE_STELLAR_CONVERTER"; playerId: PlayerId; bombardmentSystemId: SystemId; targetSystemId: SystemId; targetPlanetId: PlanetId } // RR relic — see rules/relics.ts's own useStellarConverter
   | { type: "USE_NANO_FORGE"; playerId: PlayerId; relicId: "nano_forge_attach" | "nano_forge_no_repeat"; planetId: PlanetId } // RR relic — see rules/relics.ts's own useNanoForge
