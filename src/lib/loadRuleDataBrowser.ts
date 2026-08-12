@@ -56,7 +56,8 @@ const factionFiles = import.meta.glob("../../data/factions/*.json", { eager: tru
       id: string;
       commodities?: number;
       breakthrough?: { synergy?: { colors?: [string, string] }; startsWithBreakthroughUnlocked?: boolean };
-      factionTechnologies?: { id: string }[];
+      factionTechnologies?: { id: string; color: string | null; prerequisites?: string[] }[];
+      factionAbilities?: { id: string; name: string; effect: string }[];
       promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
       promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
       startingUnits?: Record<string, number>;
@@ -87,7 +88,11 @@ export function loadRuleDataBrowser(factionIds: string[], hasThundersEdgeMode = 
   const usedFactionFiles: (Parameters<typeof buildFactionPromissoryNotesLookup>[0][number] &
     Parameters<typeof buildStartingDataLookup>[0][number] &
     Parameters<typeof buildFactionLeadersLookup>[0][number] &
-    Parameters<typeof buildFactionUnitUpgradesFromVersions>[0][number] & { id: string; factionTechnologies?: { id: string }[]; factionAbilities?: { id: string }[] })[] = [];
+    Parameters<typeof buildFactionUnitUpgradesFromVersions>[0][number] & {
+      id: string;
+      factionTechnologies?: { id: string; color: string | null; prerequisites?: string[] }[];
+      factionAbilities?: { id: string }[];
+    })[] = [];
 
   for (const rawFactionId of factionIds) {
     const factionFile = findFactionFile(rawFactionId);
