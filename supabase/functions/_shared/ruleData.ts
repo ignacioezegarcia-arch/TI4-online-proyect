@@ -41,7 +41,7 @@ interface RawFactionFile {
   id: string;
   commodities?: number;
   breakthrough?: { synergy?: { colors?: [string, string] }; startsWithBreakthroughUnlocked?: boolean };
-  factionTechnologies?: { id: string }[];
+  factionTechnologies?: { id: string; color: string | null; prerequisites?: string[] }[];
   factionAbilities?: { id: string; name: string; effect: string }[];
   promissoryNote?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] };
   promissoryNotes?: { name: string; versions: { version: string; source: string; timing: string; effect: string; placeInPlayArea: boolean }[] }[];
