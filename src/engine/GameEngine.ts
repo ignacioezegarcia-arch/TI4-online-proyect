@@ -26,7 +26,7 @@ import { claimExpeditionSlice, completeThunderEdgeExpedition } from "./phases/ex
 import { placeIngressTokens } from "./phases/theFracture";
 import { convertCommoditiesViaSpaceStation } from "./rules/spaceStations";
 import { resolveTransaction } from "./rules/transactions";
-import { useCrownOfEmphidia, useMawOfWorlds, useBookOfLatvinia, useTheCodex, useStellarConverter, useNanoForge, useDynamisCore, useHeartOfIxth, useSilverFlame, useJrXs455O, useNeuraloop } from "./rules/relics";
+import { useCrownOfEmphidia, useMawOfWorlds, useBookOfLatvinia, resolveBookOfLatviniaOnGain, useTheCodex, useStellarConverter, useNanoForge, useDynamisCore, useHeartOfIxth, useSilverFlame, useJrXs455O, useNeuraloop } from "./rules/relics";
 import { gainFactionTechViaEntropicScar } from "./phases/entropicScar";
 import { pass, autoAdvancePhase, scoreObjective, finishStatusPhaseScoring, placeGainedCommandTokensAction, finishEndOfTurn } from "./phases/actionPhase";
 import { produceUnits, finishTacticalAction } from "./phases/production";
@@ -916,6 +916,9 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_BOOK_OF_LATVINIA":
         result = useBookOfLatvinia(state, action, rules);
+        break;
+      case "RESOLVE_BOOK_OF_LATVINIA_ON_GAIN":
+        result = resolveBookOfLatviniaOnGain(state, action, rules);
         break;
       case "USE_THE_CODEX":
         result = useTheCodex(state, action);
