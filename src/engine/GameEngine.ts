@@ -150,6 +150,7 @@ import { resolveMitosisPlacement, useStymie, useStymieOmega, useDuhaMenaimonProd
 import { resolveAssimilateSubstitute, useHarrow, useCyberneticEnhancements, useCyberneticEnhancementsOmega, useI48s, useTheHelmsman } from "./rules/l1z1x";
 import { usePromiseOfProtection, usePillage, useSalvageOperations, useAmbush, useSuffiAn, useSUlaMentarion, useSleeperCell, resolveSleeperCellPlacement } from "./rules/mentak";
 import { useGiftOfPrescience, useZeuOmega, useZeuOmegaOmega, useNeuroglaive, useTheOracle, useMindsieve, useForesight } from "./rules/naalu";
+import { maybeDestroyBlockadedFloatingFactories, useChaosMapping, useRaghsCall, useMendosa, useRowlSarrig, useGurnoAggero, useDeorbitBarrage, resolveScavengerZetaDeploy } from "./rules/saar";
 import { useWormholeGenerator, useWormholeGeneratorOmega, useCreussIff, useIcarusDrive, useDimensionalSplicer, useEmissaryTaivra, useSaiSeravus, useRiftwalkerMeian } from "./rules/creuss";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
@@ -955,6 +956,27 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "RESOLVE_MITOSIS_PLACEMENT":
         result = resolveMitosisPlacement(state, action);
+        break;
+      case "RESOLVE_SCAVENGER_ZETA_DEPLOY":
+        result = resolveScavengerZetaDeploy(state, action);
+        break;
+      case "USE_CHAOS_MAPPING":
+        result = useChaosMapping(state, action, rules);
+        break;
+      case "USE_RAGHS_CALL":
+        result = useRaghsCall(state, action);
+        break;
+      case "USE_MENDOSA":
+        result = useMendosa(state, action, rules);
+        break;
+      case "USE_ROWL_SARRIG":
+        result = useRowlSarrig(state, action);
+        break;
+      case "USE_GURNO_AGGERO":
+        result = useGurnoAggero(state, action, rules);
+        break;
+      case "USE_DEORBIT_BARRAGE":
+        result = useDeorbitBarrage(state, action, rules);
         break;
       case "USE_STYMIE":
         result = useStymie(state, action);
