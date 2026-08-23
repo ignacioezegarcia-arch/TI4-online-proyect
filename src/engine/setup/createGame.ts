@@ -573,6 +573,18 @@ function placeStartingUnits(homeSystem: SystemState, playerId: PlayerId, faction
   for (const [rawKey, count] of Object.entries(raw)) {
     const unitType = keyToUnitType[rawKey];
     if (!unitType || count <= 0) continue;
+    // Clan of Saar "Floating Factory" (Space Placement): "This unit is
+    // placed in the space area of a system instead of on a planet" —
+    // applies just as much to the STARTING space dock at game setup as
+    // it does to one placed later via Construction (see
+    // phases/strategyCardAbilities.ts's own placeFloatingFactory).
+    // Previously this always went to groundOrStructureTarget like a
+    // normal faction's space dock, so every Saar game silently started
+    // with their Floating Factory on a planet instead of in space.
+    if (unitType === "space_dock" && factionId === ("saar" as never)) {
+      spaceStacks.push({ unitType, count, damagedCount: 0 });
+      continue;
+    }
     if (unitType === "infantry" || unitType === "mech" || unitType === "space_dock" || unitType === "pds") {
       if (!groundOrStructureTarget) continue;
       const stacks = groundOrStructureTarget.unitsByPlayer[playerId] ?? [];
