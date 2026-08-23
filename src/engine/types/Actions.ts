@@ -61,6 +61,23 @@ export type GameAction =
         fromSystemId: SystemId;
         unitType: UnitType;
         count: number;
+        /**
+         * RR "Gravity Rift" (yjmrobert.com/tirules/rules/r_gravity_rift):
+         * "A ship that will move out of or through a gravity rift at
+         * any time during its movement" — additional gravity-rift
+         * systems (other than fromSystemId itself, checked
+         * automatically) this move's own actual chosen path visits as a
+         * mid-path hop. Each declared system is validated as an actually
+         * reachable waypoint within this move's own effective move
+         * budget (reusing canShipReachSystem's own mustPassThroughSystemId
+         * parameter — the same mechanism Muaat's own Stellar Genesis
+         * breakthrough already uses for Avernus) before being trusted;
+         * this project still doesn't track a move's full literal path,
+         * so a validated-reachable claim is trusted the same way this
+         * project already trusts other caller-supplied choices, rather
+         * than proving it's the ONE path taken.
+         */
+        passesThroughRiftSystemIds?: SystemId[];
       }[];
       /** Ground forces picked up along the way per RR 84.1 — kept separate from ship moves because capacity is checked against these, not against ships. Must come from the same fromSystemId as one of the `moves` entries above (multi-hop pickup along the path isn't supported yet — flagged in moveShips). */
       transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
@@ -73,6 +90,45 @@ export type GameAction =
       useDominusOrb?: boolean;
       /** Muaat "Stellar Genesis" breakthrough ability: if a war sun's own path this action visits Avernus's system (as its literal origin OR a mid-path hop — properly tracked via canShipReachSystem's own mustPassThroughSystemId parameter, not just a direct-origin check), setting this brings Avernus's token along to the final destination — never into a home system. */
       relocateAvernusWithWarSun?: boolean;
+      /**
+       * RR "Gravity Rift" (yjmrobert.com/tirules/rules/r_gravity_rift):
+       * "one die is rolled immediately before it exits the gravity rift
+       * system... on a result of 1-3, that ship is removed." One entry
+       * per (fromSystemId, unitType, riftSystemId) combination that
+       * actually applies to a `moves` entry — riftSystemId is either
+       * that move's own fromSystemId (moving OUT of a rift) or one of
+       * its own declared passesThroughRiftSystemIds (a validated
+       * mid-path hop). "A gravity rift can affect the same ship
+       * multiple times" (note 6) — if a move passes through 2 different
+       * rift systems, it needs 2 separate entries here, each with its
+       * OWN roll per ship, and `rolls[i]` must consistently refer to the
+       * SAME i-th physical ship across every entry sharing the same
+       * (fromSystemId, unitType) — this is what lets a ship that
+       * survives rift A's roll still be correctly tracked into rift B's
+       * own roll. Exactly `move.count` pre-rolled dice per entry, same
+       * trusted-RNG convention as RESOLVE_COMBAT_ROUND/USE_SPACE_CANNON_OFFENSE
+       * above.
+       */
+      gravityRiftDieRolls?: { fromSystemId: SystemId; unitType: UnitType; riftSystemId: SystemId; rolls: number[] }[];
+      /**
+       * RR "Gravity Rift", note 2: "units being transported are removed
+       * from the board if the ship transporting them is removed."
+       * Confirmed (yjmrobert.com/tirules/rules/r_gravity_rift) — this
+       * engine has no per-instance ship-to-cargo binding by default (all
+       * cargo is tracked as a system-wide aggregate), so this is the
+       * caller's own explicit declaration of which specific ship
+       * (matching `gravityRiftDieRolls`' own per-ship index ordering for
+       * that SAME fromSystemId + carrier unitType) is carrying how much
+       * of each cargo type, for the sole purpose of resolving THIS
+       * gravity-rift removal correctly. One entry per (fromSystemId,
+       * carrier unitType) pair that both has capacity and is subject to
+       * a gravity-rift roll this move.
+       */
+      gravityRiftCargoAssignments?: {
+        fromSystemId: SystemId;
+        carrierUnitType: UnitType;
+        cargo: { unitType: "fighter" | "infantry" | "mech"; countsPerShip: number[] }[];
+      }[];
     }
   | {
       type: "USE_SPACE_CANNON_OFFENSE";
@@ -281,7 +337,8 @@ export type GameAction =
   | {
       type: "PRODUCE_UNITS";
       playerId: PlayerId;
-      planetId: PlanetId;
+      /** Optional (rather than the normal required planet) only for Clan of Saar producing from a Floating Factory sitting in the system's own space area — see phases/production.ts's own executeProduction for the full doc comment on this whole mechanic. */
+      planetId?: PlanetId;
       units: { unitType: UnitType; count: number }[];
       /** RR "AI Development Algorithm"'s OTHER ability (distinct from its unit-upgrade-research one, but shares the same exhausted state): exhaust to reduce this production's combined cost by the number of unit upgrade technologies this player owns. */
       useAiDevelopmentAlgorithmForCost?: boolean;
@@ -295,6 +352,8 @@ export type GameAction =
       freelancersSubstituteSourceSystemId?: SystemId;
       /** Naalu Collective "M'aban" (commander): "+1 free fighter, doesn't count against the Production limit" — see phases/production.ts's own executeProduction for the full doc comment. */
       useMabanBonusFighter?: boolean;
+      /** Clan of Saar "Floating Factory": the player's own choice of where ground forces produced this way land — a specific controlled planet in this system, or omitted for the space area (the default) — see phases/production.ts's own executeProduction for the full doc comment. */
+      floatingFactoryGroundForceDestinationPlanetId?: PlanetId;
     }
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
@@ -474,6 +533,38 @@ export type GameAction =
     } // Faunus' own legendary ability — see phases/legendaryPlanets.ts
   | { type: "USE_ENIGMATIC_DEVICE"; playerId: PlayerId; techId: TechId; exhaustPlanetIdsForResources: PlanetId[] } // Frontier exploration card, kept in play area — see phases/exploration.ts
   | { type: "RESOLVE_MITOSIS_PLACEMENT"; playerId: PlayerId; targetPlanetId: PlanetId; useDeployMech?: boolean } // Arborec's own faction ability — see rules/arborec.ts
+  | { type: "RESOLVE_SCAVENGER_ZETA_DEPLOY"; playerId: PlayerId; planetId: PlanetId; use: boolean } // Clan of Saar's own mech Deploy — see rules/saar.ts
+  | {
+      type: "USE_CHAOS_MAPPING";
+      playerId: PlayerId;
+      systemId: SystemId;
+      unitType: UnitType;
+      groundForceDestinationPlanetId?: PlanetId;
+      exhaustPlanetIdsForResources?: PlanetId[];
+    } // Clan of Saar's own faction technology — see rules/saar.ts
+  | { type: "USE_RAGHS_CALL"; playerId: PlayerId; targetPlanetId: PlanetId; destinationPlanetId: PlanetId } // Clan of Saar's own promissory note — see rules/saar.ts
+  | { type: "USE_MENDOSA"; playerId: PlayerId; targetPlayerId: PlayerId; unitType: UnitType; fromSystemId: SystemId } // Clan of Saar's own agent — see rules/saar.ts
+  | {
+      type: "USE_ROWL_SARRIG";
+      playerId: PlayerId;
+      sourceSystemId: SystemId;
+      sourcePlanetId?: PlanetId;
+      unitType: "fighter" | "infantry";
+      count: number;
+      destinationSystemId: SystemId;
+      destinationPlanetId?: PlanetId;
+    } // Clan of Saar's own commander — see rules/saar.ts
+  | { type: "USE_GURNO_AGGERO"; playerId: PlayerId; targetSystemId: SystemId } // Clan of Saar's own hero — see rules/saar.ts
+  | {
+      type: "USE_DEORBIT_BARRAGE";
+      playerId: PlayerId;
+      sourceAsteroidFieldSystemId: SystemId;
+      targetPlanetId: PlanetId;
+      resourcesSpent: number;
+      dieRolls: number[];
+      hitAssignments: { unitType: UnitType }[];
+      exhaustPlanetIdsForResources?: PlanetId[];
+    } // Clan of Saar's own Breakthrough ability — see rules/saar.ts
   | { type: "USE_STYMIE"; playerId: PlayerId } // Arborec's own promissory note — see rules/arborec.ts
   | { type: "USE_STYMIE_OMEGA"; playerId: PlayerId; targetPlayerId: PlayerId; targetSystemId: SystemId; commandTokenPool?: "tactic" | "fleet" | "strategy" } // Arborec's own promissory note (Codex) — see rules/arborec.ts
   | { type: "USE_DUHA_MENAIMON_PRODUCTION"; playerId: PlayerId; units: { unitType: UnitType; count: number }[]; exhaustPlanetIdsForResources: PlanetId[]; groundForceTargetPlanetId?: PlanetId } // Arborec's own flagship — see rules/arborec.ts

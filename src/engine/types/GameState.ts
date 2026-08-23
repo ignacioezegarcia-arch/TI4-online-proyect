@@ -322,6 +322,17 @@ export interface GameState {
    * (consumes/clears here).
    */
   pendingBookOfLatviniaChoice?: PlayerId[];
+  /**
+   * Clan of Saar "Scavenger Zeta" (mech, Deploy): "After you gain control
+   * of a planet, you may spend 1 trade good to place 1 mech on that
+   * planet." A genuine player choice — queued here rather than resolved
+   * automatically, exactly like pendingMitosisPlacements' own "OWNER's
+   * own choice" shape, one entry per control gain that could trigger it.
+   * See phases/invasion.ts's own setPlanetController (queues) and
+   * rules/saar.ts's own resolveScavengerZetaDeploy (RESOLVE_SCAVENGER_ZETA_DEPLOY,
+   * consumes/clears).
+   */
+  pendingScavengerZetaDeploy?: { playerId: PlayerId; planetId: PlanetId }[];
   /** Yssaril Tribes "SCHEMING": players who still need to discard 1 action card after a qualifying draw — "no other abilities may resolve until the Yssaril player has discarded" (confirmed at tirules2.com/F_yssaril). See rules/yssaril.ts's own discardSchemingCard. */
   pendingSchemingDiscards?: PlayerId[];
   /** Ghosts of Creuss "Wormhole Generator" (original/base version): players who still need to place/move their mandatory wormhole token at the start of this status phase — see rules/creuss.ts's own useWormholeGenerator. */
@@ -334,6 +345,8 @@ export interface GameState {
   hilColishDeltaWormholeSystemId?: SystemId;
   /** Sol "Military Support" (promissory note): "cannot be played twice in one timing window" (confirmed, yjmrobert.com/tirules/factions/f_sol) — tracks whether it's already been used during THIS specific active-player turn; reset whenever the active player changes (phases/actionPhase.ts's own advanceActivePlayer), same as transactionsThisTurn above. */
   usedMilitarySupportForActivePlayerTurn?: boolean;
+  /** Clan of Saar "Chaos Mapping" (faction technology): "usable as many times as you have turns during the action phase" (confirmed, twilight-imperium.fandom.com/wiki/The_Clan_of_Saar) — once per active-player turn, same reset trigger and shape as usedMilitarySupportForActivePlayerTurn above. See rules/saar.ts's own useChaosMapping. */
+  usedChaosMappingForActivePlayerTurn?: boolean;
   /** TE The Fracture: set by phases/theFracture.ts's own setUpFractureOnEntry right when the Fracture comes into play, cleared once placeIngressTokens resolves the triggering player's own choice. synergyColors mirrors whatever that player's breakthrough synergy was AT THAT MOMENT (null if they have none), since that's what determines whether the 3-per-color or the 4-different-specialties path applies. */
   pendingFractureIngressChoice?: { playerId: PlayerId; synergyColors: [string, string] | null };
 
@@ -700,6 +713,20 @@ export interface PendingTacticalAction {
   spaceCannonOffenseResolvedThisAction?: boolean;
   /** Naalu Collective "Z'eu Ω": the REAL active player from before this borrowed tactical action started — restored directly (bypassing the normal maybeAdvanceActivePlayer turn-order computation) when this borrowed action finishes, since it was never really the chosen player's own turn. See rules/naalu.ts's own useZeuOmega and phases/production.ts's own finishTacticalAction. */
   zeuOmegaOriginalActivePlayerId?: PlayerId;
+  /**
+   * Clan of Saar "Captain Mendosa" (agent): "After a player activates a
+   * system: You may exhaust this card to increase the move value of 1
+   * of that player's ships to match the move value of the ship on the
+   * game board that has the highest move value." Confirmed
+   * (twilight-imperium.fandom.com/wiki/The_Clan_of_Saar): errata'd to
+   * trigger WHEN a system is activated — the move value is fixed at
+   * that moment (computed once by rules/saar.ts's own useMendosa, not
+   * re-evaluated later), and every OTHER move-value bonus that triggers
+   * AFTER activation (Gravity Drive, Flank Speed, Ionian Fuel Refinery)
+   * still stacks on top of it normally — see phases/tacticalAction.ts's
+   * own moveShips, which applies this BEFORE those.
+   */
+  mendosaMoveOverride?: { unitType: import("./enums").UnitType; fromSystemId: SystemId; moveValue: number };
   /**
    * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
    * players actively fighting the CURRENT ground combat on
