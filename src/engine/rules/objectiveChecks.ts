@@ -68,6 +68,15 @@ function countStructures(state: GameState, playerId: PlayerId): number {
         if (STRUCTURE_TYPES.includes(stack.unitType) && stack.count > 0) count += stack.count;
       }
     }
+    // Clan of Saar "Floating Factory": placed in the system's SPACE area
+    // instead of on a planet — still a real structure (unitType
+    // "space_dock"), just never present in any planet.unitsByPlayer, so
+    // the loop above alone always undercounted it. Kept general (any
+    // player's own stack here, not Saar-specific) in case a future
+    // faction/expansion adds another space-placed structure.
+    for (const stack of system.spaceUnitsByPlayer[playerId] ?? []) {
+      if (STRUCTURE_TYPES.includes(stack.unitType) && stack.count > 0) count += stack.count;
+    }
   }
   return count;
 }

@@ -16,6 +16,14 @@ export const ABILITY_NAME_TO_ENUM: Record<string, UnitAbility> = {
   "Space Cannon": "spaceCannon",
   "Sustain Damage": "sustainDamage",
   "Direct Hit Immunity": "directHitImmunity",
+  // CORREGIDO: faltaba por completo — "Respawn" (Sol's Spec Ops II, Arborec's
+  // Letani Warrior II, generic Infantry II) se descartaba en silencio acá,
+  // dejando ese mecanismo completamente no-funcional para las 3 fuentes a
+  // la vez pese a que rules/sol.ts's own checkSpecOpsRespawn/placeRespawnedSpecOps
+  // y sus call sites en invasion.ts/actionPhase.ts ya estaban bien escritos
+  // y conectados — el dato nunca llegaba a `stats.abilities` porque esta
+  // tabla no tenía la entrada.
+  Respawn: "respawn",
 };
 
 export interface RawUnitEntry {
