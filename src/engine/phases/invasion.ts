@@ -1228,6 +1228,10 @@ export function assignGroundCombatHits(
     nextState = checkSpecOpsRespawn(nextState, action.playerId, destroyedInfantryCount, action.specOpsRespawnDieRolls, rules);
     // Arborec "Letani Warrior II" (Respawn): same mechanic as Sol's own Spec Ops II above, just its own faction gate and a 6+ threshold instead of 5+ — see rules/sol.ts's own checkSpecOpsRespawn, now generalized to take both as parameters.
     nextState = checkSpecOpsRespawn(nextState, action.playerId, destroyedInfantryCount, action.specOpsRespawnDieRolls, rules, "arborec", 6);
+    // Generic Infantry II (any faction OTHER than Sol/Arborec, who have their own faction-specific replacement instead): same "roll 1 die per destroyed infantry, 6+ respawns" mechanic. Passing this player's own factionId makes checkSpecOpsRespawn's internal "player.factionId !== factionId" gate a tautology (always passes for them specifically) — the REAL gate that matters is still its own getUnitStats/"respawn" ability check, which only succeeds if this player's actual effective infantry has Respawn (i.e. they researched generic Infantry II). Guarded to skip Sol/Arborec explicitly so their own already-matched call above isn't redundantly re-applied to the same die rolls a second time.
+    if (player.factionId !== ("sol" as never) && player.factionId !== ("arborec" as never)) {
+      nextState = checkSpecOpsRespawn(nextState, action.playerId, destroyedInfantryCount, action.specOpsRespawnDieRolls, rules, player.factionId, 6);
+    }
   }
 
   // Sardakk N'orr "Valkyrie Exoskeleton" (mech, Retaliation Strike): "After this unit uses its SUSTAIN DAMAGE ability during Ground Combat, it produces 1 hit against your opponent's ground forces on this planet." Confirmed (tirules2.com/F_norr): mandatory — 1 hit per mech that actually flipped this round, added to the OPPONENT's own pendingHits for this same combat (they'll need their own ASSIGN_HITS to resolve it, same as any other pending hit).

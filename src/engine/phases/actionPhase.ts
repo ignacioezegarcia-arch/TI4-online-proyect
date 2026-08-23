@@ -383,7 +383,10 @@ export function scoreObjective(
   // RR 61.16: a player cannot score PUBLIC objectives at all unless they
   // control every planet in their own home system — previously unchecked
   // entirely. Secrets are unaffected (RR only names public objectives).
-  if (kind !== "secret") {
+  // Clan of Saar "NOMADIC" (faction ability): "You can score objectives
+  // even if you do not control the planets in your home system" — the
+  // confirmed, sole exception to this rule.
+  if (kind !== "secret" && !hasAbility(player, asAbilityId("nomadic"))) {
     const homeSystemId = rules.homeSystemByFaction[player.factionId] as SystemId | undefined;
     const homeSystem = homeSystemId ? state.systems[homeSystemId] : undefined;
     const controlsWholeHomeSystem = homeSystem ? homeSystem.planets.every((p) => p.controllerId === action.playerId) : false;
@@ -473,7 +476,7 @@ export function scoreObjectiveCore(
   // public objective at runtime, but is still statically "secret" in the
   // data it was printed with) is not caught by this specific check —
   // same category as this project's other rare, acknowledged edge cases.
-  if (objectiveData.kind !== "secret") {
+  if (objectiveData.kind !== "secret" && !hasAbility(player, asAbilityId("nomadic"))) {
     const homeSystemId = rules.homeSystemByFaction[player.factionId] as SystemId | undefined;
     const homeSystem = homeSystemId ? state.systems[homeSystemId] : undefined;
     const controlsWholeHomeSystem = homeSystem ? homeSystem.planets.every((p) => p.controllerId === playerId) : false;
