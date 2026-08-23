@@ -39,7 +39,8 @@ export function produceUnits(
   action: {
     type: "PRODUCE_UNITS";
     playerId: PlayerId;
-    planetId: PlanetId;
+    /** Optional (rather than the normal required planet) only for Clan of Saar producing from a Floating Factory sitting in the system's own space area — see phases/production.ts's own executeProduction for the full doc comment on this whole mechanic. */
+    planetId?: PlanetId;
     units: { unitType: UnitType; count: number }[];
     /** RR "AI Development Algorithm"'s OTHER ability (distinct from its unit-upgrade-research one, but shares the same exhausted-state — using either one exhausts the same card): exhaust to reduce this production's combined cost by the number of unit upgrade technologies this player owns. */
     useAiDevelopmentAlgorithmForCost?: boolean;
@@ -53,6 +54,8 @@ export function produceUnits(
     freelancersSubstituteSourceSystemId?: SystemId;
     /** Naalu Collective "M'aban" (commander): "+1 free fighter, doesn't count against the Production limit" — see phases/production.ts's own executeProduction for the full doc comment. */
     useMabanBonusFighter?: boolean;
+    /** Clan of Saar "Floating Factory": the player's own choice of where ground forces produced this way land — a specific controlled planet in this system, or omitted for the space area (the default) — see phases/production.ts's own executeProduction for the full doc comment. */
+    floatingFactoryGroundForceDestinationPlanetId?: PlanetId;
   },
   rules: RuleData,
 ): ActionResult {
@@ -77,8 +80,10 @@ export function produceUnits(
     action.freelancersActive,
     action.freelancersSubstituteSourceSystemId,
     action.useMabanBonusFighter,
+    action.floatingFactoryGroundForceDestinationPlanetId,
   );
 }
+
 
 /**
  * The actual RR 58/59 production mechanics, independent of the tactical
@@ -91,7 +96,7 @@ export function executeProduction(
   state: GameState,
   playerId: PlayerId,
   systemId: SystemId,
-  planetId: PlanetId,
+  planetId: PlanetId | undefined,
   units: { unitType: UnitType; count: number }[],
   rules: RuleData,
   useAiDevelopmentAlgorithmForCost?: boolean,
@@ -117,19 +122,53 @@ export function executeProduction(
   freelancersSubstituteSourceSystemId?: SystemId,
   /** Naalu Collective "M'aban" (commander): "+1 free fighter, doesn't count against the Production limit" — see this function's own doc comment further below on where this actually gets applied. */
   useMabanBonusFighter = false,
+  /**
+   * Clan of Saar "Floating Factory": omitting `planetId` entirely (rather
+   * than passing a real one) signals this whole call is being made from
+   * a Floating Factory sitting in the SYSTEM's own space area, not from
+   * any planet — its own Production-capable stack lives in
+   * spaceUnitsByPlayer instead of a planet's unitsByPlayer, and there's
+   * no "the planet this player doesn't control" failure mode to check at
+   * all (a Floating Factory can only ever exist somewhere this player
+   * already controls a planet, checked once at placement time — see
+   * phases/strategyCardAbilities.ts's own placeFloatingFactory).
+   * Confirmed (twilight-imperium.fandom.com/wiki/The_Clan_of_Saar):
+   * "When a Floating Factory produces ground forces, they may be placed
+   * in the space area or on a planet they control in that system" — the
+   * player's own choice, captured here rather than defaulted, since
+   * every OTHER faction's ground-force production has exactly one legal
+   * destination (whichever planet the producing space dock sits on) and
+   * never needed a choice at all.
+   */
+  floatingFactoryGroundForceDestinationPlanetId?: PlanetId,
 ): ActionResult {
   const system = state.systems[systemId];
   if (!system) return { ok: false, error: `No system ${systemId}.` };
-  const planet = system.planets.find((p) => p.planetId === planetId);
-  if (!planet) return { ok: false, error: `No planet ${planetId} in ${systemId}.` };
-  if (planet.controllerId !== playerId) {
+  const isFloatingFactoryProduction = planetId === undefined;
+  const planet = isFloatingFactoryProduction ? undefined : system.planets.find((p) => p.planetId === planetId);
+  if (!isFloatingFactoryProduction && !planet) return { ok: false, error: `No planet ${planetId} in ${systemId}.` };
+  if (planet && planet.controllerId !== playerId) {
     return { ok: false, error: `RR 58: this player doesn't control ${planetId}.` };
   }
-  if (isDemilitarizedZone(planet)) {
+  if (isFloatingFactoryProduction && !system.planets.some((p) => p.controllerId === playerId)) {
+    return { ok: false, error: `This player doesn't control any planet in ${systemId} — a Floating Factory needs at least 1 to have ever been placed there.` };
+  }
+  let groundForceDestinationPlanet = isFloatingFactoryProduction && floatingFactoryGroundForceDestinationPlanetId
+    ? system.planets.find((p) => p.planetId === floatingFactoryGroundForceDestinationPlanetId)
+    : planet;
+  if (isFloatingFactoryProduction && floatingFactoryGroundForceDestinationPlanetId) {
+    if (!groundForceDestinationPlanet || groundForceDestinationPlanet.controllerId !== playerId) {
+      return { ok: false, error: `This player doesn't control ${floatingFactoryGroundForceDestinationPlanetId} in ${systemId}.` };
+    }
+  }
+  if (planet && isDemilitarizedZone(planet)) {
     return { ok: false, error: 'RR "Demilitarized Zone": units cannot be produced on this planet.' };
   }
   // TE SPACE STATIONS (rulebook p.10): "structures and ground forces cannot be placed on or committed to space stations."
-  if (planet.isSpaceStation && units.some(({ count }) => count > 0)) {
+  if (planet?.isSpaceStation && units.some(({ count }) => count > 0)) {
+    return { ok: false, error: "TE SPACE STATIONS: no units of any kind can be placed on a space station." };
+  }
+  if (groundForceDestinationPlanet?.isSpaceStation && units.some(({ unitType, count }) => count > 0 && GROUND_FORCE_TYPES.includes(unitType))) {
     return { ok: false, error: "TE SPACE STATIONS: no units of any kind can be placed on a space station." };
   }
   // TE ENTROPIC SCAR (rulebook p.11): Production "cannot be used by or against units inside of an entropic scar."
@@ -149,7 +188,7 @@ export function executeProduction(
   }
 
   const player = state.players[playerId];
-  const producerStacks = planet.unitsByPlayer[playerId] ?? [];
+  const producerStacks = isFloatingFactoryProduction ? (system.spaceUnitsByPlayer[playerId] ?? []) : (planet!.unitsByPlayer[playerId] ?? []);
   // RR 58: "a unit's Production ability is always followed by a value...
   // this value is the maximum number of units that unit can produce. If
   // the active player has multiple units [...] with Production, that
@@ -177,10 +216,10 @@ export function executeProduction(
     hasAnyProducer = true;
     const productionResourceBonus = stats.abilityValues?.production?.productionResourceBonus;
     const explicitValue = stats.abilityValues?.production?.value;
-    if (productionResourceBonus != null) {
+    if (productionResourceBonus != null && planet) {
       // Space Dock (base "+2") / Space Dock II ("+3") — confirmed distinct bonuses via data/units.json and data/unitUpgrades.json; previously this was hardcoded to "+2" everywhere, silently shortchanging Space Dock II.
       if (spaceDockLimit === 0) {
-        const planetStats = getEffectivePlanetStats(planet, planetId, rules);
+        const planetStats = getEffectivePlanetStats(planet, planetId!, rules);
         spaceDockLimit = planetStats.resources + productionResourceBonus;
       }
     } else if (explicitValue != null) {
@@ -188,7 +227,7 @@ export function executeProduction(
     }
   }
   if (!hasAnyProducer) {
-    return { ok: false, error: `RR 58: no Production-capable unit (e.g. a Space Dock) on ${planetId}.` };
+    return { ok: false, error: `RR 58: no Production-capable unit (e.g. a Space Dock) on ${isFloatingFactoryProduction ? systemId : planetId}.` };
   }
   // Ghosts of Creuss "Particle Synthesis" (Breakthrough ability): "Each
   // wormhole in a system that contains your ships gains PRODUCTION 1
@@ -241,6 +280,21 @@ export function executeProduction(
             : explicitValue != null
               ? explicitValue * s.count
               : 0;
+      }
+    }
+    // Clan of Saar "Floating Factory": its own Production ability lives
+    // in spaceUnitsByPlayer, never a planet's unitsByPlayer, so the loop
+    // above alone would never see it as an additional producer for this
+    // law — added here as its own separate pass over the SAME system's
+    // space stacks. A flat value (never a productionResourceBonus formula
+    // — see data/factions/saar.json's own "Production 5"/"Production 7"),
+    // so this mirrors the explicitValue branch above exactly.
+    for (const s of system.spaceUnitsByPlayer[playerId] ?? []) {
+      if (s.count <= 0) continue;
+      const spaceStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+      const explicitValue = spaceStats?.abilityValues?.production?.value;
+      if (spaceStats?.abilities.includes("production") && explicitValue != null) {
+        combinedLimit += explicitValue * s.count;
       }
     }
     if (combinedLimit > productionLimit) productionLimit = combinedLimit;
@@ -414,10 +468,10 @@ export function executeProduction(
   }
   const player2 = state2.players[playerId];
   const system2 = state2.systems[systemId];
-  const planet2 = system2.planets.find((p) => p.planetId === planetId)!;
+  const groundForceDestinationPlanet2 = groundForceDestinationPlanet ? system2.planets.find((p) => p.planetId === groundForceDestinationPlanet!.planetId) : undefined;
 
   let updatedSpaceStacks = (system2.spaceUnitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
-  let updatedPlanetStacks = (planet2.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+  let updatedGroundForceDestStacks = (groundForceDestinationPlanet2?.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
   const events: GameEvent[] = [];
 
   // RR 58 (structures): confirmed limits — at most 2 PDS and 1 space dock
@@ -425,13 +479,15 @@ export function executeProduction(
   // physical board limits, not per-player). RR "Homeland Defense Act"
   // ("for"): while that law is active, the PDS limit specifically is
   // lifted — the space dock limit is untouched, the card's own text only
-  // ever mentions PDS.
+  // ever mentions PDS. (Dead in practice — structures can never appear in
+  // resolvedUnits, rejected above via their own null cost — kept as a
+  // defensive check rather than assuming that'll always stay true.)
   const pdsLimitLifted = isLawActiveWithOutcome(state, "homeland_defense_act" as AgendaId, "for");
   for (const { unitType, count } of resolvedUnits) {
     if (unitType !== "pds" && unitType !== "space_dock") continue;
     const limit = unitType === "pds" ? 2 : 1;
     if (unitType === "pds" && pdsLimitLifted) continue;
-    const existingOnPlanet = Object.values(planet.unitsByPlayer)
+    const existingOnPlanet = Object.values(planet?.unitsByPlayer ?? {})
       .flat()
       .filter((s): s is NonNullable<typeof s> => Boolean(s) && s!.unitType === unitType)
       .reduce((sum, s) => sum + s!.count, 0);
@@ -439,6 +495,7 @@ export function executeProduction(
       return { ok: false, error: `RR 58: ${planetId} can have at most ${limit} ${unitType}(s); it already has ${existingOnPlanet}.` };
     }
   }
+
 
   // RR 37.1/76.2: producing non-fighter ships can't push this player's
   // total in this system above their own fleet pool — same upfront-
@@ -505,28 +562,40 @@ export function executeProduction(
 
   for (const { unitType, count, unitCost } of resolvedUnits) {
     const isShip = SHIP_TYPES.includes(unitType);
-    const target = isShip ? updatedSpaceStacks : updatedPlanetStacks;
+    // Clan of Saar "Floating Factory": ground forces produced from a
+    // system-level (no planetId) production go to updatedSpaceStacks
+    // too, UNLESS the player chose a specific controlled planet in this
+    // system as their destination (groundForceDestinationPlanet2) — see
+    // this function's own doc comment above for the confirmed ruling.
+    // Every other faction's ground-force production always has exactly
+    // 1 legal destination (whichever planet planetId names) and hits the
+    // updatedGroundForceDestStacks branch below unconditionally, same as
+    // this always did before Floating Factory existed.
+    const goesToSpace = isShip || (isFloatingFactoryProduction && !groundForceDestinationPlanet2);
+    const target = goesToSpace ? updatedSpaceStacks : updatedGroundForceDestStacks;
     const existing = target.find((s) => s.unitType === unitType && !s.upgradeId);
     if (existing) existing.count += count;
     else target.push({ unitType, count, damagedCount: 0 });
-    if (isShip) updatedSpaceStacks = target;
-    else updatedPlanetStacks = target;
+    if (goesToSpace) updatedSpaceStacks = target;
+    else updatedGroundForceDestStacks = target;
     events.push({
       type: "UNITS_PRODUCED",
       playerId,
       systemId,
-      planetId,
+      planetId: goesToSpace ? undefined : groundForceDestinationPlanet2?.planetId,
       unitType,
       count,
       totalCost: (count / getEffectiveProducesQuantity(state, unitType, getUnitStats(rules, player.factionId, unitType, player.unitUpgrades)?.producesQuantity ?? 1)) * unitCost,
     });
   }
 
-  const updatedPlanet: PlanetState = { ...planet2, unitsByPlayer: { ...planet2.unitsByPlayer, [playerId]: updatedPlanetStacks } };
+  const updatedSystemPlanets = groundForceDestinationPlanet2
+    ? system2.planets.map((p) => (p.planetId === groundForceDestinationPlanet2.planetId ? { ...groundForceDestinationPlanet2, unitsByPlayer: { ...groundForceDestinationPlanet2.unitsByPlayer, [playerId]: updatedGroundForceDestStacks } } : p))
+    : system2.planets;
   const updatedSystem: SystemState = {
     ...system2,
     spaceUnitsByPlayer: { ...system2.spaceUnitsByPlayer, [playerId]: updatedSpaceStacks },
-    planets: system2.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)),
+    planets: updatedSystemPlanets,
   };
 
   // RR "Prophecy of Ixth": confirmed, checked on EVERY Production use by

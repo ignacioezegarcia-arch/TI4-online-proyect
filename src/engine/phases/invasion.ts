@@ -1557,6 +1557,30 @@ export function setPlanetController(
     nextState = { ...nextState, players: { ...nextState.players, [controllerId]: { ...owner, tradeGoods: owner.tradeGoods + 1 } } };
   }
 
+  // Clan of Saar "SCAVENGE" (faction ability): "After you gain control of
+  // a planet, gain 1 trade good." Confirmed (tirules2.com/F_saar): "when
+  // the Saar player gains control of a planet that is not already
+  // controlled by another player, they will explore it BEFORE gaining
+  // the trade good from this ability" — placed here, right after the
+  // exploration block above, matching that exact ordering. Stacks freely
+  // with Minister of Exploration above (2 independent gains, same
+  // trigger).
+  if (hasAbility(nextState.players[controllerId], asAbilityId("scavenge"))) {
+    const scavenger = nextState.players[controllerId];
+    nextState = { ...nextState, players: { ...nextState.players, [controllerId]: { ...scavenger, tradeGoods: scavenger.tradeGoods + 1 } } };
+  }
+  // Clan of Saar "Scavenger Zeta" (mech, Deploy): "After you gain control
+  // of a planet, you may spend 1 trade good to place 1 mech on that
+  // planet." A genuine player choice — queued here rather than resolved
+  // automatically, same "OWNER's own choice" shape as Arborec's own
+  // pendingMitosisPlacements.
+  if (nextState.players[controllerId]?.factionId === ("saar" as never)) {
+    nextState = {
+      ...nextState,
+      pendingScavengerZetaDeploy: [...(nextState.pendingScavengerZetaDeploy ?? []), { playerId: controllerId, planetId }],
+    };
+  }
+
   // RR "Holy Planet of Ixth": gaining/losing control of ITS OWN attached
   // planet specifically gains/loses 1 VP — checked by whether this
   // planet actually has that card attached, not by which planet it is by

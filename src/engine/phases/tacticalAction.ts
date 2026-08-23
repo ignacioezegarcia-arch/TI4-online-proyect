@@ -10,6 +10,7 @@ import { resolveSpaceStationControl } from "../rules/spaceStations";
 import { usesCodex4Version } from "../rules/gameMode";
 import { playersWithShipsInSystem, getSpaceCannonOffenseEligiblePlayers } from "../rules/combat";
 import { maybeReturnCapturedUnitsOnBlockade } from "../rules/capture";
+import { maybeDestroyBlockadedFloatingFactories } from "../rules/saar";
 import { computeSpaceCombatEntry, openCombatRoundStartWindowIfNeeded } from "./spaceCombat";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
@@ -19,6 +20,7 @@ import { maybeReturnTradeConvoys } from "../rules/hacan";
 import { maybeReturnStymie } from "../rules/arborec";
 import { maybeReturnPromiseOfProtection, getMentakCruiserStats } from "../rules/mentak";
 import { canMoveThroughSupernova } from "../rules/muaat";
+import { hasGravityRift, getGravityRiftDestructionCheck } from "../rules/anomalies";
 
 /**
  * RR 78 STEP 1 — ACTIVATION.
@@ -73,6 +75,33 @@ export function activateSystem(
   }
   if (skipCommandToken && rules.homeSystemByFaction[player.factionId] === action.systemId) {
     return { ok: false, error: "Z'eu Ω: cannot be used to activate this player's own home system." };
+  }
+  // Clan of Saar "Chaos Mapping" (faction tech): "Other players cannot
+  // activate asteroid fields that contain 1 or more of your ships."
+  // Confirmed (yjmrobert.com/tirules/factions/f_saar): "If an asteroid
+  // field contains only non-ship units belonging to the Saar player, it
+  // may still be activated by other players" — a Floating Factory alone
+  // (unitType "space_dock", not in SHIP_TYPES) does NOT trigger this
+  // block on its own; previously this checked "any unit at all" in the
+  // space area, incorrectly including a lone Floating Factory. Checked
+  // regardless of who owns Chaos Mapping among all OTHER players (a
+  // system could in principle contain multiple different players' ships,
+  // any one of whom owning this tech blocks activation by someone else).
+  {
+    const targetSystem = state.systems[action.systemId];
+    const hasAsteroidField = targetSystem?.anomalies.includes("asteroid_field" as never) ?? false;
+    if (hasAsteroidField) {
+      const blockedBySaar = Object.values(state.players).some(
+        (p) =>
+          p.id !== action.playerId &&
+          p.factionId === ("saar" as never) &&
+          p.technologies.includes("chaos_mapping" as never) &&
+          (targetSystem.spaceUnitsByPlayer[p.id] ?? []).some((s) => s.count > 0 && SHIP_TYPES.includes(s.unitType)),
+      );
+      if (blockedBySaar) {
+        return { ok: false, error: "Clan of Saar \"Chaos Mapping\": this asteroid field contains their ships and cannot be activated by another player." };
+      }
+    }
   }
 
   const updatedPlayer: Player = skipCommandToken
@@ -211,7 +240,7 @@ export function moveShips(
   action: {
     type: "MOVE_SHIPS";
     playerId: PlayerId;
-    moves: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; count: number }[];
+    moves: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; count: number; passesThroughRiftSystemIds?: SystemId[] }[];
     transportedGroundForces?: { fromSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
     transportedFighters?: { fromSystemId: SystemId; count: number }[];
     gravityDriveBoostFromSystemId?: SystemId;
@@ -221,6 +250,14 @@ export function moveShips(
     relocateAvernusWithWarSun?: boolean;
     /** RR "Dominus Orb" (relic): "Before you move units during a tactical action, you may purge this card to move and transport units that are in systems that contain 1 of your command tokens" — bypasses the normal reachability/adjacency check entirely for any move whose fromSystemId has this player's own command token. Purges the relic (one-time), applies to the WHOLE tactical action's movement, not per-move. */
     useDominusOrb?: boolean;
+    /** RR "Gravity Rift" (anomaly): see types/Actions.ts's own doc comment on this same field for the full explanation — one entry per (fromSystemId, unitType, riftSystemId) combination that applies. */
+    gravityRiftDieRolls?: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; riftSystemId: SystemId; rolls: number[] }[];
+    /** RR "Gravity Rift", note 2 — see types/Actions.ts's own doc comment on this same field for the full explanation. */
+    gravityRiftCargoAssignments?: {
+      fromSystemId: SystemId;
+      carrierUnitType: import("../types/enums").UnitType;
+      cargo: { unitType: "fighter" | "infantry" | "mech"; countsPerShip: number[] }[];
+    }[];
   },
   rules: RuleData,
 ): ActionResult {
@@ -275,6 +312,8 @@ export function moveShips(
   }
   // RR 84.1: each move's own final effective move value (after Gravity Drive/Flank Speed/Ionian Fuel Refinery bonuses), kept around for the cargo-pickup pass-through check below — a cargo pickup at a mid-path hop is only legal if SOME ship making this move can actually reach that hop within its OWN move budget on the way to activeSystemId.
   const moveEffectiveValues: { fromSystemId: SystemId; unitType: import("../types/enums").UnitType; effectiveMove: number }[] = [];
+  // RR "Gravity Rift" (anomaly): keyed by `${fromSystemId}::${unitType}`, accumulating WHICH individual ship-indices (0..count-1) end up destroyed across every rift instance that move passes through — see this function's own applicableRiftSystemIds computation and where this map is consumed further below.
+  const riftDestroyedIndicesByMove = new Map<string, Set<number>>();
 
   for (const move of action.moves) {
     if (move.fromSystemId === activeSystemId) continue; // already there, nothing to validate
@@ -309,6 +348,14 @@ export function moveShips(
     // one is a plain passive-on-request bonus, unlike most other
     // technologies in this same "after you activate a system" family).
     let effectiveMove = stats.move;
+    // Clan of Saar "Captain Mendosa" (agent): the fixed override computed
+    // at activation time — applied BEFORE Gravity Drive/Flank Speed/Ionian
+    // Fuel Refinery below, so those still stack on top of it as normal
+    // (see this field's own doc comment on GameState.ts for the confirmed
+    // ruling on why).
+    if (pending.mendosaMoveOverride?.unitType === move.unitType && pending.mendosaMoveOverride.fromSystemId === move.fromSystemId) {
+      effectiveMove = pending.mendosaMoveOverride.moveValue;
+    }
     if (action.gravityDriveBoostFromSystemId === move.fromSystemId && !usedGravityDrive) {
       const techId = asTechId("gravity_drive");
       if (!player.technologies.includes(techId)) {
@@ -357,24 +404,85 @@ export function moveShips(
 
     // RR "Dominus Orb" (relic): bypasses the reachability check entirely for this move if its source system has this player's own command token.
     const dominusOrbBypass = action.useDominusOrb && player.commandTokens.onBoard.includes(move.fromSystemId);
+    const moveTechs = {
+      ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
+      // "In the Silence of Space": scoped to ships whose move ORIGINATES from the chosen system — Light Wave Deflector's own version below has no such scoping. Yssaril Tribes "Y'sia Y'ssrila" (flagship, "Move Through"): "this ship can move through systems that contain other players' ships" — confirmed (tirules2.com/F_yssaril) redundant with, and having NO additional effect alongside, this same player's own Light/Wave Deflector tech (both grant the identical bypass for this same unit, hence the OR below).
+      ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId || (move.unitType === "flagship" && player.factionId === ("yssaril" as never)),
+      // "Nav Suite": ignores every anomaly effect (asteroid/supernova blocking, nebula's move clamp, even the gravity rift bonus — see canShipReachSystem's own doc comment on that last part) for this player's whole movement step.
+      ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
+      // RR "Circlet of the Void" (relic): same asteroid/supernova/nebula bypass as Nav Suite, but explicitly KEEPS the gravity rift movement bonus (canShipReachSystem's own doc comment covers the distinction) — a standing passive effect, not gated on the relic being exhausted or not.
+      circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
+      // Embers of Muaat "GASHLAI PHYSIOLOGY"/"Magmus Reactor" (either grants this): "your ships can move through/into supernovas" -- see rules/muaat.ts's own canMoveThroughSupernova.
+      canMoveThroughSupernova: canMoveThroughSupernova(player),
+      // Clan of Saar "Captain Mendosa": see canShipReachSystem's own doc comment on this flag — Mendosa's fixed override value beats Nebula's own clamp for this specific move.
+      mendosaOverrideActive: pending.mendosaMoveOverride?.unitType === move.unitType && pending.mendosaMoveOverride.fromSystemId === move.fromSystemId,
+    };
     if (
       !dominusOrbBypass &&
-      !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, {
-        ignoreAsteroidFields: player.technologies.includes(asTechId("antimass_deflectors")),
-        // "In the Silence of Space": scoped to ships whose move ORIGINATES from the chosen system — Light Wave Deflector's own version below has no such scoping. Yssaril Tribes "Y'sia Y'ssrila" (flagship, "Move Through"): "this ship can move through systems that contain other players' ships" — confirmed (tirules2.com/F_yssaril) redundant with, and having NO additional effect alongside, this same player's own Light/Wave Deflector tech (both grant the identical bypass for this same unit, hence the OR below).
-        ignoreEnemyFleets: player.technologies.includes(asTechId("light_wave_deflector")) || pending.passThroughEnemiesFromSystemId === move.fromSystemId || (move.unitType === "flagship" && player.factionId === ("yssaril" as never)),
-        // "Nav Suite": ignores every anomaly effect (asteroid/supernova blocking, nebula's move clamp, even the gravity rift bonus — see canShipReachSystem's own doc comment on that last part) for this player's whole movement step.
-        ignoreAllAnomalyEffects: pending.navSuiteActive && action.playerId === pending.playerId,
-        // RR "Circlet of the Void" (relic): same asteroid/supernova/nebula bypass as Nav Suite, but explicitly KEEPS the gravity rift movement bonus (canShipReachSystem's own doc comment covers the distinction) — a standing passive effect, not gated on the relic being exhausted or not.
-        circletOfTheVoidActive: player.relics.includes("circlet_of_the_void" as never),
-        // Embers of Muaat "GASHLAI PHYSIOLOGY"/"Magmus Reactor" (either grants this): "your ships can move through/into supernovas" -- see rules/muaat.ts's own canMoveThroughSupernova.
-        canMoveThroughSupernova: canMoveThroughSupernova(player),
-      }, rules)
+      !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, moveTechs, rules)
     ) {
       return {
         ok: false,
         error: `RR 58.4: ${move.unitType} at ${move.fromSystemId} cannot reach ${activeSystemId} (move value ${effectiveMove}) — blocked by an anomaly, an enemy fleet along the way, or simply out of range.`,
       };
+    }
+
+    // RR "Gravity Rift" (yjmrobert.com/tirules/rules/r_gravity_rift):
+    // "For each ship that would move out of or through a gravity rift,
+    // one die is rolled... on a result of 1-3, that ship is removed."
+    // Every applicable rift instance for THIS move — its own origin (if
+    // it has a rift) plus any declared, validated mid-path hops — is
+    // processed here; the actual removal is applied further below, once
+    // all movement has resolved (this file's own riftDestroyedIndices
+    // accumulator).
+    const originAnomalies = workingState.systems[move.fromSystemId]?.anomalies ?? [];
+    const applicableRiftSystemIds: SystemId[] = [];
+    if (hasGravityRift(originAnomalies)) applicableRiftSystemIds.push(move.fromSystemId);
+
+    // Is passing through some OTHER (non-origin) rift actually MANDATORY
+    // for this move — i.e. is there NO rift-free route within this same
+    // move's own effective budget/techs — or is it a genuine, avoidable
+    // choice? Computed by the engine itself (not merely trusted from the
+    // caller's own passesThroughRiftSystemIds below), per the confirmed
+    // requirement that the player must be asked/forced to declare a
+    // mid-path rift whenever it's the ONLY way to make the trip, rather
+    // than silently letting a caller omit it and skip the dice roll.
+    const mandatoryMidPathRift = !dominusOrbBypass && !canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, { ...moveTechs, forbidGravityRiftsBeyondOrigin: true }, rules);
+    if (mandatoryMidPathRift && (move.passesThroughRiftSystemIds ?? []).length === 0) {
+      return {
+        ok: false,
+        error: `RR "Gravity Rift": ${move.unitType} at ${move.fromSystemId} can only reach ${activeSystemId} by passing through a gravity rift somewhere along the way — declare which system via passesThroughRiftSystemIds (this player's route has no rift-free alternative of the same length).`,
+      };
+    }
+
+    for (const waypointId of move.passesThroughRiftSystemIds ?? []) {
+      if (waypointId === move.fromSystemId || waypointId === activeSystemId) continue; // already covered by the origin/destination-specific checks
+      const waypointAnomalies = workingState.systems[waypointId]?.anomalies ?? [];
+      if (!hasGravityRift(waypointAnomalies)) {
+        return { ok: false, error: `RR "Gravity Rift": ${waypointId} doesn't actually contain a gravity rift.` };
+      }
+      // Confirmed reachable as an actual waypoint within this SAME move's own effective budget/techs — trusted as "plausible", same as this project's other caller-supplied path claims, since the literal path taken isn't otherwise tracked.
+      const reachableAsWaypoint = canShipReachSystem(workingState, player.id, move.fromSystemId, activeSystemId, effectiveMove, moveTechs, rules, waypointId);
+      if (!reachableAsWaypoint) {
+        return { ok: false, error: `RR "Gravity Rift": ${move.unitType} at ${move.fromSystemId} has no valid path to ${activeSystemId} that actually visits ${waypointId} within its own move budget.` };
+      }
+      applicableRiftSystemIds.push(waypointId);
+    }
+
+    if (applicableRiftSystemIds.length > 0) {
+      const moveKey = `${move.fromSystemId}::${move.unitType}`;
+      const destroyedIndices = riftDestroyedIndicesByMove.get(moveKey) ?? new Set<number>();
+      for (const riftSystemId of applicableRiftSystemIds) {
+        const rollEntry = action.gravityRiftDieRolls?.find((r) => r.fromSystemId === move.fromSystemId && r.unitType === move.unitType && r.riftSystemId === riftSystemId);
+        if (!rollEntry || rollEntry.rolls.length !== move.count) {
+          return { ok: false, error: `RR "Gravity Rift": need exactly ${move.count} gravityRiftDieRolls for this player's ${move.unitType} from ${move.fromSystemId} passing through ${riftSystemId}.` };
+        }
+        const destroyOnRollLessOrEqual = getGravityRiftDestructionCheck(workingState.systems[riftSystemId]?.anomalies ?? [])?.destroyOnRollLessOrEqual ?? 3;
+        rollEntry.rolls.forEach((roll, i) => {
+          if (roll <= destroyOnRollLessOrEqual) destroyedIndices.add(i);
+        });
+      }
+      riftDestroyedIndicesByMove.set(moveKey, destroyedIndices);
     }
 
     // Muaat "Stellar Genesis": does THIS war sun's move have a valid path (within the same move value / techs it's actually using) that visits Avernus's system somewhere along the way — either as the literal origin, or as a mid-path hop?
@@ -407,6 +515,61 @@ export function moveShips(
 
     workingState = removeFromSystem(workingState, move.fromSystemId, player.id, move.unitType, move.count);
     workingState = addToSystem(workingState, activeSystemId, player.id, move.unitType, move.count);
+  }
+
+  // RR "Gravity Rift" (yjmrobert.com/tirules/rules/r_gravity_rift):
+  // RR "Gravity Rift" (yjmrobert.com/tirules/rules/r_gravity_rift):
+  // "one die is rolled immediately before it exits the gravity rift
+  // system" / "a ship that is removed by a gravity rift will not count
+  // toward the fleet limit in the destination system" — applied HERE,
+  // right after every move places its units at activeSystemId but
+  // BEFORE the fleet-pool/capacity checks further below, so a ship lost
+  // to the rift correctly never counts against either limit. Previously
+  // this had no implementation anywhere in the project at all (see this
+  // file's own now-corrected comment near the Hil Colish/declaration-
+  // order note, which used to cite this as a known gap) — and an
+  // earlier draft of this exact fix mistakenly applied the destruction
+  // AFTER those limit checks instead, which would have rejected some
+  // legal moves outright (the pre-rift-loss count exceeding a limit the
+  // post-loss count would have respected).
+  //
+  // Note 2 on that same rules page — "units being transported are
+  // removed from the board if the ship transporting them is removed" —
+  // is now handled too, via action.gravityRiftCargoAssignments' own
+  // per-ship-index cargo declaration (see types/Actions.ts's own doc
+  // comment on that field for the full explanation of why this needs an
+  // explicit caller declaration rather than being inferred).
+  if (riftDestroyedIndicesByMove.size > 0) {
+    const destSystem = workingState.systems[activeSystemId];
+    let destStacks = (destSystem.spaceUnitsByPlayer[player.id] ?? []).map((s) => ({ ...s }));
+    const cargoLosses = new Map<string, number>();
+    for (const [moveKey, destroyedIndices] of riftDestroyedIndicesByMove.entries()) {
+      if (destroyedIndices.size === 0) continue;
+      const [fromSystemId, unitType] = moveKey.split("::") as [SystemId, import("../types/enums").UnitType];
+      const stack = destStacks.find((s) => s.unitType === unitType && s.count > 0);
+      if (stack) {
+        const destroyed = Math.min(destroyedIndices.size, stack.count);
+        stack.count -= destroyed;
+        if ((stack.damagedCount ?? 0) > stack.count) stack.damagedCount = stack.count;
+      }
+      const cargoAssignment = action.gravityRiftCargoAssignments?.find((a) => a.fromSystemId === fromSystemId && a.carrierUnitType === unitType);
+      if (cargoAssignment) {
+        for (const cargo of cargoAssignment.cargo) {
+          let lost = 0;
+          for (const i of destroyedIndices) lost += cargo.countsPerShip[i] ?? 0;
+          if (lost > 0) cargoLosses.set(cargo.unitType, (cargoLosses.get(cargo.unitType) ?? 0) + lost);
+        }
+      }
+    }
+    for (const [cargoUnitType, lost] of cargoLosses.entries()) {
+      const stack = destStacks.find((s) => s.unitType === cargoUnitType && s.count > 0);
+      if (!stack) continue;
+      const destroyed = Math.min(lost, stack.count);
+      stack.count -= destroyed;
+      if ((stack.damagedCount ?? 0) > stack.count) stack.damagedCount = stack.count;
+    }
+    destStacks = destStacks.filter((s) => s.count > 0);
+    workingState = { ...workingState, systems: { ...workingState.systems, [activeSystemId]: { ...destSystem, spaceUnitsByPlayer: { ...destSystem.spaceUnitsByPlayer, [player.id]: destStacks } } } };
   }
 
   // Muaat "Stellar Genesis": actually relocate the Avernus token, if a war sun's path this action visited its system (either as the literal origin or a mid-path hop — see warSunPassedThroughAvernusSystem's own computation above) and the player chose to bring it along — never into a home system (matches the ability's own "into a non-home system" wording).
@@ -655,6 +818,10 @@ export function moveShips(
   // captured non-fighter ship/mech whose original owner is now
   // blockading the capturing player's own space dock.
   workingState = maybeReturnCapturedUnitsOnBlockade(workingState);
+  // Clan of Saar "Floating Factory": "If this unit is blockaded, it is
+  // destroyed" — same "ship movement is the only way blockade state can
+  // change" reasoning as the capture-return call directly above.
+  workingState = maybeDestroyBlockadedFloatingFactories(workingState);
 
   // TE "Rescue": "After another player moves ships into a system that
   // contains your ships" — checked right after movement resolves, before

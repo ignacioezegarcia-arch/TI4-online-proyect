@@ -7,7 +7,7 @@ import { isAdjacent } from "../rules/adjacency";
 import { executeProduction } from "./production";
 import { researchTechnology, researchUnitUpgrade } from "./technology";
 import { scoreObjectiveCore } from "./actionPhase";
-import { maybeApplyMinisterOfCommerce, getLawOwner, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
+import { maybeApplyMinisterOfCommerce, getLawOwner, isLawActiveWithOutcome, isDemilitarizedZone, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
 import { drawActionCard } from "./actionCards";
 import { drawActionCardsForPlayer } from "../rules/yssaril";
 import { checkReinforcementsAvailable, COMMAND_TOKEN_TOTAL_SUPPLY } from "../rules/reinforcements";
@@ -216,7 +216,7 @@ export function resolveStrategyPrimaryEffect(
     }
 
     case "construction": {
-      const placements = (p.placements as { planetId: PlanetId; unitType: "space_dock" | "pds" }[]).slice(0, 2);
+      const placements = (p.placements as { planetId?: PlanetId; systemId?: SystemId; unitType: "space_dock" | "pds" }[]).slice(0, 2);
       const spaceDockCount = placements.filter((pl) => pl.unitType === "space_dock").length;
       if (spaceDockCount > 1) return { ok: false, error: "RR: at most 1 Space Dock may be placed this way." };
       return placeStructuresFree(state, action.playerId, placements, rules);
@@ -403,7 +403,7 @@ export function resolveStrategySecondaryEffect(
       return { ok: true, state: next, events: drawResult.events };
     }
     case "construction": {
-      const placement = p.placement as { planetId: PlanetId; unitType: "space_dock" | "pds" };
+      const placement = p.placement as { planetId?: PlanetId; systemId?: SystemId; unitType: "space_dock" | "pds" };
       // RR 24.3: unlike every other secondary's generic "just spend 1
       // strategy token" cost, this token specifically gets PLACED on the
       // board in the target system (unless the player already has one
@@ -411,9 +411,18 @@ export function resolveStrategySecondaryEffect(
       // i.e. exactly what the generic charge above already did).
       // Previously the token was always just spent with no placement at
       // all, regardless of this card's own distinct text.
-      const entry = Object.entries(working.systems).find(([, s]) => s.planets.some((pl) => pl.planetId === placement.planetId));
-      if (!entry) return { ok: false, error: `No planet ${placement.planetId} on the board.` };
-      const targetSystemId = entry[0] as SystemId;
+      // Clan of Saar "Floating Factory": placement.systemId is already
+      // the target system directly (no planet to look up through) — see
+      // placeStructuresFree's own Saar branch below.
+      let targetSystemId: SystemId;
+      if (placement.unitType === "space_dock" && charged.factionId === ("saar" as never)) {
+        if (!placement.systemId) return { ok: false, error: "Floating Factory placement needs a target system." };
+        targetSystemId = placement.systemId;
+      } else {
+        const entry = Object.entries(working.systems).find(([, s]) => s.planets.some((pl) => pl.planetId === placement.planetId));
+        if (!entry) return { ok: false, error: `No planet ${placement.planetId} on the board.` };
+        targetSystemId = entry[0] as SystemId;
+      }
       let withToken = working;
       if (!charged.commandTokens.onBoard.includes(targetSystemId)) {
         withToken = { ...working, players: { ...working.players, [action.playerId]: { ...charged, commandTokens: { ...charged.commandTokens, onBoard: [...charged.commandTokens.onBoard, targetSystemId] } } } };
@@ -506,11 +515,27 @@ function applyTokenGain(state: GameState, playerId: PlayerId, dist: { tactic: nu
 function placeStructuresFree(
   state: GameState,
   playerId: PlayerId,
-  placements: { planetId: PlanetId; unitType: "space_dock" | "pds" }[],
+  placements: { planetId?: PlanetId; systemId?: SystemId; unitType: "space_dock" | "pds" }[],
   rules: RuleData,
 ): ActionResult {
   let next = state;
-  for (const { planetId, unitType } of placements) {
+  const placingPlayer = next.players[playerId];
+  for (const placement of placements) {
+    const { unitType } = placement;
+    // Clan of Saar "Floating Factory" (Space Placement): "This unit is
+    // placed in the space area of a system instead of on a planet."
+    // Confirmed (twilight-imperium.fandom.com/wiki/The_Clan_of_Saar,
+    // scottmk.github.io/ti4-reference): genuinely a SYSTEM-level target,
+    // not a specific planet — a different placement flow entirely from
+    // every other structure below, which stays exactly as it was.
+    if (unitType === "space_dock" && placingPlayer.factionId === ("saar" as never)) {
+      const result = placeFloatingFactory(next, playerId, placement.systemId, rules);
+      if (!result.ok) return result;
+      next = result.state;
+      continue;
+    }
+
+    const planetId = placement.planetId!;
     const entry = Object.entries(next.systems).find(([, s]) => s.planets.some((p) => p.planetId === planetId));
     if (!entry) return { ok: false, error: `No planet ${planetId} on the board.` };
     const [systemId, system] = entry;
@@ -548,6 +573,56 @@ function placeStructuresFree(
     next = { ...next, systems: { ...next.systems, [systemId]: updatedSystem } };
   }
   return { ok: true, state: next, events: [] };
+}
+
+/**
+ * Clan of Saar "Floating Factory" placement: a system-level target (the
+ * player must control at least 1 planet there — the natural system-level
+ * analog of Construction's normal "a planet you control" targeting, since
+ * this unit is never actually ON a planet), 1 per system (its own analog
+ * of the normal "1 space dock per planet" limit), placed directly into
+ * spaceUnitsByPlayer instead of any planet's unitsByPlayer. Once placed
+ * here, movement (phases/tacticalAction.ts's own moveShips), Space Cannon
+ * targeting, and fleet-pool counting all already work correctly with NO
+ * further special-casing needed — every one of those is already
+ * data-driven off getUnitStats()/STRUCTURE_TYPES rather than a hardcoded
+ * SHIP_TYPES membership check, and Floating Factory's own faction-
+ * override stats (move: 1/2, no combat value) already flow through
+ * generically once the unit actually exists in the right place.
+ */
+function placeFloatingFactory(state: GameState, playerId: PlayerId, systemId: SystemId | undefined, rules: RuleData): ActionResult {
+  if (!systemId) return { ok: false, error: "Floating Factory placement needs a target system." };
+  const system = state.systems[systemId];
+  if (!system) return { ok: false, error: `Unknown system ${systemId}.` };
+  const controlledPlanets = system.planets.filter((p) => p.controllerId === playerId);
+  if (controlledPlanets.length === 0) {
+    return { ok: false, error: `This player doesn't control any planet in ${systemId}.` };
+  }
+  // Confirmed (yjmrobert.com/tirules/factions/f_saar): "The Saar player
+  // cannot place a Floating Factory in a system if the only planet they
+  // control in that system has the Demilitarized Zone cultural
+  // exploration card attached." — only blocks if EVERY controlled planet
+  // there is a Demilitarized Zone (matching "the ONLY planet"); if they
+  // control a second, non-DMZ planet in the same system, placement is
+  // still legal.
+  if (controlledPlanets.every((p) => isDemilitarizedZone(p))) {
+    return { ok: false, error: 'RR "Demilitarized Zone": cannot place a Floating Factory here — every planet this player controls in this system is a Demilitarized Zone.' };
+  }
+  const existingCount = (system.spaceUnitsByPlayer[playerId] ?? []).filter((s) => s.unitType === "space_dock").reduce((sum, s) => sum + s.count, 0);
+  if (existingCount >= 1) {
+    return { ok: false, error: `This player already has a Floating Factory in ${systemId} (at most 1 per system).` };
+  }
+  const reinforcementsCheck = checkReinforcementsAvailable(state, playerId, [{ unitType: "space_dock", count: 1 }]);
+  if (!reinforcementsCheck.ok) return reinforcementsCheck;
+
+  const stacks = (system.spaceUnitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+  const existing = stacks.find((s) => s.unitType === "space_dock");
+  if (existing) existing.count += 1;
+  else stacks.push({ unitType: "space_dock", count: 1, damagedCount: 0 });
+
+  void rules;
+  const updatedSystem: SystemState = { ...system, spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [playerId]: stacks } };
+  return { ok: true, state: { ...state, systems: { ...state.systems, [systemId]: updatedSystem } }, events: [] };
 }
 
 type TechIdOrActionCard = string;

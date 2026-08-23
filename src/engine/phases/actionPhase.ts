@@ -119,7 +119,7 @@ export function advanceActivePlayer(state: GameState, rules?: RuleData): GameSta
       continue;
     }
     // RR (yjmrobert.com/tirules/rules/r_transactions): the "1 per neighbor" transaction allowance is scoped to "the active player's turn" — a fresh turn starting (a new active player) resets it.
-    let nextState: GameState = { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0, transactionsThisTurn: undefined, skipNextTurnForPlayerId: undefined, usedMilitarySupportForActivePlayerTurn: undefined };
+    let nextState: GameState = { ...state, activePlayerId: candidate, activePlayerActionsTaken: 0, transactionsThisTurn: undefined, skipNextTurnForPlayerId: undefined, usedMilitarySupportForActivePlayerTurn: undefined, usedChaosMappingForActivePlayerTurn: undefined };
     // Sol "Spec Ops II" (RESPAWN): "at the start of your next turn, place each unit that is on this card..." — right here, as this player actually becomes active again.
     if (rules) nextState = placeRespawnedSpecOps(nextState, candidate, rules);
     // TE "Extreme Duress": "At the start of another player's turn, if

@@ -20,6 +20,7 @@ import {
 import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { resolveSpaceStationControl } from "../rules/spaceStations";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
+import { maybeDestroyBlockadedFloatingFactories } from "../rules/saar";
 
 /** Called at every point in this file where pendingTacticalAction might have JUST landed on a genuine "a combat round begins now" state (round 1 after Assault Cannon/AFB have both already resolved or never triggered at all, OR round N+1 right after the previous round wrapped up) — opens the RR 1.19 "combat_round_start" priority window (see rules/priorityWindow.ts) for the (exactly 2, per this project's own combat-participant limitation) combatants, active-player-first. A safe no-op if we're not actually at a fresh round start yet (still mid-AFB/Assault-Cannon, or combat already ended and moved to "invasion"), or if a window is somehow already open. */
 /** RR "Salvage": opens a single-participant window for the winner right as space combat concludes — chains into openInvasionStartWindowIfNeeded once closed (GameEngine.ts's own window-close handling), same "after you win" before "at the start of an invasion" ordering RR 1.16 implies. */
@@ -727,7 +728,28 @@ function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameStat
   const systemId = pending.systemId;
   const events: GameEvent[] = [];
 
-  let nextState = state;
+  // Clan of Saar "Floating Factory": confirmed
+  // (yjmrobert.com/tirules/factions/f_saar) — "If the Saar player
+  // announces a retreat during a space combat, but all their ships are
+  // destroyed that round, any Floating Factories in that system are
+  // destroyed without retreating" and "if, at the end of combat, the
+  // Saar player has no ships... Floating Factories in the system will be
+  // blockaded, and thus destroyed, before the fighters are removed due
+  // to lack of capacity." Checked here, BEFORE the retreat loop below —
+  // this round's hits were already assigned before this function runs,
+  // so if the Saar player is down to 0 real ships here (their Floating
+  // Factory, if any, is now blockaded by isBlockaded's own "0 own ships,
+  // 1+ enemy ships" definition), it's destroyed immediately, and the
+  // retreat loop's own "stillHasShips" check right below naturally sees
+  // it gone — matching "destroyed without retreating" instead of moving
+  // along with a retreat. "If neither player has ships... the Floating
+  // Factory is not destroyed" is already correctly handled for free by
+  // isBlockaded's own definition (requires the OTHER player to still
+  // have ships present). NOT specifically handled: the Direct Hit
+  // sustain-damage-sequencing nuance, and Nekro's own Alastor
+  // ground-forces-as-ships edge case — both flagged rather than silently
+  // assumed correct, given how narrow and combat-engine-specific they are.
+  let nextState = maybeDestroyBlockadedFloatingFactories(state);
   for (const r of pending.retreating ?? []) {
     const stillHasShips = (nextState.systems[systemId].spaceUnitsByPlayer[r.playerId] ?? []).length > 0;
     if (!stillHasShips) continue; // wiped out this round before retreating
