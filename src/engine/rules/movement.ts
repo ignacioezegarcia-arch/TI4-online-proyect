@@ -49,7 +49,41 @@ export function canShipReachSystem(
   from: SystemId,
   to: SystemId,
   baseMoveValue: number,
-  techs: { ignoreAsteroidFields?: boolean; ignoreEnemyFleets?: boolean; ignoreAllAnomalyEffects?: boolean; circletOfTheVoidActive?: boolean; canMoveThroughSupernova?: boolean } = {},
+  techs: {
+    ignoreAsteroidFields?: boolean;
+    ignoreEnemyFleets?: boolean;
+    ignoreAllAnomalyEffects?: boolean;
+    circletOfTheVoidActive?: boolean;
+    canMoveThroughSupernova?: boolean;
+    /**
+     * Clan of Saar "Captain Mendosa" (agent): confirmed
+     * (yjmrobert.com/tirules/factions/f_saar, twilight-imperium.fandom.com/wiki/The_Clan_of_Saar):
+     * "The nebula effect of setting the move value of all ships in that
+     * system to one will be OVERWRITTEN by Captain Mendosa's effect" —
+     * the one exception to Nebula's own clamp below, set by the caller
+     * (phases/tacticalAction.ts's own moveShips) whenever this specific
+     * move already had pendingTacticalAction.mendosaMoveOverride applied
+     * to its effectiveMove. Does NOT lift the +1 gravity-rift bonus
+     * (mendosaMoveOverride's own doc comment on GameState.ts already
+     * confirms that modifier is separately excluded from Mendosa's own
+     * computed value, so nothing extra is needed for that half here).
+     */
+    mendosaOverrideActive?: boolean;
+    /**
+     * Used ONLY to answer "is there a route that reaches `to` without
+     * ever touching a gravity rift beyond `from` itself" — i.e. is going
+     * through a mid-path rift actually OPTIONAL for this move, or the
+     * ONLY way to make the trip. Confirmed
+     * (yjmrobert.com/tirules/rules/r_gravity_rift): the origin's own
+     * rift (if any) is unavoidable by definition (the ship starts
+     * there), so this only forbids entering/passing through any OTHER
+     * system that has one — see phases/tacticalAction.ts's own
+     * moveShips, which runs this function twice (once normally, once
+     * with this flag set) to tell "mandatory" mid-path rift use apart
+     * from "the player's own optional choice".
+     */
+    forbidGravityRiftsBeyondOrigin?: boolean;
+  } = {},
   rules?: RuleData,
   /**
    * Muaat "Stellar Genesis" breakthrough ability: "after you move 1 of
@@ -76,7 +110,8 @@ export function canShipReachSystem(
   // while this law is active — the clamp below is simply skipped.
   // "Nav Suite": same clamp-skip, this player's own action-card choice
   // instead of an active law — see this function's own `techs` param doc.
-  const nebulaClampLifted = isLawActiveWithOutcome(state, "shared_research" as AgendaId, "for") || techs.ignoreAllAnomalyEffects || techs.circletOfTheVoidActive;
+  const nebulaClampLifted =
+    isLawActiveWithOutcome(state, "shared_research" as AgendaId, "for") || techs.ignoreAllAnomalyEffects || techs.circletOfTheVoidActive || techs.mendosaOverrideActive;
   const maxBudget = hasNebula(originAnomalies) && !nebulaClampLifted ? 1 : baseMoveValue;
   if (maxBudget <= 0) return false;
 
@@ -121,6 +156,9 @@ export function canShipReachSystem(
           // Doesn't satisfy mustPassThroughSystemId via THIS path — keep exploring other paths/hop-counts instead of returning early, same as any other non-final state.
           continue;
         }
+
+        // See this function's own techs.forbidGravityRiftsBeyondOrigin doc comment above — used only to answer "is a rift-free route possible at all", never during a real move. Confirmed (yjmrobert.com/tirules/rules/r_gravity_rift, note 1): "moving into a gravity rift... as the active system... will not provide the +1, nor will the ships have to roll for removal" — so this must NEVER apply to the destination itself (already handled by the isDestination branch returning above), only to genuine mid-path stops.
+        if (techs.forbidGravityRiftsBeyondOrigin && hasGravityRift(neighborAnomalies)) continue;
 
         if (!canShipPassThroughTile(neighborAnomalies, ignoreAsteroidFields, techs.circletOfTheVoidActive, techs.canMoveThroughSupernova || techs.ignoreAllAnomalyEffects)) continue;
         const blockedByEnemyFleet =
