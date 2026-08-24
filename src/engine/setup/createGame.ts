@@ -265,6 +265,48 @@ export function createGame(input: CreateGameInput): GameState {
     input.mode,
   );
 
+  // RR Advanced Rules (Board Setup) / ti4rules.github.io/board: "During a
+  // five-player game that does not use hyperlanes, three players will be
+  // at a slight disadvantage based on their home systems' starting
+  // positions on the game board. After creating the game board, those
+  // players receive trade goods based on their positions." Confirmed
+  // (ultraboardgames.com/twilight-imperium/advanced-rules.php): "the
+  // player who is closest to two other players receives four additional
+  // trade goods... the two players on either side of that player each
+  // receive two additional trade goods... the remaining two players, who
+  // are not within two tiles of any other player, do not receive
+  // additional trade goods."
+  //
+  // ONLY the "normal" (non-hyperlane) 5p layout — data/boardLayouts.json's
+  // own "normal" 5p entry, sourced "Game Rules" — needs this at all; the
+  // PoK "warp" (hyperlane) 5p layout reshapes the galaxy specifically to
+  // equalize systems-per-player and remove this asymmetry, so it correctly
+  // gets nothing here. The community-made "diamond"/"flat"/"notch"/
+  // "approaching" 5p variants aren't the official rulebook layout this
+  // rule was calibrated for either, so they're excluded too rather than
+  // guessed at.
+  //
+  // Verified directly against this project's own real hex coordinate math
+  // (setup/mapGeneration.ts's own BOARD_POSITIONS/hexDistance, not
+  // reimplemented by hand) rather than trusting a read of the printed
+  // diagram: for the "normal" 5p layout's home_worlds [21, 25, 28, 31, 35]
+  // (index i here === seatOrder[i], same correspondence homeSystemsBySeat
+  // above already relies on), the MIDDLE entry (slot 28, seatOrder[2]) is
+  // the closest (hex distance 3) to BOTH of its immediate neighbors in
+  // that array (slots 25 and 31, seatOrder[1]/seatOrder[3]) — every other
+  // pairwise distance among the 5 home slots is 4 or 6. This exactly
+  // matches the rule's own "closest to two others, flanked by the two
+  // players on either side" shape, with seatOrder[0]/seatOrder[4] (the
+  // array's own two ends) as the confirmed "not within two tiles of any
+  // other player" pair that gets nothing.
+  const effectiveMapVariant = input.mapVariant ?? "normal";
+  const fivePlayerTradeGoodsBonus = new Map<PlayerId, number>();
+  if (input.players.length === 5 && effectiveMapVariant === "normal") {
+    fivePlayerTradeGoodsBonus.set(seatOrder[2], 4);
+    fivePlayerTradeGoodsBonus.set(seatOrder[1], 2);
+    fivePlayerTradeGoodsBonus.set(seatOrder[3], 2);
+  }
+
   const players: Record<PlayerId, Player> = {};
   for (const p of input.players) {
     const factionId = factionByPlayer[p.id];
@@ -297,7 +339,7 @@ export function createGame(input: CreateGameInput): GameState {
       resourcesAvailable: 0, // derived cache — recompute from planets before first use, per its own doc comment on Player
       influenceAvailable: 0,
       commodities: 0, // RR: commodities only fill up via the Trade strategy card's "replenish", never start pre-filled
-      tradeGoods: 0,
+      tradeGoods: fivePlayerTradeGoodsBonus.get(p.id) ?? 0,
       technologies: resolveStartingTechnologies(rules, factionId, p.chosenStartingTechnologies),
       exhaustedTechnologies: [],
       unitUpgrades: [],
