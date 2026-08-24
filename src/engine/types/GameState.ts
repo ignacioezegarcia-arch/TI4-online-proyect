@@ -513,6 +513,24 @@ export interface GameState {
   pendingResearchGrantReallocationChoice?: PlayerId;
   /** RR "Ixthian Artifact" ("for"): true while waiting on the speaker's own die roll (trusted-RNG, same convention as combat dice elsewhere — see USE_IXTHIAN_ARTIFACT_DIE_ROLL). */
   pendingIxthianArtifactDieRoll?: boolean;
+  /**
+   * RR "Heart of Ixth" (relic): "After you roll a die for any reason, you
+   * may exhaust this card to add or subtract 1 from the result." The
+   * ACTUAL roll (once it happens) lives HERE — not trusted as a fresh
+   * `originalRoll` parameter on USE_HEART_OF_IXTH itself, which had no
+   * real state to check it against at all (a client could claim any
+   * "originalRoll" it wanted, bypassing whatever was actually rolled).
+   * Set by USE_IXTHIAN_ARTIFACT_DIE_ROLL right when its own roll happens
+   * (before resolving that roll's consequences), consumed/updated by
+   * rules/relics.ts's own useHeartOfIxth, and finally consumed for real
+   * by RESOLVE_IXTHIAN_ARTIFACT_ROLL once the player is done adjusting
+   * (or chooses not to). Currently the ONLY die roll in the whole
+   * project wired to actually support Heart of Ixth's own adjustment —
+   * the card's own "for ANY reason" text would need this same
+   * roll-then-pending-adjustment shape built out for every other
+   * dice-rolling action too, which hasn't been done.
+   */
+  pendingHeartOfIxthAdjustableRoll?: { source: "ixthian_artifact"; roll: number };
   /** RR "Ixthian Artifact" (die roll 6-10): each non-eliminated player may research up to this many technologies (starts at 2 each) — free research, no resource cost, same convention as this card's own "may research" text (no cost specified). */
   pendingIxthianArtifactResearch?: Partial<Record<PlayerId, number>>;
   /** RR "Wormhole Research" ("for"): players with 1+ ships in a wormhole system who still have their own optional (free) research decision pending. */

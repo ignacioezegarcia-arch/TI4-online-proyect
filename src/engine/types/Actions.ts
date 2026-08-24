@@ -519,7 +519,7 @@ export type GameAction =
   | { type: "USE_STELLAR_CONVERTER"; playerId: PlayerId; bombardmentSystemId: SystemId; targetSystemId: SystemId; targetPlanetId: PlanetId } // RR relic — see rules/relics.ts's own useStellarConverter
   | { type: "USE_NANO_FORGE"; playerId: PlayerId; relicId: "nano_forge_attach" | "nano_forge_no_repeat"; planetId: PlanetId } // RR relic — see rules/relics.ts's own useNanoForge
   | { type: "USE_DYNAMIS_CORE"; playerId: PlayerId; relicId: "dynamo_core_exhaust" | "dynamo_core_gain" } // RR relic — see rules/relics.ts's own useDynamisCore
-  | { type: "USE_HEART_OF_IXTH"; playerId: PlayerId; originalRoll: number; adjustment: 1 | -1 } // RR relic — see rules/relics.ts's own useHeartOfIxth
+  | { type: "USE_HEART_OF_IXTH"; playerId: PlayerId; adjustment: 1 | -1 } // RR relic — see rules/relics.ts's own useHeartOfIxth. Reads the actual roll from GameState.pendingHeartOfIxthAdjustableRoll, not a caller-supplied value.
   | { type: "USE_SILVER_FLAME"; playerId: PlayerId; dieRoll: number; fractureDieRoll?: number } // RR relic — see rules/relics.ts's own useSilverFlame
   | { type: "USE_JR_XS455_O"; playerId: PlayerId; targetPlayerId: PlayerId; placeStructure?: { planetId: PlanetId; structureType: "space_dock" | "pds"; exhaustPlanetIdsForResources: PlanetId[] } } // RR relic/agent — see rules/relics.ts's own useJrXs455O
   | { type: "USE_NEURALOOP"; playerId: PlayerId; relicIdToPurge: string; discardedObjectiveId: ObjectiveId; replacementObjectiveId: ObjectiveId; replacementDeck: "publicStageI" | "publicStageII" | "secret" } // RR relic — see rules/relics.ts's own useNeuraloop
@@ -924,7 +924,8 @@ export type GameAction =
   | { type: "PLACE_COLONIAL_REDISTRIBUTION_INFANTRY"; playerId: PlayerId }
   | { type: "SKIP_COLONIAL_REDISTRIBUTION_INFANTRY"; playerId: PlayerId }
   | { type: "USE_RESEARCH_GRANT_REALLOCATION"; playerId: PlayerId; techId: TechId } // RR "Research Grant Reallocation": the elected player's own choice of which technology to gain
-  | { type: "USE_IXTHIAN_ARTIFACT_DIE_ROLL"; playerId: PlayerId; roll: number } // RR "Ixthian Artifact": the speaker's own pre-rolled die (1-10)
+  | { type: "USE_IXTHIAN_ARTIFACT_DIE_ROLL"; playerId: PlayerId; roll: number } // RR "Ixthian Artifact": the speaker's own pre-rolled die (1-10) — stores it in GameState.pendingHeartOfIxthAdjustableRoll rather than resolving its consequences immediately, giving Heart of Ixth a real window first
+  | { type: "RESOLVE_IXTHIAN_ARTIFACT_ROLL"; playerId: PlayerId } // RR "Ixthian Artifact": actually resolves the roll's own consequences (research grant vs. Mecatol wipe), reading the final value from GameState.pendingHeartOfIxthAdjustableRoll — see phases/directiveEffects.ts's own resolveIxthianArtifactRoll
   | { type: "USE_IXTHIAN_ARTIFACT_RESEARCH"; playerId: PlayerId; techId: TechId }
   | { type: "SKIP_IXTHIAN_ARTIFACT_RESEARCH"; playerId: PlayerId }
   | { type: "USE_WORMHOLE_RESEARCH"; playerId: PlayerId; techId: TechId }
