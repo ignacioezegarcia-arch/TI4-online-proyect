@@ -26,17 +26,15 @@ import { getTriadResourcesAndInfluence } from "../rules/relics";
  * Leadership's (explicitly exempted by the card's own text) and anywhere
  * else noted.
  *
- * NOT implemented / simplified, flagged rather than silently wrong:
- *  - No validation that the acting player actually holds this strategy
- *    card this round, or that it hasn't already been used — strategyPhase.ts
- *    tracks card assignment but "used this round" tracking isn't wired to
- *    these handlers yet.
- *  - Command token "reinforcement supply" limits aren't tracked anywhere
- *    (Leadership/Diplomacy/Warfare all nominally draw from a finite
- *    physical supply) — tokens are just added/removed from the pools
- *    directly.
- *  - Technology research doesn't validate prerequisites (see
- *    phases/technology.ts's own note).
+ * CORRECTED (this comment was stale): all 3 items it used to list here —
+ * ownership/once-per-round validation for both primary
+ * (resolveStrategyPrimary's own RR 83.3/82.2 checks) and secondary
+ * (resolveStrategySecondary's own RR 83.4/82.1 checks); the 16-token
+ * personal command-token supply cap (COMMAND_TOKEN_TOTAL_SUPPLY, checked
+ * both here and in rules/commandTokens.ts); and technology prerequisite
+ * validation (phases/technology.ts's own checkTechPrerequisites, called
+ * by researchTechnology, which every Technology-card path below already
+ * goes through) — are all actually implemented now.
  */
 
 function chargeSecondaryToken(player: Player): { ok: true; player: Player } | { ok: false; error: string } {

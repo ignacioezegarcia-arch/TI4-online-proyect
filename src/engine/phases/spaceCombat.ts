@@ -92,14 +92,18 @@ export function openCombatRoundStartWindowIfNeeded(state: GameState): GameState 
  *  - A card/ability granting an AFB roll to a unit that doesn't actually
  *    have the ability — same category of gap as PLAY_ACTION_CARD not
  *    existing yet.
- *  - Capacity overflow: if this destroys every ship that was carrying
- *    fighters/ground forces, those cargo units should be destroyed too
- *    (RR "Capacity") unless another surviving ship here has spare capacity.
- *    Ground-forces-in-transit isn't represented in GameState yet at all
- *    (see moveShips' TODO on transportedGroundForces/transportedFighters) —
- *    this needs solving together with the Invasion step, not bolted on here.
  *  - 3+ players' ships in one combat (buildSpaceCombatEntries already
  *    throws rather than guess which 2 fight first).
+ *
+ * CORRECTED (this comment was stale): "capacity overflow" — if combat
+ * destroys a ship that was carrying fighters/ground forces, leaving the
+ * survivor's own combined capacity short — IS handled, via this file's
+ * own computeCapacityOverflow/pendingCapacityOverflow (see
+ * wrapUpCombatRound below). Scoped to once combat fully CONCLUDES
+ * (survivors.length <= 1), not re-checked after every individual round —
+ * nothing else a player could do mid-combat is actually affected by a
+ * temporary over-capacity state between rounds, so this is a deliberate,
+ * reasonable simplification rather than a gap.
  */
 
 /**

@@ -23,9 +23,6 @@ import { hasUnlimitedActionCardHand } from "../rules/yssaril";
  *  - Outcome legality isn't checked against the agenda's real candidates
  *    (e.g. an "elect Cultural Planet" agenda doesn't verify the chosen
  *    planet actually has the Cultural trait) — trusts the caller/UI.
- *  - Votes only come from exhausting planets for influence — trade goods
- *    as an influence substitute (RR 82) isn't wired in here (Production's
- *    resource-spend already has an equivalent gap, noted there too).
  *  - Ties: RR 8.5 has the speaker break them. Not modeled as a real choice
  *    yet — falls back to whichever tied outcome was voted for first.
  *  - A resolved law's `ownerId` is always "common" — doesn't determine
@@ -200,6 +197,13 @@ export function castVotes(
   }
 
   let votes = 0;
+  // Confirmed (yjmrobert.com/tirules/rules/r_trade_goods, r_agenda_phase;
+  // twilight-imperium.fandom.com/wiki/Trade_Goods_%26_Commodities): "trade
+  // goods cannot be spent to cast votes" — the ONE explicit exception to
+  // trade goods otherwise substituting for resources/influence anywhere.
+  // This function correctly never accepts them for that reason, not
+  // because of a gap — a stale comment on this file used to claim
+  // otherwise; corrected.
   for (const planetId of action.exhaustPlanetIds) {
     // RR "The Triad" (relic): same "spent as if it were a planet card" sentinel-id special-case as phases/technology.ts's own spendForCost — see that function's own doc comment for the full reasoning.
     if (planetId === ("the_triad" as never)) {

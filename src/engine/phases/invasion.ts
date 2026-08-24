@@ -61,7 +61,16 @@ import { applyRelicOnGainEffects } from "../rules/relics";
  *    PLAY_ACTION_CARD not existing yet.
  *  - Action cards / other technologies / faction abilities that modify any
  *    of this — same scope cut as combat.ts's own note on this.
- *  - Transport capacity enforcement (see moveShips' own TODO).
+ *
+ * CORRECTED (this comment was stale): the "Transport capacity enforcement"
+ * bullet used to point at a "moveShips' own TODO" that no longer exists as
+ * such — phases/spaceCombat.ts's own computeCapacityOverflow/
+ * pendingCapacityOverflow now handles the analogous "a capacity-carrying
+ * ship was destroyed, leaving cargo over the survivors' own combined
+ * capacity" scenario for space combat. NOT independently re-verified here
+ * for bombardment specifically (ground forces destroyed by Bombardment
+ * are already ON a planet, not being carried by a ship, so this may not
+ * even apply the same way) — flagged rather than assumed covered.
  */
 
 export function bombard(

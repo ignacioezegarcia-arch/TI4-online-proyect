@@ -526,10 +526,36 @@ export function useIxthianArtifactDieRoll(
   const speakerId = state.seatOrder.find((id) => state.players[id]?.isSpeaker);
   if (speakerId !== action.playerId) return { ok: false, error: "Only the speaker rolls for Ixthian Artifact." };
   if (action.roll < 1 || action.roll > 10) return { ok: false, error: "Die roll must be between 1 and 10." };
+  void rules;
 
-  let nextState: GameState = { ...state, pendingIxthianArtifactDieRoll: undefined };
+  // RR "Heart of Ixth": "After you roll a die for any reason, you may
+  // exhaust this card to add or subtract 1 from the result" — this
+  // roll's own consequences (research grant vs. Mecatol wipe) do NOT
+  // resolve yet; they wait for RESOLVE_IXTHIAN_ARTIFACT_ROLL, giving
+  // whoever owns Heart of Ixth a real window to adjust the STORED value
+  // first (rules/relics.ts's own useHeartOfIxth) rather than trusting a
+  // caller-claimed "originalRoll" with nothing to check it against.
+  const nextState: GameState = {
+    ...state,
+    pendingIxthianArtifactDieRoll: undefined,
+    pendingHeartOfIxthAdjustableRoll: { source: "ixthian_artifact", roll: action.roll },
+  };
+  return { ok: true, state: nextState, events: [] };
+}
 
-  if (action.roll >= 6) {
+/** RR "Ixthian Artifact": the actual roll-consequence resolution, split out from useIxthianArtifactDieRoll above so Heart of Ixth gets a real window to adjust the stored roll first — see pendingHeartOfIxthAdjustableRoll's own doc comment on GameState.ts. Reads the FINAL (possibly Heart-of-Ixth-adjusted) value from state, never a caller-supplied parameter. */
+export function resolveIxthianArtifactRoll(state: GameState, action: { type: "RESOLVE_IXTHIAN_ARTIFACT_ROLL"; playerId: PlayerId }, rules: RuleData): ActionResult {
+  const pending = state.pendingHeartOfIxthAdjustableRoll;
+  if (!pending || pending.source !== "ixthian_artifact") {
+    return { ok: false, error: "No Ixthian Artifact roll is currently pending resolution." };
+  }
+  const speakerId = state.seatOrder.find((id) => state.players[id]?.isSpeaker);
+  if (speakerId !== action.playerId) return { ok: false, error: "Only the speaker resolves Ixthian Artifact's own roll." };
+
+  let nextState: GameState = { ...state, pendingHeartOfIxthAdjustableRoll: undefined };
+  const roll = pending.roll;
+
+  if (roll >= 6) {
     const research: Partial<Record<PlayerId, number>> = {};
     for (const p of Object.values(nextState.players)) {
       if (!p.eliminated) research[p.id] = 2;
