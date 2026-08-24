@@ -12,7 +12,7 @@
 // up to read them, since the data being fixed doesn't help until the
 // loader stops assuming it's still broken.
 import { RuleData, FactionUnitStats, UnitUpgradeStats } from "./engine/types/RuleData.ts";
-import { FactionId, UnitUpgradeId, asFactionId } from "./engine/types/ids.ts";
+import { FactionId, UnitUpgradeId, TechId, asFactionId } from "./engine/types/ids.ts";
 import { UnitType } from "./engine/types/enums.ts";
 import {
   unitEntryToStats,
@@ -35,6 +35,8 @@ import {
   buildRelicIds,
   buildHomeSystemsLookup,
   buildFactionLeadersLookup,
+  buildFractureNeutralGuardiansLookup,
+  buildFactionTechIdsByFaction,
 } from "./engine/rules/ruleDataMapping.ts";
 
 interface RawFactionFile {
@@ -143,6 +145,12 @@ export async function loadRuleData(factionIds: string[], hasThundersEdgeMode = f
     factionUnits,
     unitUpgrades,
     planets: buildPlanetsLookup(tilesFile as RawTilesFile, hasThundersEdgeMode),
+    // CORRECTED: previously missing entirely from this Edge Function's own
+    // copy (drifted out of sync with src/lib/loadRuleDataBrowser.ts, which
+    // already built both of these) — confirmed via an actual `deno check`
+    // run, not just inspection: RuleData requires both, so this function
+    // literally didn't type-check without them.
+    fractureNeutralGuardians: buildFractureNeutralGuardiansLookup(tilesFile as RawTilesFile),
     agendas: buildAgendasLookup(agendasFile as { agendas: { id: string; type: "law" | "directive" }[] }),
     objectives: buildObjectivesLookup(objectivesFile as Parameters<typeof buildObjectivesLookup>[0]),
     technologies: {
@@ -161,6 +169,7 @@ export async function loadRuleData(factionIds: string[], hasThundersEdgeMode = f
     // of that faction's technologies too, alongside its own
     // factionTechnologies entries (e.g. Bioplasmosis).
     factionTechIds: new Set([...buildFactionTechIds(usedFactionFiles), ...Object.keys(factionUnitUpgrades.unitUpgrades)]),
+    factionTechIdsByFaction: buildFactionTechIdsByFaction(usedFactionFiles) as Record<FactionId, TechId[]>,
     explorationCards: buildExplorationCardsLookup(explorationCardsFile as Parameters<typeof buildExplorationCardsLookup>[0]),
     genericPromissoryNoteTemplates: buildGenericPromissoryNotesLookup(
       promissoryNotesFile as Parameters<typeof buildGenericPromissoryNotesLookup>[0],
