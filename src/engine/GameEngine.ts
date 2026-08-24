@@ -181,6 +181,7 @@ import {
   skipColonialRedistributionInfantry,
   useResearchGrantReallocation,
   useIxthianArtifactDieRoll,
+  resolveIxthianArtifactRoll,
   useIxthianArtifactResearch,
   skipIxthianArtifactResearch,
   useWormholeResearch,
@@ -519,6 +520,9 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_IXTHIAN_ARTIFACT_DIE_ROLL":
         result = useIxthianArtifactDieRoll(state, action, rules);
+        break;
+      case "RESOLVE_IXTHIAN_ARTIFACT_ROLL":
+        result = resolveIxthianArtifactRoll(state, action, rules);
         break;
       case "USE_IXTHIAN_ARTIFACT_RESEARCH":
         result = useIxthianArtifactResearch(state, action, rules);
@@ -1627,6 +1631,12 @@ export const GameEngine = {
     }
     if (state.pendingIxthianArtifactDieRoll && state.seatOrder.find((id) => state.players[id]?.isSpeaker) === playerId) {
       legal.push("USE_IXTHIAN_ARTIFACT_DIE_ROLL");
+    }
+    if (state.pendingHeartOfIxthAdjustableRoll?.source === "ixthian_artifact") {
+      if (state.seatOrder.find((id) => state.players[id]?.isSpeaker) === playerId) legal.push("RESOLVE_IXTHIAN_ARTIFACT_ROLL");
+      if (state.players[playerId]?.relics.includes("heart_of_ixth" as never) && !(state.players[playerId]?.exhaustedRelics ?? []).includes("heart_of_ixth" as never)) {
+        legal.push("USE_HEART_OF_IXTH");
+      }
     }
     if ((state.pendingIxthianArtifactResearch?.[playerId] ?? 0) > 0) {
       legal.push("USE_IXTHIAN_ARTIFACT_RESEARCH", "SKIP_IXTHIAN_ARTIFACT_RESEARCH");
