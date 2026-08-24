@@ -1,0 +1,275 @@
+{
+  "id": "the_firmament",
+  "name": "The Firmament / The Obsidian",
+  "set": "thundersEdge",
+  "_setNote": "Introduced in Thunder's Edge — available whenever rules/gameMode.ts's own hasThundersEdge(gameMode) is true.",
+  "_twoSidedFactionNote": "This is 1 faction, not 2 — it begins the game entirely on 'The Firmament' side (see the firmament object below) and, at some point mid-game, flips its home system, double-sided faction components, leaders, promissory note, planet card, and all in-play plot cards over to 'The Obsidian' side (see the obsidian object below) — triggered by firmament.factionAbilities' own PUPPETS OF THE BLADE. The Obsidian is never chosen directly at draft/setup — confirmed by obsidian.factionAbilities' own NOCTURNE: 'This faction cannot be chosen during setup.' A player who drafts 'The Firmament' is committing to eventually possibly playing as 'The Obsidian' later in the same game, not choosing between the two.",
+  "sharedComponents": {
+    "plotCards": {
+      "note": "Identical set of 5 Plot Cards exists on BOTH sides of this faction (same names, same text, listed identically for Firmament and Obsidian in the source material) — modeled once here rather than duplicated under both firmament/obsidian, since they clearly persist through the Firmament->Obsidian transformation (PLOTS WITHIN PLOTS/MARIONETTES both reference them as ongoing state). Each plot card, once placed with a target player's control token on it, makes that player \"the puppeted player\" for that specific plot's own effect.",
+      "cards": [
+        {
+          "name": "Enervate",
+          "effect": "You can perform the secondary abilities of the puppeted player's strategy cards without spending command tokens. For Leadership, you can perform the primary ability instead."
+        },
+        {
+          "name": "Siphon",
+          "effect": "When the puppeted player gains commodities, you gain an equal number of trade goods."
+        },
+        {
+          "name": "Seethe",
+          "effect": "When this card is revealed, destroy all units on a non-home planet controlled by the puppeted player. At the start of the status phase, destroy one of the puppeted player's infantry in any system."
+        },
+        {
+          "name": "Assail",
+          "effect": "Apply +1 to the results of each of your combat and unit ability rolls against the puppeted player."
+        },
+        {
+          "name": "Extract",
+          "effect": "When this card is revealed, gain one non-faction technology owned by the puppeted player. When the puppeted player gains a non-faction technology, you may spend 4 resources to gain that technology."
+        }
+      ]
+    }
+  },
+  "theFracture": {
+    "note": "\"The Fracture\" is a Thunder's Edge map-zone mechanic shared across multiple factions (see e.g. Crimson Rebellion's own Resonance Generator breakthrough note about a \"Fracture roll\"), referenced here by the Firmament's own Plane Splitter tech (\"put The Fracture into play\") and the Obsidian's own Aroz Hollow commander (\"have units in The Fracture\"). Not modeled in depth in this faction's own file — worth building once, generically, rather than duplicating per faction that touches it."
+  },
+  "faq": [
+    "A player cannot place their OWN control token on one of their own plot cards.",
+    "Multiple different players' control tokens CAN be on the same single plot card at once (making all of them \"the puppeted player\" for that plot simultaneously).",
+    "Scoring another player's secret objective via PLOTS WITHIN PLOTS DOES count toward the 3 scored objectives needed to unlock this faction's own Hero (on either side) — you just don't gain a victory point for doing so."
+  ],
+  "firmament": {
+    "commodities": 3,
+    "homePlanets": ["Cronos", "Tallin"],
+    "startingUnits": {
+      "carrier": 1,
+      "cruiser": 1,
+      "destroyer": 1,
+      "fighter": 3,
+      "infantry": 3,
+      "spaceDock": 1
+    },
+    "startingTechnologies": [],
+    "startingTechnologyChoice": {
+      "count": 1,
+      "source": "fixedColorNoPrerequisite",
+      "colors": ["green", "yellow"],
+      "note": "Choose 1 green OR yellow technology with no prerequisites."
+    },
+    "factionAbilities": [
+      {
+        "id": "plots_within_plots",
+        "name": "PLOTS WITHIN PLOTS",
+        "effect": "You can score secret objectives already scored by other players, if you fulfill their requirements; this does not count against your secret objective limit or the number you can score in a round. When you score another player's secret objective do not score a victory point. Instead, place a facedown plot card into your play area with that player's control token on it."
+      },
+      {
+        "id": "puppets_of_the_blade",
+        "name": "PUPPETS OF THE BLADE",
+        "effect": "If you have at least one plot card in your play area, gain the following ability: ACTION: Purge the Firmament's faction sheet, leaders, planet card, and promissory note, then gain all of the faction components for The Obsidian.",
+        "note": "This is the trigger for the Firmament -> Obsidian transformation — see the obsidian object's own THE BLADE'S ORCHESTRA for what actually happens when it resolves."
+      }
+    ],
+    "promissoryNote": {
+      "name": "Black Ops",
+      "versions": [
+        {
+          "version": "original",
+          "source": "thundersEdge",
+          "timing": "When you receive this card:",
+          "effect": "If you are not The Firmament, the Firmament player may place 1 facedown plot card in their play area with your control token on it. Then, gain 2 command tokens, gain 2 trade goods, and purge this card.",
+          "placeInPlayArea": false
+        }
+      ]
+    },
+    "factionTechnologies": [
+      {
+        "id": "plane_splitter",
+        "name": "Plane Splitter",
+        "color": "yellow",
+        "prerequisites": ["yellow", "yellow"],
+        "effect": "When you gain this card, put The Fracture into play. Flip this card if the Obsidian faction is in play.",
+        "note": "\"Flip this card\" refers to becoming the Obsidian-side version of this same tech (see obsidian.factionTechnologies' own plane_splitter entry) — same physical card, other side."
+      },
+      {
+        "id": "neural_parasite",
+        "name": "Neural Parasite",
+        "color": "green",
+        "prerequisites": ["green", "green"],
+        "effect": "At the start of the status phase, you may place 1 infantry from your reinforcements on a planet you control in your home system. Flip this card if the Obsidian faction is in play."
+      }
+    ],
+    "breakthrough": {
+      "name": "The Sowing",
+      "synergy": { "colors": ["yellow", "green"] },
+      "effect": "When you gain this card and at the start of the status phase, you may place up to three of your trade goods on this card. Flip this card if you become The Obsidian faction.",
+      "note": "Flips into the Obsidian's own \"The Reaping\" breakthrough (same physical card, other side) — see obsidian.breakthrough."
+    },
+    "units": {
+      "flagship": {
+        "name": "Heaven's Eye",
+        "cost": 8,
+        "combat": 5,
+        "combatDiceCount": 2,
+        "move": 1,
+        "capacity": 3,
+        "abilities": [
+          {
+            "name": "Sustain Damage",
+            "effect": "SUSTAIN DAMAGE"
+          },
+          {
+            "name": "Puppet Pursuit",
+            "effect": "If the active system contains units that belong to a player who has a control token on one of your plots, apply +1 to this ship's move value and repair it at the end of every combat round."
+          }
+        ]
+      },
+      "mech": {
+        "name": "Viper EX-23",
+        "cost": 2,
+        "combat": 6,
+        "abilities": [
+          {
+            "name": "Sustain Damage",
+            "effect": "SUSTAIN DAMAGE"
+          },
+          {
+            "name": "Coexistence Trigger",
+            "effect": "When ground forces are committed to this planet, you may choose for your units to coexist, if they were not already. Flip this card if your faction becomes the Obsidian."
+          }
+        ]
+      }
+    },
+    "leaders": {
+      "agent": {
+        "name": "Myru Vos",
+        "unlock": "At Game Start",
+        "ability": "When a player moves ships: You may exhaust this card; if you do, SPACE CANNON cannot be used against those ships. If they are not transporting units, they can also move through other players' ships."
+      },
+      "commander": {
+        "name": "Captain Aroz",
+        "unlock": "Have one plot card in play.",
+        "ability": "You may treat planets in systems that contain your ships as if you controlled them for the purpose of scoring secret objectives."
+      },
+      "hero": {
+        "name": "Sharsiss",
+        "unlock": "Have 3 Scored Objectives.",
+        "abilityName": "THE BLADE BECKONS",
+        "effect": "ACTION: Place 1 of your plot cards in play with any other player's control token on it. Then, you may place any player's control token on 1 of your in-play plot cards; one plot cannot have two of the same player's tokens. Then, purge this card."
+      }
+    }
+  },
+  "obsidian": {
+    "commodities": 3,
+    "homePlanets": ["Cronos Hollow", "Tallin Hollow"],
+    "startingUnits": null,
+    "startingTechnologies": null,
+    "startingTechnologyChoice": null,
+    "_note": "startingUnits/startingTechnologies/startingTechnologyChoice are null (N/A) here since The Obsidian is never drafted or set up directly — it's entered mid-game via the Firmament's own PUPPETS OF THE BLADE transformation, inheriting whatever units/planets/state the Firmament player already had (adjusted per THE BLADE'S ORCHESTRA below).",
+    "factionAbilities": [
+      {
+        "id": "nocturne",
+        "name": "NOCTURNE",
+        "effect": "This faction cannot be chosen during setup."
+      },
+      {
+        "id": "the_blades_orchestra",
+        "name": "THE BLADE'S ORCHESTRA",
+        "effect": "When this faction comes into play, flip your home system, double-sided faction components, and all of your in-play plot cards. Then, ready Cronos Hollow and Tallin Hollow if you control them."
+      },
+      {
+        "id": "marionettes",
+        "name": "MARIONETTES",
+        "effect": "The player or players whose control tokens are on each plot card are the puppeted players for that plot."
+      }
+    ],
+    "promissoryNote": {
+      "name": "Malevolency",
+      "versions": [
+        {
+          "version": "original",
+          "source": "thundersEdge",
+          "timing": "At the end of one of your tactical actions:",
+          "effect": "Spend 1 influence to give this card to 1 of your neighbors; you can use this ability even if you are The Obsidian player. At the end of the status phase, if you are not the Obsidian player, remove 1 command token from your fleet pool and return it to your reinforcements.",
+          "placeInPlayArea": false
+        }
+      ]
+    },
+    "factionTechnologies": [
+      {
+        "id": "plane_splitter",
+        "name": "Plane Splitter",
+        "color": "yellow",
+        "effect": "At the start of your strategic actions, you may move an ingress token into a system that contains or is adjacent to your units. This technology cannot be researched.",
+        "note": "The flipped (Obsidian) side of the SAME physical Plane Splitter card as firmament.factionTechnologies' own entry — not independently researchable; only ever reached by flipping the Firmament's own copy."
+      },
+      {
+        "id": "neural_parasite",
+        "name": "Neural Parasite",
+        "color": "green",
+        "effect": "At the start of your turn, destroy 1 of another player's infantry in or adjacent to a system that contains your infantry. This technology cannot be researched.",
+        "note": "The flipped (Obsidian) side of the SAME physical Neural Parasite card as firmament.factionTechnologies' own entry — not independently researchable."
+      }
+    ],
+    "breakthrough": {
+      "name": "The Reaping",
+      "synergy": { "colors": ["yellow", "green"] },
+      "effect": "Place one trade good from the supply on this card each time you win a combat against a puppeted player. At the start of the status phase, gain all trade goods on this card, then gain an equal number of trade goods from the supply.",
+      "note": "The flipped (Obsidian) side of the SAME physical breakthrough card as firmament.breakthrough's own \"The Sowing\"."
+    },
+    "units": {
+      "flagship": {
+        "name": "Heaven's Hollow",
+        "cost": 8,
+        "combat": 5,
+        "combatDiceCount": 3,
+        "move": 1,
+        "capacity": 3,
+        "abilities": [
+          {
+            "name": "Sustain Damage",
+            "effect": "SUSTAIN DAMAGE"
+          }
+        ],
+        "note": "The flipped side of the same physical flagship as firmament.units.flagship's own \"Heaven's Eye\" — combat dice count increases from x2 to x3; loses the Puppet Pursuit ability."
+      },
+      "mech": {
+        "name": "Viper Hollow",
+        "cost": 2,
+        "combat": 6,
+        "abilities": [
+          {
+            "name": "Sustain Damage",
+            "effect": "SUSTAIN DAMAGE"
+          },
+          {
+            "name": "Coexistence Collapse",
+            "effect": "If this unit was coexisting when this card flipped to this side, gain control of its planet; the other player's units are now coexisting."
+          }
+        ],
+        "note": "The flipped side of the same physical mech as firmament.units.mech's own \"Viper EX-23\"."
+      }
+    },
+    "leaders": {
+      "agent": {
+        "name": "Vos Hollow",
+        "unlock": "At Game Start",
+        "ability": "When a player's ship is destroyed during any combat: You may exhaust this card; if you do, that player's opponent must destroy one of their ships of the same type in the active system.",
+        "note": "Same person as firmament.leaders.agent's own \"Myru Vos\" — different name/ability on this side of the card."
+      },
+      "commander": {
+        "name": "Aroz Hollow",
+        "unlock": "Have units in The Fracture.",
+        "ability": "Apply +1 to the result of each of your units' combat rolls in The Fracture.",
+        "note": "Same person as firmament.leaders.commander's own \"Captain Aroz\"."
+      },
+      "hero": {
+        "name": "Sharsiss Hollow",
+        "unlock": "Have 3 Scored Objectives.",
+        "abilityName": "THE BLADE REVEALED",
+        "effect": "ACTION: Ready all of your planets. Then, purge this card.",
+        "note": "Same person as firmament.leaders.hero's own \"Sharsiss\"."
+      }
+    }
+  }
+}

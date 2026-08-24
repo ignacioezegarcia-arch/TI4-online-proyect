@@ -1,0 +1,177 @@
+{
+  "id": "argent_flight",
+  "name": "The Argent Flight",
+  "set": "pok",
+  "commodities": 3,
+  "homePlanets": [
+    "Valk",
+    "Avar",
+    "Ylir"
+  ],
+  "startingUnits": {
+    "carrier": 1,
+    "destroyer": 2,
+    "fighter": 2,
+    "infantry": 5,
+    "spaceDock": 1,
+    "pds": 1
+  },
+  "startingTechnologies": [],
+  "startingTechnologyChoice": {
+    "count": 2,
+    "options": [
+      "neural_motivator",
+      "sarween_tools",
+      "plasma_scoring"
+    ]
+  },
+  "factionAbilities": [
+    {
+      "id": "zeal",
+      "name": "ZEAL",
+      "effect": "You always vote first during the agenda phase. When you cast at least 1 vote, cast 1 additional vote for each player in the game including you."
+    },
+    {
+      "id": "raid_formation",
+      "name": "RAID FORMATION",
+      "effect": "When 1 or more of your units uses ANTI-FIGHTER BARRAGE, for each hit produced in excess of your opponent's Fighters, choose 1 of your opponent's ships that has SUSTAIN DAMAGE to become damaged.",
+      "note": "The \"Anti-Fighter Barrage\" step can occur even if a player's opponent has no fighters in the combat (in this case all hits produced from Anti-Fighter Barrage may cause opposing ships with Sustain Damage to become damaged)."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Strike Wing Ambuscade",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "When 1 or more of your units make a roll for a unit ability:",
+        "effect": "Choose 1 of those units to roll 1 additional die. Then, return this card to the Argent player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "aerie_hololattice",
+      "name": "Aerie Hololattice",
+      "color": "yellow",
+      "prerequisites": [
+        "yellow"
+      ],
+      "effect": "Other players cannot move ships through systems that contain your structures. Each planet that contains 1 or more of your structures gains the PRODUCTION 1 ability as if it were a unit."
+    }
+  ],
+  "units": {
+    "destroyer": {
+      "name": "Strike Wing Alpha",
+      "note": "Argent Flight Destroyers have capacity and they hit on an 8 rather than a 9.",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Strike Wing Alpha I",
+          "cost": 1,
+          "combat": 8,
+          "move": 2,
+          "capacity": 1,
+          "abilities": [
+            {
+              "name": "Anti-Fighter Barrage",
+              "value": 9,
+              "diceCount": 2,
+              "effect": "ANTI-FIGHTER BARRAGE 9 (x2)"
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Strike Wing Alpha II",
+          "cost": 1,
+          "combat": 7,
+          "move": 2,
+          "capacity": 1,
+          "abilities": [
+            {
+              "name": "Anti-Fighter Barrage",
+              "value": 6,
+              "diceCount": 3,
+              "effect": "ANTI-FIGHTER BARRAGE 6 (x3)"
+            },
+            {
+              "name": "Bonus Infantry Kill",
+              "effect": "When this unit uses ANTI-FIGHTER BARRAGE, each result of 9 or 10 also destroys 1 of your opponent's infantry in the space area of the active system."
+            }
+          ],
+          "techPrerequisite": null,
+          "prerequisites": [
+            "red",
+            "red"
+          ]
+        }
+      ]
+    },
+    "flagship": {
+      "name": "Quetzecoatl",
+      "cost": 8,
+      "combat": 7,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Space Cannon Immunity",
+          "effect": "Other players cannot use SPACE CANNON against your ships in this system."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Aerie Sentinel",
+      "cost": 2,
+      "combat": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Capacity Exemption",
+          "effect": "This unit does not count against capacity if it is being transported or if it is in a space area with 1 or more of your ships that have capacity values."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": [
+        "blue",
+        "yellow"
+      ],
+      "description": "Tus tecnologías azules pueden usarse como amarillas para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "ability": {
+      "name": "Wing Transfer",
+      "effect": "When you activate a system that contains only your units, you may place command tokens from your reinforcements into any system adjacent to that system that contain only your units; at the end of this action, you may move ships among the active system and systems adjacent to it that contain your command tokens."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Trillossa Aun Mirik",
+      "unlock": "At Game Start",
+      "ability": "When a player produces ground forces in a system: You may exhaust this card; that player may place those units on any planets they control in that system and any adjacent systems."
+    },
+    "commander": {
+      "name": "Trrakan Aun Zulok",
+      "unlock": "Have 6 units that have ANTI-FIGHTER BARRAGE, SPACE CANNON, or BOMBARDMENT on the game board.",
+      "ability": "When 1 or more of your units make a roll for a unit ability: You may choose 1 of those units to roll 1 additional die."
+    },
+    "hero": {
+      "name": "Mirik Aun Sissiri",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "\"HELIX PROTOCOL\" — ACTION: Move any number of your ships from any systems to any number of other systems that contain 1 of your command tokens and no other players' ships. Then, purge this card."
+    }
+  }
+}

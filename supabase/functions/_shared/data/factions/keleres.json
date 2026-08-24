@@ -1,0 +1,300 @@
+{
+  "id": "keleres",
+  "name": "The Council Keleres",
+  "set": "codex3",
+  "_setNote": "Introduced in Codex III (bundled with Prophecy of Kings — see rules/gameMode.ts's own hasCodex()/hasPoKContent()); further updated by Thunder's Edge (every Ω/new field below is marked with its own \"version\"/\"source\"). Available whenever hasCodex(gameMode) is true.",
+  "commodities": 2,
+  "homePlanets": [],
+  "_homePlanetsNote": "Entirely dependent on the Tribunii choice below — see tribunii.options[].homePlanets for the 3 real possibilities (Moll Primus / Archon Ren+Archon Tau / Valk+Avar+Ylir). Left empty here rather than defaulting to one, since picking one would misrepresent the other two as unavailable.",
+  "tribunii": {
+    "description": "During setup, the Keleres player chooses one of 3 other, otherwise-unplayed factions (Mentak, Xxcha, Argent Flight) and takes THAT faction's home system, starting command tokens, and control markers — plus the one Keleres Hero that corresponds to it (see leaders.hero.options below). The other 2 factions' home systems, Keleres Heroes, etc. are not used this game.",
+    "versions": [
+      {
+        "version": "original",
+        "source": "codex3",
+        "name": "THE TRIBUNII",
+        "effect": "During setup, choose an unplayed faction from among the Mentak, the Xxcha and The Argent Flight; take that faction's home system, command tokens and control markers. Additionally, take the Keleres Hero that corresponds to that faction."
+      },
+      {
+        "version": "Ω",
+        "source": "thundersEdge",
+        "name": "THE TRIBUNII Ω",
+        "effect": "During setup, choose a Keleres hero that corresponds to an unused faction; take that faction's home system, command tokens and control tokens. The unchosen Keleres heroes are not used.",
+        "note": "Same practical outcome as the Codex III version, just worded starting from the hero rather than the faction (Thunder's Edge doesn't require the other faction to be literally unplayed in the box, only its Keleres Hero to be unused this game)."
+      }
+    ],
+    "options": [
+      {
+        "faction": "mentak",
+        "homePlanets": ["Moll Primus"],
+        "heroId": "harka_leeds"
+      },
+      {
+        "faction": "xxcha",
+        "homePlanets": ["Archon Ren", "Archon Tau"],
+        "heroId": "odlynn_myrr"
+      },
+      {
+        "faction": "argent_flight",
+        "homePlanets": ["Valk", "Avar", "Ylir"],
+        "heroId": "kuuasi_aun_jalatai"
+      }
+    ]
+  },
+  "startingUnits": {
+    "carrier": 2,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 2,
+    "spaceDock": 1
+  },
+  "startingTechnologies": [],
+  "startingTechnologyChoice": {
+    "count": 2,
+    "source": "otherPlayersNonFactionStartingTechnologies",
+    "fixedList": false,
+    "note": "NOT a fixed options list like Argent Flight's own startingTechnologyChoice — Keleres chooses 2 non-faction technologies actually owned by OTHER PLAYERS at this specific table, so the real option set is derived at setup time from whichever factions/choices are actually in the game.",
+    "faq": "Keleres picks LAST, after every other player has locked in their own starting technology. If there is only 1 unique non-faction starting technology among everyone else combined, Keleres only gets that 1 (not 2) — there's no valid second option to choose."
+  },
+  "factionAbilities": [
+    {
+      "id": "tribunii",
+      "name": "THE TRIBUNII",
+      "note": "Full effect text lives on the tribunii field above (both versions) rather than duplicated here — this entry exists so factionAbilities still lists all 3 named abilities together for anything that enumerates by that field."
+    },
+    {
+      "id": "council_patronage",
+      "name": "COUNCIL PATRONAGE",
+      "effect": "Replenish your commodities at the start of the strategy phase, then gain 1 trade good.",
+      "note": "Identical wording in both Codex III and Thunder's Edge — no version split needed."
+    },
+    {
+      "id": "laws_order",
+      "versions": [
+        {
+          "version": "original",
+          "source": "codex3",
+          "name": "LAW'S ORDER",
+          "timing": "At the start of your turn:",
+          "cost": "1 influence",
+          "effect": "You may spend 1 influence at the start of your turn to treat all laws as blank until the end of your turn."
+        },
+        {
+          "version": "Ω",
+          "source": "thundersEdge",
+          "name": "LAW'S ORDER Ω",
+          "timing": "At the start of any player's turn:",
+          "cost": "1 trade good or 1 commodity",
+          "effect": "You may spend 1 trade good or 1 commodity at the start of any player's turn to treat all laws as blank until the end of that turn.",
+          "note": "Widened twice over the Codex III version: usable on ANY player's turn (not just your own), and payable with a commodity as an alternative to a trade good."
+        }
+      ],
+      "faq": "\"Treat all laws as blank\" applies to EVERY player, not just the Keleres player, for the duration of that turn — confirmed interaction: this suspends things like Minister of Peace or a \"more than 2 PDS per planet\" law for everyone until the turn ends."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Keleres Rider",
+    "versions": [
+      {
+        "version": "original",
+        "source": "codex3",
+        "timing": "After an agenda is revealed:",
+        "effect": "You cannot vote on this agenda. Predict aloud an outcome of this agenda. If your prediction is correct, draw 1 action card and gain 2 trade goods. Then, return this card to the Keleres player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionSpecificPlanets": [
+    {
+      "id": "custodia_vigilia",
+      "name": "Custodia Vigilia",
+      "trait": "legendary",
+      "note": "Not on the game board — no system, no tile. Gained (exhausted) via the I.I.H.Q. Modernization faction technology (Codex III) or breakthrough (Thunder's Edge).",
+      "versions": [
+        {
+          "version": "codex3",
+          "source": "I.I.H.Q. Modernization faction technology",
+          "resources": 2,
+          "influence": 3
+        },
+        {
+          "version": "thundersEdge",
+          "source": "I.I.H.Q. Modernization breakthrough",
+          "resources": 2,
+          "influence": 2
+        }
+      ],
+      "abilityCard": {
+        "versions": [
+          {
+            "version": "codex3",
+            "effect": "While you control Mecatol Rex, it gains SPACE CANNON 5 and Production 3. Gain 2 command tokens when another player scores VP using Imperial."
+          },
+          {
+            "version": "thundersEdge",
+            "effect": "While you control Mecatol Rex, it gains SPACE CANNON 5 and Production 3. Gain 2 command tokens when another player gains a victory point using the second clause of \"Imperial.\"",
+            "note": "Same intent as Codex III's wording, tightened per its own FAQ below (only Imperial's OWN \"control Mecatol Rex\" clause counts, not public objectives scored while Imperial happens to be in play)."
+          }
+        ]
+      },
+      "faq": [
+        "Custodia Vigilia's own PRODUCTION counts as a unit's for Sarween Tools and similar effects (treated \"as if it were a unit\").",
+        "Counts as a planet for objectives and agendas whenever it meets their specific criteria. Gained already exhausted. Terraform can be attached to it (Nano-Forge cannot — it's already legendary); its own attachment tokens are just never placed on the game board since there's no tile. It may be explored. Units cannot be placed on it. The Keleres player cannot be eliminated while they control it.",
+        "Does NOT grant command tokens for scoring a PUBLIC OBJECTIVE via Imperial — only for actually GAINING A VICTORY POINT off Imperial's own \"control Mecatol Rex\" clause specifically."
+      ]
+    }
+  ],
+  "factionTechnologies": [
+    {
+      "id": "iihq_modernization",
+      "name": "I.I.H.Q. Modernization",
+      "color": "yellow",
+      "prerequisites": ["yellow"],
+      "availability": "Codex III technology — moved to a Breakthrough in Thunder's Edge instead (see the breakthrough field below; not researchable as a tech in Thunder's Edge games).",
+      "effect": "You are neighbors with all players that have units or control planets in or adjacent to the Mecatol Rex system. Gain the Custodia Vigilia planet card and its legendary planet ability card. You cannot lose these cards, and this card cannot have an X or Y assimilator token placed on it."
+    },
+    {
+      "id": "agency_supply_network",
+      "name": "Agency Supply Network",
+      "color": "yellow",
+      "prerequisites": ["yellow", "yellow"],
+      "versions": [
+        {
+          "version": "original",
+          "source": "codex3",
+          "effect": "Whenever you resolve one of your PRODUCTION abilities, you may resolve an additional one of your PRODUCTION abilities in any system; the additional use does not trigger this ability."
+        },
+        {
+          "version": "Ω",
+          "source": "thundersEdge",
+          "effect": "Once per action, when you resolve a unit's PRODUCTION ability, you may resolve another of your unit's PRODUCTION abilities in any system.",
+          "note": "Same core idea, reworded to be explicitly \"once per action\" rather than relying on the \"does not trigger this ability\" self-reference to prevent chaining."
+        }
+      ],
+      "faq": "The 2nd PRODUCTION instance must come from a DIFFERENT unit than the one that triggered Agency Supply Network. Sarween Tools applies separately to each of the 2 instances (i.e. twice total). PRODUCTION is all-or-nothing per system during a tactical action, so you can't split 1 system's own units across 2 separate uses that way — but the Warfare strategy card's own secondary (which names exactly 1 space dock) CAN be combined with Agency Supply Network to reach a 2nd unit's PRODUCTION in that same system, since Warfare doesn't have that same all-or-nothing scope."
+    },
+    {
+      "id": "executive_order",
+      "name": "Executive Order",
+      "color": "yellow",
+      "prerequisites": ["yellow"],
+      "availability": "Thunder's Edge only — new technology, not part of Codex III.",
+      "effect": "ACTION: Exhaust this card and draw the top or bottom card of the agenda deck. Players immediately vote on this agenda as if you were the speaker; you can spend trade goods and resources on this agenda as if they were votes."
+    }
+  ],
+  "breakthrough": {
+    "availability": "Thunder's Edge only — I.I.H.Q. Modernization lives here instead of as a researchable technology (compare to the factionTechnologies entry of the same id above, which is the Codex III version).",
+    "name": "I.I.H.Q. Modernization",
+    "synergy": { "colors": ["yellow", "green"] },
+    "effect": "When you gain this card, gain the Custodia Vigilia planet card and its legendary planet ability card. You are neighbors with all players that have units or control planets in or adjacent to the Mecatol Rex system."
+  },
+  "units": {
+    "flagship": {
+      "name": "Artemiris",
+      "cost": 8,
+      "combat": 7,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Zone Lockdown",
+          "versions": [
+            {
+              "version": "codex3",
+              "effect": "Other players must spend 2 influence to activate the system that contains this ship."
+            },
+            {
+              "version": "thundersEdge",
+              "effect": "Other players must spend 2 influence to activate this system.",
+              "note": "Same practical effect as the Codex III wording — Thunder's Edge just drops the \"the system that contains this ship\" phrasing in favor of naming the system directly."
+            }
+          ]
+        }
+      ]
+    },
+    "mech": {
+      "name": "Omniopiares",
+      "cost": 2,
+      "combat": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Ground Defense Levy",
+          "effect": "Other players must spend 1 influence to commit ground forces to the planet that contains this unit.",
+          "faq": "Each Omniopiares on the board is its own separate 1-influence charge — they don't combine into 1 payment even if multiple are on the same planet."
+        }
+      ]
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Xander Alexin Victori III",
+      "unlock": "At Game Start",
+      "ability": "At any time: You may exhaust this card to allow any player to spend commodities as if they were trade goods.",
+      "faq": "Exhausted at the exact moment the commodities would actually be spent as trade goods — covers only that ONE spend, not a standing effect lasting any longer."
+    },
+    "commander": {
+      "name": "Suffi An",
+      "unlock": "Spend 1 trade good after you play an action card that has a component action.",
+      "ability": "After you perform a component action: You may perform an additional action."
+    },
+    "hero": {
+      "variesByTribunii": true,
+      "note": "Exactly 1 of these 3 is ever in play for a given game — whichever one matches the Tribunii choice made at setup (see the tribunii field above).",
+      "options": [
+        {
+          "forTribunii": "argent_flight",
+          "name": "Kuuasi Aun Jalatai",
+          "unlock": "Have 3 Scored Objectives.",
+          "abilityName": "OVERWING ZETA",
+          "versions": [
+            {
+              "version": "codex3",
+              "effect": "At the start of a round of space combat in a system that contains a planet you control: Place your flagship and up to a total of 2 cruisers and/or destroyers from your reinforcements in the active system. Then, purge this card."
+            },
+            {
+              "version": "thundersEdge",
+              "effect": "At the start of a round of space combat in a system that contains a planet you control: Place your flagship and any combination of up to 2 cruisers or destroyers from your reinforcements in the active system. Then, purge this card.",
+              "note": "Reworded, same meaning as the Codex III version."
+            }
+          ],
+          "faq": "Cannot be used during a combat this player isn't participating in — any non-Agent \"at the start of a combat\" ability always requires the caster to be a participant in that combat."
+        },
+        {
+          "forTribunii": "xxcha",
+          "name": "Odlynn Myrr",
+          "unlock": "Have 3 Scored Objectives.",
+          "abilityName": "OPERATION ARCHON",
+          "timing": "After an agenda is revealed:",
+          "versions": [
+            {
+              "version": "codex3",
+              "effect": "You may cast up to 6 additional votes on this agenda. Predict aloud an outcome for this agenda. For each player that votes for another outcome, gain 1 trade good and 1 command token. Then, purge this card."
+            },
+            {
+              "version": "thundersEdge",
+              "effect": "You may cast up to 6 additional votes on this agenda. Predict aloud an outcome for this agenda. For each player that abstains or votes for another outcome, gain 1 trade good and 1 command token. Then, purge this card.",
+              "note": "Thunder's Edge widens the reward condition to also include players who ABSTAIN, not just ones who vote for a different outcome."
+            }
+          ]
+        },
+        {
+          "forTribunii": "mentak",
+          "name": "Harka Leeds",
+          "unlock": "Have 3 Scored Objectives.",
+          "abilityName": "ERWAN'S COVENANT",
+          "effect": "ACTION: Reveal cards from the action card deck until you reveal 3 action cards that have component actions. Draw those cards and shuffle the rest back into the action card deck. Then, purge this card.",
+          "note": "\"Has a component action\" is the same RR category this project's own COMPONENT_ACTION_CARD_IDS set (phases/actionCardEffects.ts, built for Reverse Engineer) already tracks — worth reusing once this hero's own ability gets wired up."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "id": "last_bastion",
+  "name": "Last Bastion",
+  "set": "thundersEdge",
+  "_setNote": "Introduced in Thunder's Edge — available whenever rules/gameMode.ts's own hasThundersEdge(gameMode) is true.",
+  "commodities": 1,
+  "homePlanets": [
+    "Ordinian",
+    "Revelation"
+  ],
+  "_homePlanetsNote": "Revelation is listed in source material as \"Revelation (space station)\" — flagged as possibly a non-standard map object rather than a normal planet; not fully resolved here, worth double-checking against the actual Thunder's Edge tile/map data before this is consumed by anything assuming a normal planet shape. Ordinian is a legendary planet — see its own ability card under factionSpecificComponents below.",
+  "startingUnits": {
+    "dreadnought": 1,
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 2,
+    "infantry": 3,
+    "spaceDock": 1
+  },
+  "startingTechnologies": [],
+  "startingTechnologyChoice": {
+    "count": 1,
+    "source": "fixedColorNoPrerequisite",
+    "colors": [
+      "blue",
+      "yellow"
+    ],
+    "note": "Choose 1 blue OR yellow technology with no prerequisites."
+  },
+  "factionAbilities": [
+    {
+      "id": "liberate",
+      "name": "LIBERATE",
+      "effect": "When you gain control of a planet, ready that planet if it contains a number of your infantry equal to or greater than that planet's resource value; otherwise, place 1 infantry on that planet."
+    },
+    {
+      "id": "galvanize",
+      "name": "GALVANIZE",
+      "effect": "When a game effect instructs a player to galvanize a unit, they place a galvanize token beneath it, if it does not have one. Galvanized units roll 1 additional die for combat rolls and unit abilities.",
+      "faq": "The galvanize token supply is limited (7 tokens total — see factionSpecificComponents below); if it's empty, tokens cannot be moved between units to \"re-galvanize\" a different one instead."
+    },
+    {
+      "id": "phoenix_standard",
+      "name": "PHOENIX STANDARD",
+      "effect": "At the end of combat, you may galvanize 1 of your units that participated."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Raise the Standard",
+    "versions": [
+      {
+        "version": "original",
+        "source": "thundersEdge",
+        "timing": "At the end of a combat:",
+        "effect": "Galvanize 1 of your units that participated. Then, return this card to the Last Bastion player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionSpecificComponents": [
+    {
+      "type": "Planet Ability Card",
+      "name": "4X41D \"Hyperion\" VI",
+      "description": "A legendary planet ability card associated with the Ordinian planet card. Its text reads: \"You may exhaust this card when you pass to draw 1 action card and gain 1 command token.\"",
+      "note": "This ability is tied to the legendary planet Ordinian itself, NOT to the Last Bastion faction — if the Last Bastion player loses control of Ordinian, they also lose this ability card (and, presumably, whoever gains control of Ordinian gains it instead, same as any other legendary planet ability card)."
+    },
+    {
+      "type": "token",
+      "name": "Galvanize token",
+      "count": 7,
+      "description": "Used to mark units that are under the effect of Last Bastion's Galvanize ability."
+    },
+    {
+      "type": "card",
+      "name": "Spacedock Cards",
+      "description": "Cards placed with planet cards to denote the resource-value increase granted by having a Last Bastion space dock on that planet — see factionSpecificUnits.spaceDock below."
+    }
+  ],
+  "factionTechnologies": [
+    {
+      "id": "proxima_targeting_vi",
+      "name": "Proxima Targeting VI",
+      "color": "red",
+      "prerequisites": [
+        "red"
+      ],
+      "effect": "Cancel 1 hit produced by BOMBARDMENT rolls made against your ground forces for each of your galvanized units present. At the start of a round of ground combat, you may resolve BOMBARDMENT 8 (x3) against your opponent's ground forces; if you do, make an identical roll against your own ground forces."
+    }
+  ],
+  "breakthrough": {
+    "name": "The Icon",
+    "synergy": {
+      "colors": [
+        "red",
+        "yellow"
+      ]
+    },
+    "effect": "When you produce ships, you may exhaust this card to place those ships in a system that contains one of your command tokens, at least one of your ground forces, and no other player's ships."
+  },
+  "units": {
+    "flagship": {
+      "name": "The Egeiro",
+      "cost": 8,
+      "combat": 9,
+      "combatDiceCount": 1,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Production",
+          "value": 1,
+          "effect": "PRODUCTION 1"
+        },
+        {
+          "name": "Bastion's Reach",
+          "effect": "Apply +1 to the results of each of this unit's combat rolls for each non-home system that contains a planet you control."
+        }
+      ]
+    },
+    "mech": {
+      "name": "A3 Valiance",
+      "cost": 2,
+      "combat": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Last Stand",
+          "effect": "When this unit is destroyed, if it was galvanized, galvanize up to 3 of your infantry in its system."
+        }
+      ]
+    },
+    "space_dock": {
+      "note": "Both levels also grant \"up to 3 fighters in this system do not count against your ships' capacity\" and Production X (i.e. Production equal to the stated formula, not a fixed die-roll ability) — the resource-value increase each level grants gets tracked with a physical Spacedock Card (see factionSpecificComponents above) alongside the planet card.",
+      "versions": [
+        {
+          "level": 1,
+          "name": "4X41C \"HELIOS\" V1",
+          "prerequisites": [],
+          "abilities": [
+            {
+              "name": "Amplified Production",
+              "effect": "This unit's PRODUCTION value is equal to 2 more than the resource value of this planet."
+            },
+            {
+              "name": "Resource Amplification",
+              "effect": "The resource value of this planet is increased by 1."
+            },
+            {
+              "name": "Fighter Bay",
+              "effect": "Up to 3 fighters in this system do not count against your ships' capacity."
+            },
+            {
+              "name": "Production",
+              "effect": "PRODUCTION X"
+            }
+          ]
+        },
+        {
+          "level": 2,
+          "name": "4X41C \"HELIOS\" V2",
+          "prerequisites": [
+            "yellow",
+            "yellow"
+          ],
+          "abilities": [
+            {
+              "name": "Amplified Production",
+              "effect": "This unit's PRODUCTION value is equal to 4 more than the resource value of this planet."
+            },
+            {
+              "name": "Resource Amplification",
+              "effect": "The resource value of this planet is increased by 2."
+            },
+            {
+              "name": "Fighter Bay",
+              "effect": "Up to 3 fighters in this system do not count against your ships' capacity."
+            },
+            {
+              "name": "Production",
+              "effect": "PRODUCTION X"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "Dame Briar",
+      "unlock": "At Game Start",
+      "ability": "When a player's unit is destroyed: You may exhaust this card to galvanize another of that player's units in the destroyed unit's system."
+    },
+    "commander": {
+      "name": "Nip and Tuck",
+      "unlock": "There are 3 galvanized units on the game board.",
+      "ability": "Your action cards cannot be canceled by \"Sabotage\" action cards. The Nekro Virus cannot place assimilator tokens on your components."
+    },
+    "hero": {
+      "name": "Lyra Keen",
+      "unlock": "Have 3 Scored Objectives.",
+      "abilityName": "ENTITY 4X41A \"APOLLO\"",
+      "effect": "When one of your galvanized units is destroyed: You may purge this card to roll 1 die for each unit in its system that belongs to another player; if the result is equal to or greater than the galvanized unit's combat value, destroy that unit."
+    }
+  }
+}

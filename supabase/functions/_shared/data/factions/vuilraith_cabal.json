@@ -1,0 +1,190 @@
+{
+  "id": "vuilraith_cabal",
+  "name": "The Vuil'Raith Cabal",
+  "set": "pok",
+  "commodities": 2,
+  "homePlanets": [
+    "Acheron"
+  ],
+  "startingUnits": {
+    "dreadnought": 1,
+    "carrier": 1,
+    "cruiser": 1,
+    "fighter": 3,
+    "infantry": 3,
+    "spaceDock": 1
+  },
+  "startingTechnologies": [
+    "self_assembly_routines"
+  ],
+  "factionAbilities": [
+    {
+      "id": "devour",
+      "name": "DEVOUR",
+      "effect": "Capture your opponent's non-structure units that are destroyed during combat."
+    },
+    {
+      "id": "amalgamation",
+      "name": "AMALGAMATION",
+      "effect": "When you produce a unit, you may return 1 captured unit of that type to produce that unit without spending resources."
+    },
+    {
+      "id": "riftmeld",
+      "name": "RIFTMELD",
+      "effect": "When you research a unit upgrade technology, you may return 1 captured unit of that type to ignore all of the technology's prerequisites."
+    }
+  ],
+  "promissoryNote": {
+    "name": "Crucible",
+    "versions": [
+      {
+        "version": "original",
+        "source": "base",
+        "timing": "After you activate a system:",
+        "effect": "Your ships do not roll for gravity rifts during this movement; apply an additional +1 to the move values of your ships that would move out of or through a gravity rift instead. Then, return this card to the Vuil'raith player.",
+        "placeInPlayArea": false
+      }
+    ]
+  },
+  "factionTechnologies": [
+    {
+      "id": "vortex",
+      "name": "Vortex",
+      "color": "red",
+      "prerequisites": [
+        "red"
+      ],
+      "effect": "ACTION: Exhaust this card to choose another player's non-structure unit in a system that is adjacent to 1 or more of your space docks. Capture 1 unit of that type from that player's reinforcements."
+    }
+  ],
+  "factionComponents": [
+    {
+      "type": "token",
+      "name": "Dimensional Tear Token",
+      "description": "Placed under a Vuil'Raith Cabal's space dock to denote that its hex contains a gravity rift."
+    }
+  ],
+  "units": {
+    "space_dock": {
+      "name": "Dimensional Tear",
+      "note": "Vuil'Raith Dimensional Tears are Gravity Rifts, meaning they give +1 movement to all ships moving out of their system. These gravity rifts are represented by a token placed under the space dock. If a space dock that has a dimensional tear token under it is destroyed, the dimensional tear token is immediately removed from the board. They also have a SET (not the normal resources+2 formula) Production value and can carry more Fighters over capacity than a regular Space Dock.",
+      "versions": [
+        {
+          "level": 1,
+          "name": "Dimensional Tear I",
+          "abilities": [
+            {
+              "name": "Production",
+              "value": 5,
+              "diceCount": 0,
+              "effect": "PRODUCTION 5 (fixed value, not the normal resources+2 formula)"
+            },
+            {
+              "name": "Gravity Rift Source",
+              "effect": "This system is a gravity rift; your ships do not roll for this gravity rift. Place a dimensional tear token beneath this unit as a reminder."
+            },
+            {
+              "name": "Fighter Capacity Exemption",
+              "effect": "Up to 6 fighters in this system do not count against your ships' capacity."
+            }
+          ],
+          "prerequisites": []
+        },
+        {
+          "level": 2,
+          "name": "Dimensional Tear II",
+          "abilities": [
+            {
+              "name": "Production",
+              "value": 7,
+              "diceCount": 0,
+              "effect": "PRODUCTION 7 (fixed value, not the normal resources+2 formula)"
+            },
+            {
+              "name": "Gravity Rift Source",
+              "effect": "This system is a gravity rift; your ships do not roll for this gravity rift. Place a dimensional tear token beneath this unit as a reminder."
+            },
+            {
+              "name": "Fighter Capacity Exemption",
+              "effect": "Up to 12 fighters in this system do not count against your ships' capacity."
+            }
+          ],
+          "prerequisites": [
+            "yellow",
+            "yellow"
+          ]
+        }
+      ]
+    },
+    "flagship": {
+      "name": "The Terror Between",
+      "cost": 8,
+      "combat": 5,
+      "combatDiceCount": 2,
+      "move": 1,
+      "capacity": 3,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Bombardment",
+          "value": 5,
+          "diceCount": 1,
+          "effect": "BOMBARDMENT 5"
+        },
+        {
+          "name": "Capture All Destroyed",
+          "effect": "Capture all other non-structure units that are destroyed in this system, including your own."
+        }
+      ]
+    },
+    "mech": {
+      "name": "Reanimator",
+      "cost": 2,
+      "combat": 6,
+      "abilities": [
+        {
+          "name": "Sustain Damage",
+          "effect": "SUSTAIN DAMAGE"
+        },
+        {
+          "name": "Capture Own Infantry",
+          "effect": "When your infantry on this planet are destroyed, place them on your faction sheet; those units are captured."
+        }
+      ]
+    }
+  },
+  "breakthrough": {
+    "synergy": {
+      "colors": [
+        "red",
+        "green"
+      ],
+      "description": "Tus tecnologías rojas pueden usarse como verdes para prerrequisitos, y viceversa (no ambas a la vez)."
+    },
+    "note": "Referencia \"The Fracture\" e ingress tokens — mecánica propia de Thunder's Edge, ver esa expansión para el detalle del tablero.",
+    "ability": {
+      "name": "Al'Raith Ix Ianovar",
+      "effect": "This breakthrough causes The Fracture to enter play without a roll, if it is not already in play. After this card enters play, move up to 2 ingress tokens into systems that contain gravity rifts. Apply +1 to the Move value of each of your ships that start their movement in The Fracture."
+    }
+  },
+  "leaders": {
+    "agent": {
+      "name": "The Stillness of Stars",
+      "unlock": "At Game Start",
+      "ability": "After another player replenishes commodities: You may exhaust this card to convert their commodities to trade goods and capture 1 unit from their reinforcements that has a cost equal to or lower than their commodity value."
+    },
+    "commander": {
+      "name": "That Which Molds Flesh",
+      "unlock": "Have units in 3 Gravity Rifts.",
+      "ability": "When you produce fighter or infantry units: Up to 2 of those units do not count against your PRODUCTION limit."
+    },
+    "hero": {
+      "name": "It Feeds on Carrion",
+      "unlock": "Have 3 Scored Objectives.",
+      "ability": "\"DIMENSIONAL ANCHOR\" — ACTION: Each other player rolls a die for each of their non-fighter ships that are in or adjacent to a system that contains a dimensional tear; on a 1-3, capture that unit. If this causes a player's ground forces or fighters to be removed, also capture those units. Then, purge this card."
+    }
+  }
+}
