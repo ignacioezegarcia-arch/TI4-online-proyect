@@ -1,0 +1,577 @@
+import { GameState, Player, PlanetState, SystemState, UnitStack } from "../types/GameState";
+import { ActionResult, GameEvent } from "../types/Actions";
+import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
+import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
+import { RuleData, getUnitStats } from "../types/RuleData";
+import { getEffectivePlanetStats } from "../rules/planetStats";
+import { isLawActiveWithOutcome, isDemilitarizedZone } from "./agendaEffects";
+import { hasPoKContent, usesCodex4Version } from "../rules/gameMode";
+import { applyExplorationCard, drawExplorationCard, ExplorationCardChoice } from "./exploration";
+import { maybeAdvanceActivePlayer } from "./actionPhase";
+import { executeProduction } from "./production";
+import { checkReinforcementsAvailable } from "../rules/reinforcements";
+
+/**
+ * RR "Technology" — the standalone abilities of 6 exhaustable/passive
+ * techs that don't fit the tactical-action-step handlers elsewhere (see
+ * this project's own note on which techs live where): each is its own
+ * GameAction rather than a modifier threaded through an existing one,
+ * since none of them share a natural existing action to piggyback on the
+ * way Gravity Drive rides MOVE_SHIPS or AI Development Algorithm rides
+ * RESEARCH_UNIT_UPGRADE.
+ *
+ * Timing simplification, flagged rather than silently strict: Sling Relay
+ * and Integrated Economy's own "free production" scope (this engine
+ * doesn't have a generic "was X the most recent thing that happened" gate
+ * for every possible trigger — only for the ones state.recentEvents
+ * already tracks). Self-Assembly Routines, Dacxive Animators, and
+ * Integrated Economy all check recentEvents directly (production/ground-
+ * combat-win/control-gained are all tracked there already), so those three
+ * ARE timing-accurate; Sling Relay's own "when you activate a system" isn't
+ * strictly gated to the moment of activation, just to being the player's
+ * own turn with no tactical action pending — a reasonable, bounded
+ * approximation rather than a precise re-check.
+ */
+
+function ownsReadiedTech(player: Player, techId: string): { ok: true } | { ok: false; error: string } {
+  const id = asTechId(techId);
+  if (!player.technologies.includes(id)) return { ok: false, error: `This player doesn't own ${techId}.` };
+  if (player.exhaustedTechnologies.includes(id)) return { ok: false, error: `${techId} is already exhausted.` };
+  return { ok: true };
+}
+
+function exhaustTech(player: Player, techId: string): Player {
+  return { ...player, exhaustedTechnologies: [...player.exhaustedTechnologies, asTechId(techId)] };
+}
+
+function findPlanet(state: GameState, planetId: PlanetId): { systemId: SystemId; system: SystemState; planet: PlanetState } | null {
+  for (const [systemId, system] of Object.entries(state.systems)) {
+    const planet = system.planets.find((p) => p.planetId === planetId);
+    if (planet) return { systemId: systemId as SystemId, system, planet };
+  }
+  return null;
+}
+
+/** RR "Self-Assembly Routines": after this player uses PRODUCTION this tactical action, may exhaust this card to place 1 free mech on any planet THEY control in that same system (not necessarily the planet that produced, and not requiring a mech already be there). */
+export function useSelfAssemblyRoutines(
+  state: GameState,
+  action: { type: "USE_SELF_ASSEMBLY_ROUTINES"; playerId: PlayerId; planetId: PlanetId },
+): ActionResult {
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  const techCheck = ownsReadiedTech(player, "self_assembly_routines");
+  if (!techCheck.ok) return techCheck;
+
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  const { systemId, system, planet } = found;
+  if (planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
+
+  const producedHere = (state.recentEvents ?? []).some(
+    (e) => e.type === "UNITS_PRODUCED" && e.playerId === action.playerId && e.systemId === systemId,
+  );
+  if (!producedHere) {
+    return { ok: false, error: "This player hasn't used Production in that system this tactical action." };
+  }
+  const reinforcementsCheck = checkReinforcementsAvailable(state, action.playerId, [{ unitType: "mech", count: 1 }]);
+  if (!reinforcementsCheck.ok) return reinforcementsCheck;
+
+  const stacks = planet.unitsByPlayer[action.playerId] ?? [];
+  const existing = stacks.find((s) => s.unitType === "mech" && !s.upgradeId);
+  const updatedStacks = existing
+    ? stacks.map((s) => (s === existing ? { ...s, count: s.count + 1 } : s))
+    : [...stacks, { unitType: "mech" as UnitType, count: 1, damagedCount: 0 }];
+  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: updatedStacks } };
+  const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+
+  const nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    players: { ...state.players, [action.playerId]: exhaustTech(player, "self_assembly_routines") },
+  };
+  return {
+    ok: true,
+    state: nextState,
+    events: [{ type: "UNITS_PRODUCED", playerId: action.playerId, systemId, planetId: action.planetId, unitType: "mech", count: 1, totalCost: 0 }],
+  };
+}
+
+/** RR "Dacxive Animators": after winning a ground combat there this tactical action, may place 1 free infantry on that planet. Not exhaustable — repeatable every time it triggers. */
+export function useDacxiveAnimators(
+  state: GameState,
+  action: { type: "USE_DACXIVE_ANIMATORS"; playerId: PlayerId; planetId: PlanetId },
+): ActionResult {
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  if (!player.technologies.includes(asTechId("dacxive_animators"))) {
+    return { ok: false, error: "This player doesn't own Dacxive Animators." };
+  }
+
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  const { systemId, system, planet } = found;
+
+  const wonGroundCombatHere = (state.recentEvents ?? []).some(
+    (e) => e.type === "GROUND_COMBAT_ENDED" && e.planetId === action.planetId && e.survivingPlayerId === action.playerId,
+  );
+  if (!wonGroundCombatHere) {
+    return { ok: false, error: "This player hasn't won a ground combat on that planet this tactical action." };
+  }
+
+  const stacks = planet.unitsByPlayer[action.playerId] ?? [];
+  const existing = stacks.find((s) => s.unitType === "infantry");
+  const updatedStacks = existing
+    ? stacks.map((s) => (s.unitType === "infantry" ? { ...s, count: s.count + 1 } : s))
+    : [...stacks, { unitType: "infantry" as UnitType, count: 1, damagedCount: 0 }];
+
+  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: updatedStacks } };
+  const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+
+  const nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  return {
+    ok: true,
+    state: nextState,
+    events: [{ type: "UNITS_PRODUCED", playerId: action.playerId, systemId, planetId: action.planetId, unitType: "infantry", count: 1, totalCost: 0 }],
+  };
+}
+
+/** RR "Integrated Economy": after gaining control of a planet this tactical action, may produce (for free) any units on it costing up to its resource value combined. Not exhaustable. */
+export function useIntegratedEconomy(
+  state: GameState,
+  action: { type: "USE_INTEGRATED_ECONOMY"; playerId: PlayerId; planetId: PlanetId; units: { unitType: UnitType; count: number }[] },
+  rules: RuleData,
+): ActionResult {
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  if (!player.technologies.includes(asTechId("integrated_economy"))) {
+    return { ok: false, error: "This player doesn't own Integrated Economy." };
+  }
+
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  const { systemId, system, planet } = found;
+  if (planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
+
+  const gainedControlHere = (state.recentEvents ?? []).some(
+    (e) => e.type === "PLANET_CONTROL_ESTABLISHED" && e.planetId === action.planetId && e.playerId === action.playerId,
+  );
+  if (!gainedControlHere) {
+    return { ok: false, error: "This player hasn't gained control of that planet this tactical action." };
+  }
+
+  let totalCost = 0;
+  const resolved: { unitType: UnitType; count: number }[] = [];
+  for (const { unitType, count } of action.units) {
+    if (count <= 0) continue;
+    const stats = getUnitStats(rules, player.factionId, unitType, player.unitUpgrades);
+    if (!stats) return { ok: false, error: `No stats for ${unitType}.` };
+    const perToken = stats.producesQuantity ?? 1;
+    if (count % perToken !== 0) {
+      return { ok: false, error: `RR 58: ${unitType} is produced ${perToken} at a time — ${count} isn't a multiple of that.` };
+    }
+    totalCost += (count / perToken) * stats.cost;
+    resolved.push({ unitType, count });
+  }
+
+  const resourceLimit = getEffectivePlanetStats(planet, action.planetId, rules).resources;
+  if (totalCost > resourceLimit) {
+    return { ok: false, error: `RR "Integrated Economy": total cost ${totalCost} exceeds ${action.planetId}'s resource value (${resourceLimit}).` };
+  }
+
+  // RR 37.1/76.2 + RR 16.3: same fleet-pool and space-area-capacity checks
+  // as executeProduction's own — Integrated Economy places units directly
+  // rather than going through that function, so it previously skipped
+  // both entirely.
+  const existingNonFighterShips = (system.spaceUnitsByPlayer[action.playerId] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter").reduce((sum, s) => sum + s.count, 0);
+  const newNonFighterShips = resolved.filter((u) => SHIP_TYPES.includes(u.unitType) && u.unitType !== "fighter").reduce((sum, u) => sum + u.count, 0);
+  if (existingNonFighterShips + newNonFighterShips > player.commandTokens.fleet) {
+    return { ok: false, error: `RR 37.1: this would leave ${existingNonFighterShips + newNonFighterShips} non-fighter ships in ${systemId}, exceeding this player's fleet pool (${player.commandTokens.fleet}).` };
+  }
+  const newFighters = resolved.filter((u) => u.unitType === "fighter").reduce((sum, u) => sum + u.count, 0);
+  if (newFighters > 0) {
+    const existingCargo = (system.spaceUnitsByPlayer[action.playerId] ?? []).reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
+    const existingCapacity = (system.spaceUnitsByPlayer[action.playerId] ?? []).reduce((sum, s) => {
+      if (!SHIP_TYPES.includes(s.unitType)) return sum;
+      const shipStats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+      return sum + (shipStats?.capacity ?? 0) * s.count;
+    }, 0);
+    const newCapacity = resolved.reduce((sum, u) => {
+      if (!SHIP_TYPES.includes(u.unitType)) return sum;
+      const shipStats = getUnitStats(rules, player.factionId, u.unitType, player.unitUpgrades);
+      return sum + (shipStats?.capacity ?? 0) * u.count;
+    }, 0);
+    if (existingCargo + newFighters > existingCapacity + newCapacity) {
+      return { ok: false, error: `RR 16.3: this would leave ${existingCargo + newFighters} fighters/ground forces in ${systemId}'s space area, exceeding this player's combined ship capacity there (${existingCapacity + newCapacity}).` };
+    }
+  }
+
+  const events: GameEvent[] = [];
+  let updatedPlanetStacks = (planet.unitsByPlayer[action.playerId] ?? []).map((s) => ({ ...s }));
+  let updatedSpaceStacks = (system.spaceUnitsByPlayer[action.playerId] ?? []).map((s) => ({ ...s }));
+  for (const { unitType, count } of resolved) {
+    const isShip = unitType !== "infantry" && unitType !== "mech" && unitType !== "pds" && unitType !== "space_dock";
+    const target = isShip ? updatedSpaceStacks : updatedPlanetStacks;
+    const existing = target.find((s) => s.unitType === unitType && !s.upgradeId);
+    if (existing) existing.count += count;
+    else target.push({ unitType, count, damagedCount: 0 });
+    if (isShip) updatedSpaceStacks = target;
+    else updatedPlanetStacks = target;
+    events.push({ type: "UNITS_PRODUCED", playerId: action.playerId, systemId, planetId: action.planetId, unitType, count, totalCost: 0 });
+  }
+
+  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: updatedPlanetStacks } };
+  const updatedSystem: SystemState = {
+    ...system,
+    spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: updatedSpaceStacks },
+    planets: system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)),
+  };
+
+  const nextState: GameState = { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "X-89 Bacterial Weapon" — BASE version only (see rules/combat.ts's buildBombardmentEntries/buildGroundCombatEntries for the ΩΩ Codex 4 version's passive dice-doubling, and phases/invasion.ts's bombard for its "exhaust each planet you use Bombardment against" clause — both active instead whenever Codex is in play): a component action (uses this player's whole turn, same as PASS/a tactical/strategic action) — exhaust, pick a planet in a system where this player has a Bombardment-capable ship, destroy every OTHER player's infantry there. */
+export function useX89BacterialWeapon(
+  state: GameState,
+  action: { type: "USE_X89_BACTERIAL_WEAPON"; playerId: PlayerId; targetPlanetId: PlanetId },
+  rules: RuleData,
+): ActionResult {
+  if (usesCodex4Version(state.mode)) {
+    return { ok: false, error: "RR \"X-89 Bacterial Weapon\": the Codex ΩΩ version doesn't have this component-action ability at all — see rules/combat.ts for its passive dice-doubling instead." };
+  }
+  if (state.phase !== "action") return { ok: false, error: "RR: this component action only applies during the action phase." };
+  if (state.activePlayerId !== action.playerId) return { ok: false, error: "RR 4: it is not this player's turn." };
+  if (state.pendingTacticalAction) return { ok: false, error: "Cannot use this with a tactical action in progress." };
+
+  const player = state.players[action.playerId];
+  const techCheck = ownsReadiedTech(player, "x89_bacterial_weapon");
+  if (!techCheck.ok) return techCheck;
+
+  const found = findPlanet(state, action.targetPlanetId);
+  if (!found) return { ok: false, error: `No planet ${action.targetPlanetId}.` };
+  const { systemId, system, planet } = found;
+
+  const hasBombardmentShipHere = (system.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => {
+    if (s.count <= 0) return false;
+    const stats = getUnitStats(rules, player.factionId, s.unitType, player.unitUpgrades);
+    return Boolean(stats?.abilityValues?.bombardment);
+  });
+  if (!hasBombardmentShipHere) {
+    return { ok: false, error: "This player has no Bombardment-capable ship in that system." };
+  }
+
+  const events: GameEvent[] = [];
+  const updatedUnitsByPlayer: PlanetState["unitsByPlayer"] = {};
+  for (const [pid, stacks] of Object.entries(planet.unitsByPlayer)) {
+    if (pid === action.playerId) {
+      updatedUnitsByPlayer[pid as PlayerId] = stacks;
+      continue;
+    }
+    const infantryStack = (stacks ?? []).find((s) => s.unitType === "infantry" && s.count > 0);
+    if (infantryStack) {
+      events.push({ type: "UNITS_DESTROYED", playerId: pid as PlayerId, systemId, planetId: action.targetPlanetId, unitType: "infantry", count: infantryStack.count });
+    }
+    const remaining = (stacks ?? []).filter((s) => s.unitType !== "infantry");
+    updatedUnitsByPlayer[pid as PlayerId] = remaining;
+  }
+
+  const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: updatedUnitsByPlayer };
+  const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === action.targetPlanetId ? updatedPlanet : p)) };
+
+  const updatedPlayer = exhaustTech(player, "x89_bacterial_weapon");
+  let nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    players: { ...state.players, [action.playerId]: updatedPlayer },
+  };
+  // RR: this is a component ACTION — it uses this player's entire turn,
+  // same as PASS or finishing a tactical/strategic action, so initiative
+  // advances to the next player exactly like those do (respecting Fleet
+  // Logistics's own extra-action allowance, if this player has it).
+  nextState = maybeAdvanceActivePlayer(nextState, action.playerId, rules);
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "Psychoarchaeology": during the action phase, exhaust a controlled planet with a tech specialty to gain 1 trade good. Exhausts the PLANET, not this tech (the tech's own card doesn't need exhausting for this half of its text — see this file's own header note). */
+export function usePsychoarchaeology(
+  state: GameState,
+  action: { type: "USE_PSYCHOARCHAEOLOGY"; playerId: PlayerId; planetId: PlanetId },
+  rules: RuleData,
+): ActionResult {
+  if (state.phase !== "action") return { ok: false, error: "RR: this ability only applies during the action phase." };
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  if (!player.technologies.includes(asTechId("psychoarchaeology"))) {
+    return { ok: false, error: "This player doesn't own Psychoarchaeology." };
+  }
+
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  const { systemId, system, planet } = found;
+  if (planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
+  if (planet.exhausted) return { ok: false, error: "That planet is already exhausted." };
+  if ((rules.planets[action.planetId]?.techSpecialties ?? []).length === 0) {
+    return { ok: false, error: "That planet has no technology specialty." };
+  }
+
+  const updatedPlanet: PlanetState = { ...planet, exhausted: true };
+  const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === action.planetId ? updatedPlanet : p)) };
+  const updatedPlayer: Player = { ...player, tradeGoods: player.tradeGoods + 1 };
+
+  const nextState: GameState = {
+    ...state,
+    systems: { ...state.systems, [systemId]: updatedSystem },
+    players: { ...state.players, [action.playerId]: updatedPlayer },
+  };
+  return { ok: true, state: nextState, events: [] };
+}
+
+/** RR "Bio-Stims": exhaust to ready EITHER 1 of this player's OWN planets that has a technology specialty, OR 1 of their OTHER (already-exhausted) technologies. RR text says "at the end of your turn" — not strictly gated to that exact instant (see this file's own header note on timing simplifications); offered any time during the action phase instead. */
+export function useBioStims(
+  state: GameState,
+  action: { type: "USE_BIO_STIMS"; playerId: PlayerId; target: { kind: "planet"; planetId: PlanetId } | { kind: "technology"; techId: string } },
+  rules: RuleData,
+): ActionResult {
+  if (state.phase !== "action") return { ok: false, error: "RR: this ability only applies during the action phase." };
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  const techCheck = ownsReadiedTech(player, "bio_stims");
+  if (!techCheck.ok) return techCheck;
+
+  const target = action.target;
+  if (target.kind === "planet") {
+    const found = findPlanet(state, target.planetId);
+    if (!found) return { ok: false, error: `No planet ${target.planetId}.` };
+    const { systemId, system, planet } = found;
+    if (planet.controllerId !== action.playerId) return { ok: false, error: "This player doesn't control that planet." };
+    if (!planet.exhausted) return { ok: false, error: "That planet is already readied." };
+    if ((rules.planets[target.planetId]?.techSpecialties ?? []).length === 0) {
+      return { ok: false, error: "That planet has no technology specialty." };
+    }
+
+    const updatedPlanet: PlanetState = { ...planet, exhausted: false };
+    const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === target.planetId ? updatedPlanet : p)) };
+    const nextState: GameState = {
+      ...state,
+      systems: { ...state.systems, [systemId]: updatedSystem },
+      players: { ...state.players, [action.playerId]: exhaustTech(player, "bio_stims") },
+    };
+    return { ok: true, state: nextState, events: [] };
+  }
+
+  const otherTechId = asTechId(target.techId);
+  if (otherTechId === asTechId("bio_stims")) {
+    return { ok: false, error: "RR \"Bio-Stims\": can't target itself — must be 1 of the player's OTHER technologies." };
+  }
+  if (!player.technologies.includes(otherTechId)) return { ok: false, error: "This player doesn't own that technology." };
+  if (!player.exhaustedTechnologies.includes(otherTechId)) return { ok: false, error: "That technology is already readied." };
+
+  const updatedPlayer: Player = {
+    ...exhaustTech(player, "bio_stims"),
+    exhaustedTechnologies: exhaustTech(player, "bio_stims").exhaustedTechnologies.filter((id) => id !== otherTechId),
+  };
+  const nextState: GameState = { ...state, players: { ...state.players, [action.playerId]: updatedPlayer } };
+  return { ok: true, state: nextState, events: [] };
+}
+
+/** RR "Predictive Intelligence"'s OTHER ability (distinct from its agenda-vote-bonus one, but shares the same exhausted state): exhaust to redistribute this player's command tokens across their 3 pools, keeping the SAME total. RR text says "at the end of your turn" — same timing simplification as Bio-Stims/Sling Relay (see this file's own header note); offered any time during the action phase instead. */
+export function usePredictiveIntelligenceRedistribute(
+  state: GameState,
+  action: { type: "USE_PREDICTIVE_INTELLIGENCE_REDISTRIBUTE"; playerId: PlayerId; tactic: number; fleet: number; strategy: number },
+): ActionResult {
+  if (state.phase !== "action") return { ok: false, error: "RR: this ability only applies during the action phase." };
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  const techCheck = ownsReadiedTech(player, "predictive_intelligence");
+  if (!techCheck.ok) return techCheck;
+
+  if (action.tactic < 0 || action.fleet < 0 || action.strategy < 0) {
+    return { ok: false, error: "Command token counts can't be negative." };
+  }
+  const currentTotal = player.commandTokens.tactic + player.commandTokens.fleet + player.commandTokens.strategy;
+  const newTotal = action.tactic + action.fleet + action.strategy;
+  if (newTotal !== currentTotal) {
+    return { ok: false, error: `RR "Predictive Intelligence": redistribution must keep the same total (${currentTotal}), got ${newTotal}.` };
+  }
+  // RR "Fleet Regulations" ("for"): confirmed, a player can never place a
+  // new command token into their fleet pool once it's at 4 — this is the
+  // one place in this engine today where a player actually chooses how
+  // many tokens sit in each of their own pools, so it's the one place
+  // this cap can currently be violated.
+  if (action.fleet > 4 && isLawActiveWithOutcome(state, "fleet_regulations" as AgendaId, "for")) {
+    return { ok: false, error: 'RR "Fleet Regulations": a player\'s fleet pool cannot exceed 4 command tokens while this law is active.' };
+  }
+
+  const updatedPlayer = exhaustTech(
+    { ...player, commandTokens: { ...player.commandTokens, tactic: action.tactic, fleet: action.fleet, strategy: action.strategy } },
+    "predictive_intelligence",
+  );
+  const nextState: GameState = { ...state, players: { ...state.players, [action.playerId]: updatedPlayer } };
+  return { ok: true, state: nextState, events: [] };
+}
+
+/** RR "Transit Diodes": exhaust to remove up to 4 of this player's own ground forces from any of their own planets, and place them back on 1 or more planets THEY control (can be entirely different planets, or the same ones). RR text says "at the start of your turn" — same timing simplification as the other "start/end of turn" techs in this file (see this file's own header note); offered any time during the action phase instead. */
+export function useTransitDiodes(
+  state: GameState,
+  action: {
+    type: "USE_TRANSIT_DIODES";
+    playerId: PlayerId;
+    removals: { planetId: PlanetId; unitType: "infantry" | "mech"; count: number }[];
+    placements: { planetId: PlanetId; unitType: "infantry" | "mech"; count: number }[];
+  },
+): ActionResult {
+  if (state.phase !== "action") return { ok: false, error: "RR: this ability only applies during the action phase." };
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  const techCheck = ownsReadiedTech(player, "transit_diodes");
+  if (!techCheck.ok) return techCheck;
+
+  const totalRemoved = action.removals.reduce((sum, r) => sum + r.count, 0);
+  const totalPlaced = action.placements.reduce((sum, p) => sum + p.count, 0);
+  if (totalRemoved <= 0 || totalRemoved > 4) {
+    return { ok: false, error: 'RR "Transit Diodes": must remove between 1 and 4 ground forces total.' };
+  }
+  if (totalRemoved !== totalPlaced) {
+    return { ok: false, error: 'RR "Transit Diodes": everything removed must be placed back somewhere (removed and placed totals must match).' };
+  }
+
+  let nextState: GameState = state;
+
+  for (const { planetId, unitType, count } of action.removals) {
+    if (count <= 0) continue;
+    const found = findPlanet(nextState, planetId);
+    if (!found) return { ok: false, error: `No planet ${planetId}.` };
+    const { systemId, system, planet } = found;
+    if (planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    const stack = (planet.unitsByPlayer[action.playerId] ?? []).find((s) => s.unitType === unitType);
+    if (!stack || stack.count < count) return { ok: false, error: `Not enough ${unitType} on ${planetId} to remove ${count}.` };
+
+    const updatedStacks = (planet.unitsByPlayer[action.playerId] ?? [])
+      .map((s) => (s.unitType === unitType ? { ...s, count: s.count - count } : s))
+      .filter((s) => s.count > 0);
+    const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: updatedStacks } };
+    const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: updatedSystem } };
+  }
+
+  const events: GameEvent[] = [];
+  for (const { planetId, unitType, count } of action.placements) {
+    if (count <= 0) continue;
+    const found = findPlanet(nextState, planetId);
+    if (!found) return { ok: false, error: `No planet ${planetId}.` };
+    const { systemId, system, planet } = found;
+    if (planet.controllerId !== action.playerId) return { ok: false, error: `This player doesn't control ${planetId}.` };
+    if (isDemilitarizedZone(planet)) return { ok: false, error: 'RR "Demilitarized Zone": units cannot be placed on this planet.' };
+
+    const stacks = planet.unitsByPlayer[action.playerId] ?? [];
+    const existing = stacks.find((s) => s.unitType === unitType && !s.upgradeId);
+    const updatedStacks = existing
+      ? stacks.map((s) => (s === existing ? { ...s, count: s.count + count } : s))
+      : [...stacks, { unitType, count, damagedCount: 0 }];
+    const updatedPlanet: PlanetState = { ...planet, unitsByPlayer: { ...planet.unitsByPlayer, [action.playerId]: updatedStacks } };
+    const updatedSystem: SystemState = { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? updatedPlanet : p)) };
+    nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: updatedSystem } };
+    events.push({ type: "UNITS_PRODUCED", playerId: action.playerId, systemId, planetId, unitType, count, totalCost: 0 });
+  }
+
+  nextState = { ...nextState, players: { ...nextState.players, [action.playerId]: exhaustTech(nextState.players[action.playerId], "transit_diodes") } };
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "Scanlink Drone Network": when activating a system, explore 1 planet there that has this player's own units on it — independent of RR 35's normal "just gained control" trigger, and independent of whether it's already been explored. Not exhaustable — repeatable every tactical action. */
+export function useScanlinkDroneNetwork(
+  state: GameState,
+  action: { type: "USE_SCANLINK_DRONE_NETWORK"; playerId: PlayerId; planetId: PlanetId; chosenTrait?: "cultural" | "industrial" | "hazardous"; choice?: ExplorationCardChoice },
+  rules: RuleData,
+): ActionResult {
+  if (!hasPoKContent(state.mode)) {
+    return {
+      ok: false,
+      error: "RR 35: Exploration is a Prophecy of Kings mechanic, not available without Prophecy of Kings + Codex content (base-only or Thunder's-Edge-only games).",
+    };
+  }
+  const player = state.players[action.playerId];
+  if (!player) return { ok: false, error: "Unknown player." };
+  if (!player.technologies.includes(asTechId("scanlink_drone_network"))) {
+    return { ok: false, error: "This player doesn't own Scanlink Drone Network." };
+  }
+
+  const found = findPlanet(state, action.planetId);
+  if (!found) return { ok: false, error: `No planet ${action.planetId}.` };
+  const { systemId, planet } = found;
+  const hasUnitsHere = (planet.unitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0);
+  if (!hasUnitsHere) return { ok: false, error: "This player has no units on that planet." };
+
+  const planetData = rules.planets[action.planetId];
+  const traits = (planetData?.traits ?? []) as ("cultural" | "industrial" | "hazardous")[];
+  // TE DUAL PLANET TRAITS (rulebook p.11): same "choose which trait" requirement as phases/exploration.ts's own explorePlanet.
+  let trait: "cultural" | "industrial" | "hazardous" | undefined;
+  if (traits.length === 1) {
+    trait = traits[0];
+  } else if (traits.length > 1) {
+    if (!action.chosenTrait || !traits.includes(action.chosenTrait)) {
+      return { ok: false, error: `TE DUAL PLANET TRAITS: ${action.planetId} has multiple traits (${traits.join("/")}) — chosenTrait must specify which one.` };
+    }
+    trait = action.chosenTrait;
+  }
+  if (!trait) return { ok: false, error: `RR 35: ${action.planetId} has no trait and can't be explored.` };
+
+  const deck = state.explorationDecks?.[trait] ?? [];
+  const discardPile = state.explorationDiscardPiles?.[trait] ?? [];
+  let nextState: GameState = state;
+  const events: GameEvent[] = [];
+
+  const drawResult = drawExplorationCard(deck, discardPile);
+  if (drawResult.drawn) {
+    const cardId = drawResult.drawn;
+    const result = applyExplorationCard(nextState, action.playerId, systemId, action.planetId, cardId, rules, action.choice);
+    nextState = result.state;
+    events.push(...result.events, { type: "EXPLORATION_CARD_DRAWN", playerId: action.playerId, cardId, deck: trait });
+    const card = rules.explorationCards[cardId];
+    const goesToDiscard = !card?.isRelicFragment && !card?.attach && !card?.keepInPlayArea && !card?.purge;
+    nextState = {
+      ...nextState,
+      explorationDecks: { ...nextState.explorationDecks!, [trait]: drawResult.deck },
+      explorationDiscardPiles: { ...nextState.explorationDiscardPiles, [trait]: goesToDiscard ? [...drawResult.discardPile, cardId] : drawResult.discardPile } as GameState["explorationDiscardPiles"],
+    };
+  }
+
+  nextState = setExplored(nextState, systemId, action.planetId);
+  return { ok: true, state: nextState, events };
+}
+
+/** RR "Sling Relay": a component action (uses this player's whole turn, same as X-89 Bacterial Weapon) — exhaust, produce 1 ship in ANY system containing 1 of this player's space docks, paying its normal cost against that dock's own Production limit (same mechanics as PRODUCE_UNITS/executeProduction — this just isn't restricted to the player's currently-activated system). */
+export function useSlingRelay(
+  state: GameState,
+  action: { type: "USE_SLING_RELAY"; playerId: PlayerId; systemId: SystemId; planetId: PlanetId; unitType: UnitType; count: number; exhaustPlanetIdsForResources?: PlanetId[] },
+  rules: RuleData,
+): ActionResult {
+  if (state.phase !== "action") return { ok: false, error: "RR: this component action only applies during the action phase." };
+  if (state.activePlayerId !== action.playerId) return { ok: false, error: "RR 4: it is not this player's turn." };
+  if (state.pendingTacticalAction) return { ok: false, error: "Cannot use this with a tactical action in progress." };
+
+  const player = state.players[action.playerId];
+  const techCheck = ownsReadiedTech(player, "sling_relay");
+  if (!techCheck.ok) return techCheck;
+
+  const productionResult = executeProduction(state, action.playerId, action.systemId, action.planetId, [{ unitType: action.unitType, count: action.count }], rules, undefined, undefined, undefined, action.exhaustPlanetIdsForResources);
+  if (!productionResult.ok) return productionResult;
+
+  let nextState = productionResult.state;
+  nextState = {
+    ...nextState,
+    players: { ...nextState.players, [action.playerId]: exhaustTech(nextState.players[action.playerId], "sling_relay") },
+  };
+  // RR: this is a component ACTION — it uses this player's entire turn, same as PASS/finishing a tactical/strategic action (respecting Fleet Logistics's own extra-action allowance, if this player has it).
+  nextState = maybeAdvanceActivePlayer(nextState, action.playerId, rules);
+  return { ok: true, state: nextState, events: productionResult.events };
+}
+
+function setExplored(state: GameState, systemId: SystemId, planetId: PlanetId): GameState {
+  const system = state.systems[systemId];
+  const updatedSystem: SystemState = {
+    ...system,
+    planets: system.planets.map((p) => (p.planetId === planetId ? { ...p, explored: true } : p)),
+  };
+  return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
+}
