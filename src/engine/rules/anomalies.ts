@@ -24,9 +24,9 @@ export interface AnomalyMovementRule {
   canPassThrough: boolean;
   /** Nebula: OVERRIDES (does not add to) a ship's move value to this, when the ship's movement starts in this system. */
   moveValueWhenLeaving?: number;
-  /** Gravity Rift: ADDS to a ship's move value. RR 9.7: applies once per ship per tactical action even if its path touches multiple rifts — see rules/movement.ts, which enforces the "once" part; this file just describes the rule. */
+  /** Gravity Rift: ADDS to a ship's move value — a SEPARATE +1 per distinct rift system its path touches (yjmrobert.com/tirules/rules/r_gravity_rift, note 6), not a one-time flag. See rules/movement.ts's own canShipReachSystem for where this is actually computed. */
   moveValueBonus?: number;
-  /** Gravity Rift: after moving out of or through, roll one die per ship; destroyed on a low roll. NOTE: not yet wired up anywhere — rolling dice from a pure GameEngine.applyAction call needs an RNG-input design decision (see rules/movement.ts TODO) shared with space/ground combat, so this is deliberately inert for now rather than half-implemented. */
+  /** Gravity Rift: after moving out of or through, roll one die per ship; destroyed on a low roll. Wired in phases/tacticalAction.ts's own moveShips (MOVE_SHIPS action's own gravityRiftDieRolls/gravityRiftCargoAssignments fields) — trusted-RNG, same convention as combat dice, regenerated server-side before ever reaching GameEngine.applyAction (see supabase/functions/_shared/regenerateDice.ts). */
   destructionCheck?: { diceSides: number; destroyOnRollLessOrEqual: number };
 }
 

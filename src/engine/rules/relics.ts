@@ -571,16 +571,29 @@ export function useStellarConverter(
  * offer this needs to call this function with the specific roll in
  * question at its own specific moment.
  */
-export function useHeartOfIxth(
-  state: GameState,
-  action: { type: "USE_HEART_OF_IXTH"; playerId: PlayerId; originalRoll: number; adjustment: 1 | -1 },
-): ActionResult {
+/**
+ * RR "Heart of Ixth" (relic): "After you roll a die for any reason, you
+ * may exhaust this card to add or subtract 1 from the result." Reads and
+ * updates GameState.pendingHeartOfIxthAdjustableRoll directly — NOT a
+ * caller-supplied `originalRoll` parameter, which previously had no real
+ * state to check it against at all (a client could claim any roll it
+ * wanted, bypassing whatever was actually rolled — see that field's own
+ * doc comment on GameState.ts). Currently only wired for RR "Ixthian
+ * Artifact" (the one place in the whole project that stores its roll
+ * this way) — the card's own "for ANY reason" text would need this same
+ * pending-adjustable-roll shape built out for every other dice-rolling
+ * action too, which hasn't been done; flagged rather than silently
+ * assumed to already cover everything.
+ */
+export function useHeartOfIxth(state: GameState, action: { type: "USE_HEART_OF_IXTH"; playerId: PlayerId; adjustment: 1 | -1 }): ActionResult {
   const player = state.players[action.playerId];
   const relicId = asRelicId("heart_of_ixth");
   if (!player?.relics.includes(relicId)) return { ok: false, error: "This player doesn't have Heart of Ixth." };
   if ((player.exhaustedRelics ?? []).includes(relicId)) return { ok: false, error: "Heart of Ixth is already exhausted." };
+  const pending = state.pendingHeartOfIxthAdjustableRoll;
+  if (!pending) return { ok: false, error: "No adjustable die roll is currently pending." };
 
-  let adjustedRoll = action.originalRoll + action.adjustment;
+  let adjustedRoll = pending.roll + action.adjustment;
   // The "0" face represents 10 — 10+1 wraps to 9's usual neighbor going up is nonsensical (there is no 11), and 1-1 similarly has no 0 distinct from 10 on this die, so both ends just clamp within the 1-10 range actually printed on the physical die.
   if (adjustedRoll > 10) adjustedRoll = 10;
   if (adjustedRoll < 1) adjustedRoll = 1;
@@ -588,8 +601,12 @@ export function useHeartOfIxth(
   const updatedPlayer: Player = { ...player, exhaustedRelics: [...(player.exhaustedRelics ?? []), relicId] };
   return {
     ok: true,
-    state: { ...state, players: { ...state.players, [action.playerId]: updatedPlayer } },
-    events: [{ type: "HEART_OF_IXTH_ADJUSTED_ROLL", playerId: action.playerId, originalRoll: action.originalRoll, adjustedRoll }],
+    state: {
+      ...state,
+      players: { ...state.players, [action.playerId]: updatedPlayer },
+      pendingHeartOfIxthAdjustableRoll: { ...pending, roll: adjustedRoll },
+    },
+    events: [{ type: "HEART_OF_IXTH_ADJUSTED_ROLL", playerId: action.playerId, originalRoll: pending.roll, adjustedRoll }],
   };
 }
 

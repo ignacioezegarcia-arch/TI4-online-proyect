@@ -115,31 +115,42 @@ export function canShipReachSystem(
   const maxBudget = hasNebula(originAnomalies) && !nebulaClampLifted ? 1 : baseMoveValue;
   if (maxBudget <= 0) return false;
 
-  // BFS where the state is (system, hasUsedRiftBonus) rather than just
-  // system, because the same system can be reached with or without having
-  // banked the gravity-rift bonus, and that changes how many hops remain
-  // available for the rest of the path. "Nav Suite" (ignoreAllAnomalyEffects)
-  // forfeits the gravity-rift bonus along with every other anomaly effect —
-  // flagged interpretation call: the card says "ignore the effects of
-  // anomalies" without carving out an exception for beneficial ones, so
-  // this treats the rift's own bonus as one of those ignored effects too.
+  // BFS where the state is (system, riftCount) rather than just system,
+  // because the same system can be reached having banked different
+  // numbers of gravity-rift bonuses, and that changes how many hops
+  // remain available for the rest of the path. "Nav Suite"
+  // (ignoreAllAnomalyEffects) forfeits the gravity-rift bonus along with
+  // every other anomaly effect — flagged interpretation call: the card
+  // says "ignore the effects of anomalies" without carving out an
+  // exception for beneficial ones, so this treats the rift's own bonus
+  // as one of those ignored effects too.
   // RR "Circlet of the Void" (relic): confirmed explicitly DIFFERENT —
   // "still applies the movement bonus" even while otherwise ignoring
   // anomaly movement effects — so circletOfTheVoidActive does NOT gate
   // this rift-bonus tracking the way ignoreAllAnomalyEffects does.
-  const startRiftUsed = hasGravityRift(originAnomalies) && !techs.ignoreAllAnomalyEffects;
+  // Confirmed (yjmrobert.com/tirules/rules/r_gravity_rift, note 6): "If a
+  // ship moves through or out of multiple gravity rifts... each instance
+  // will provide a +1 to movement" — a COUNT, not a one-time flag (this
+  // used to be `riftUsed: boolean`, capping the bonus at +1 no matter how
+  // many distinct rift systems a path touched; only DISTINCT rift systems
+  // are counted here, not a system revisited a 2nd time within the same
+  // path — a deliberate, flagged simplification, since re-visiting the
+  // exact same rift to farm extra bonus hops is an exotic enough edge
+  // case that modeling it would turn this from a standard shortest-path
+  // BFS into a much harder "revisiting can be beneficial" search).
+  const startRiftCount = hasGravityRift(originAnomalies) && !techs.ignoreAllAnomalyEffects ? 1 : 0;
   const startPassedThrough = mustPassThroughSystemId === undefined || from === mustPassThroughSystemId;
   const bestHopsForState = new Map<string, number>();
-  bestHopsForState.set(stateKey(from, startRiftUsed, startPassedThrough), 0);
-  let frontier: { systemId: SystemId; hops: number; riftUsed: boolean; passedThrough: boolean }[] = [
-    { systemId: from, hops: 0, riftUsed: startRiftUsed, passedThrough: startPassedThrough },
+  bestHopsForState.set(stateKey(from, startRiftCount, startPassedThrough), 0);
+  let frontier: { systemId: SystemId; hops: number; riftCount: number; riftSystemsTouched: Set<SystemId>; passedThrough: boolean }[] = [
+    { systemId: from, hops: 0, riftCount: startRiftCount, riftSystemsTouched: hasGravityRift(originAnomalies) ? new Set([from]) : new Set(), passedThrough: startPassedThrough },
   ];
 
   while (frontier.length > 0) {
     const nextFrontier: typeof frontier = [];
 
     for (const current of frontier) {
-      const budget = maxBudget + (current.riftUsed ? 1 : 0);
+      const budget = maxBudget + current.riftCount;
       if (current.hops >= budget) continue;
 
       for (const neighborId of getAdjacentSystems(state, current.systemId, rules, playerId)) {
@@ -165,12 +176,14 @@ export function canShipReachSystem(
           !techs.ignoreEnemyFleets && playersWithShipsInSystem(state, neighborId).some((p) => p !== playerId);
         if (blockedByEnemyFleet) continue;
 
-        const riftUsed = current.riftUsed || (hasGravityRift(neighborAnomalies) && !techs.ignoreAllAnomalyEffects);
-        const key = stateKey(neighborId, riftUsed, passedThrough);
+        const entersNewRift = hasGravityRift(neighborAnomalies) && !techs.ignoreAllAnomalyEffects && !current.riftSystemsTouched.has(neighborId);
+        const riftCount = current.riftCount + (entersNewRift ? 1 : 0);
+        const riftSystemsTouched = entersNewRift ? new Set([...current.riftSystemsTouched, neighborId]) : current.riftSystemsTouched;
+        const key = stateKey(neighborId, riftCount, passedThrough);
         const bestKnown = bestHopsForState.get(key);
         if (bestKnown !== undefined && bestKnown <= hops) continue;
         bestHopsForState.set(key, hops);
-        nextFrontier.push({ systemId: neighborId, hops, riftUsed, passedThrough });
+        nextFrontier.push({ systemId: neighborId, hops, riftCount, riftSystemsTouched, passedThrough });
       }
     }
 
@@ -180,6 +193,6 @@ export function canShipReachSystem(
   return false;
 }
 
-function stateKey(systemId: SystemId, riftUsed: boolean, passedThrough: boolean): string {
-  return `${systemId}|${riftUsed ? 1 : 0}|${passedThrough ? 1 : 0}`;
+function stateKey(systemId: SystemId, riftCount: number, passedThrough: boolean): string {
+  return `${systemId}|${riftCount}|${passedThrough ? 1 : 0}`;
 }
