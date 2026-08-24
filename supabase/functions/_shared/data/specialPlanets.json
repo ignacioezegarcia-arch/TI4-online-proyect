@@ -1,0 +1,78 @@
+{
+  "_comment": "Planetas legendarios que NO corresponden a un tile fijo del tablero, sino que aparecen mediante mecánicas especiales (exploración, etc.)",
+  "specialPlanets": [
+    {
+      "id": "mirage",
+      "name": "Mirage",
+      "resources": 1,
+      "influence": 2,
+      "traits": ["hazardous"],
+      "tech": [],
+      "isLegendary": true,
+      "source": "exploration",
+      "_note": "Mirage aparece al resolver una carta de exploración de tipo 'Frontier'/espacio vacío que indica colocar el planeta Mirage en ese sistema (sistema sin planetas previos). No ocupa un tile propio del pool base.",
+      "legendaryAbility": {
+        "name": "Mirage Flight Academy",
+        "text": "Podés agotar esta carta al final de tu turno para colocar hasta 2 fighters de tus reservas en cualquier sistema que contenga 1 o más de tus naves."
+      }
+    },
+    {
+      "id": "thunders_edge",
+      "name": "Thunder's Edge",
+      "resources": 5,
+      "influence": 0,
+      "traits": [],
+      "tech": [],
+      "isLegendary": true,
+      "source": "thundersEdgeExpedition",
+      "set": "thundersEdge",
+      "_note": "CORRECTED — a previous session note here claimed 'isLegendary: false... no ability card associated', which was WRONG (confirmed via FFG's own official preview article and ti4.dronz.co's reference page). Begins the game off-board, on the 'expedition' side (6 claimable slices). Once all 6 are claimed, whoever claimed the most flips it to the 'planet' side and places it in a system of their choice (no pre-existing planet, no supernova, no printed wormhole, not inside The Fracture). Confirmed resources: 5. Influence not found in any source checked — flagged as uncertain rather than invented; treated as 0 for now. See phases/expedition.ts.",
+      "legendaryAbility": {
+        "name": "Jupiter Brain",
+        "text": "Gain your breakthrough when you gain this card if you do not already have it. You may exhaust this card at the end of your turn to perform 1 action."
+      },
+      "expedition": {
+        "slices": [
+          { "cost": "resources", "amount": 5 },
+          { "cost": "action_cards", "amount": 2 },
+          { "cost": "influence", "amount": 5 },
+          { "cost": "secret_objective", "amount": 1 },
+          { "cost": "tech_specialty_planet", "amount": 1 },
+          { "cost": "trade_goods", "amount": 3 }
+        ]
+      }
+    },
+    {
+      "id": "avernus",
+      "name": "Avernus",
+      "resources": 2,
+      "influence": 0,
+      "traits": ["hazardous"],
+      "tech": [],
+      "isLegendary": true,
+      "source": "muaatBreakthrough",
+      "_note": "Not on any board tile — placed dynamically as a token when Muaat gains their Breakthrough (Stellar Genesis), into a non-home system adjacent to a planet they control. Gained READIED (not exhausted — an explicit exception to the normal 'gained control = exhausted' rule). Can be relocated later by moving a war sun out of or through its system into a non-home system.",
+      "legendaryAbility": {
+        "name": "The Nucleus",
+        "text": "ACTION: Exhaust this card to use the Embers of Muaat's STAR FORGE faction ability without spending a command token."
+      }
+    },
+    {
+      "id": "custodia_vigilia",
+      "name": "Custodia Vigilia",
+      "traits": [],
+      "tech": [],
+      "isLegendary": true,
+      "source": "keleresFactionTechOrBreakthrough",
+      "set": "codex3",
+      "_note": "No está en el tablero — no tiene sistema ni tile. Se gana agotada, vía la tecnología de facción I.I.H.Q. Modernization (Codex III) o el breakthrough del mismo nombre (Thunder's Edge). Sus stats de recursos/influencia difieren entre versiones — ver data/factions/keleres.json's own factionSpecificPlanets entry, que ya tiene el detalle completo (2/3 en Codex III, 2/2 en Thunder's Edge) y las 3 aclaraciones de FAQ. Esta entrada central solo referencia la existencia del planeta para que specialPlanets.json quede como el índice completo de 'planetas sin tile propio'; el detalle canónico sigue viviendo en el archivo de la facción.",
+      "resources": 2,
+      "influence": 3,
+      "legendaryAbility": {
+        "name": "Custodia Vigilia (ability card)",
+        "text": "Mientras controlás Mecatol Rex, gana SPACE CANNON 5 y Production 3. Ganás 2 command tokens cuando otro jugador gana un punto de victoria usando la segunda cláusula de \"Imperial\" (controlar Mecatol Rex) — no por anotar objetivos públicos con Imperial en juego."
+      }
+    }
+  ]
+}
+
