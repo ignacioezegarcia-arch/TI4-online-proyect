@@ -151,6 +151,7 @@ import { resolveAssimilateSubstitute, useHarrow, useCyberneticEnhancements, useC
 import { usePromiseOfProtection, usePillage, useSalvageOperations, useAmbush, useSuffiAn, useSUlaMentarion, useSleeperCell, resolveSleeperCellPlacement } from "./rules/mentak";
 import { useGiftOfPrescience, useZeuOmega, useZeuOmegaOmega, useNeuroglaive, useTheOracle, useMindsieve, useForesight } from "./rules/naalu";
 import { maybeDestroyBlockadedFloatingFactories, useChaosMapping, useRaghsCall, useMendosa, useRowlSarrig, useGurnoAggero, useDeorbitBarrage, resolveScavengerZetaDeploy } from "./rules/saar";
+import { useReclamation, useReclaimerPlacement, usePlayAcquiescence, usePlayAcquiescenceOmega, useLazaxGateFolding, useHegemonicTradePolicy, useBerekarBerekon, useMathisMathinus } from "./rules/winnu";
 import { useWormholeGenerator, useWormholeGeneratorOmega, useCreussIff, useIcarusDrive, useDimensionalSplicer, useEmissaryTaivra, useSaiSeravus, useRiftwalkerMeian } from "./rules/creuss";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
@@ -981,6 +982,30 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_DEORBIT_BARRAGE":
         result = useDeorbitBarrage(state, action, rules);
+        break;
+      case "USE_RECLAMATION":
+        result = useReclamation(state, action, rules);
+        break;
+      case "USE_RECLAIMER_PLACEMENT":
+        result = useReclaimerPlacement(state, action, rules);
+        break;
+      case "USE_PLAY_ACQUIESCENCE":
+        result = usePlayAcquiescence(state, action);
+        break;
+      case "USE_PLAY_ACQUIESCENCE_OMEGA":
+        result = usePlayAcquiescenceOmega(state, action);
+        break;
+      case "USE_LAZAX_GATE_FOLDING":
+        result = useLazaxGateFolding(state, action, rules);
+        break;
+      case "USE_HEGEMONIC_TRADE_POLICY":
+        result = useHegemonicTradePolicy(state, action, rules);
+        break;
+      case "USE_BEREKAR_BEREKON":
+        result = useBerekarBerekon(state, action);
+        break;
+      case "USE_MATHIS_MATHINUS":
+        result = useMathisMathinus(state, action);
         break;
       case "USE_STYMIE":
         result = useStymie(state, action);
