@@ -7,6 +7,17 @@
 // counts, because `games` has no client-writable RLS policy (0001_init.sql)
 // — this function uses the service-role key, which is the only way in.
 //
+// CORRECTED: this was previously true for everything EXCEPT dice — every
+// dice-bearing field on an incoming action (combat rolls, gravity rift
+// removal, Space Cannon, etc.) was passed straight through from the
+// client's own request body with no server-side regeneration or
+// verification at all, meaning a client could simply always send
+// maximum/always-hit values. See _shared/regenerateDice.ts's own doc
+// comment for the fix (every roll in TI4 is a d10, which is what makes a
+// single generic fix possible instead of bespoke per-action business
+// logic) — applied unconditionally below, before this function's own
+// GameEngine.applyAction call.
+//
 // Request body: { gameId: string, action: GameAction }
 // Responses:
 //   200 { ok: true, events: GameEvent[] }
@@ -21,6 +32,7 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { getAdminClient, getCallerClient } from "../_shared/supabaseClients.ts";
 import { loadRuleData } from "../_shared/ruleData.ts";
+import { regenerateDiceFields } from "../_shared/regenerateDice.ts";
 import { hasThundersEdge } from "../_shared/engine/rules/gameMode.ts";
 import { GameEngine } from "../_shared/engine/GameEngine.ts";
 import type { GameState } from "../_shared/engine/types/GameState.ts";
@@ -96,8 +108,22 @@ Deno.serve(async (req) => {
   const rules = await loadRuleData(factionIds, hasThundersEdge(state.mode));
 
   // --- 4. Run the same engine the client already ran optimistically -----
-  const result = GameEngine.applyAction(state, action, rules);
-  if (!result.ok || !result.state) {
+  // Anti-cheat: regenerate every dice-bearing field server-side BEFORE
+  // this runs — see _shared/regenerateDice.ts's own doc comment for why
+  // this was previously the single biggest gap in "this function is the
+  // sole authority for game state" (it was authoritative for everything
+  // EXCEPT dice, which were 100% whatever the client sent).
+  const trustedAction = regenerateDiceFields(action) as GameAction;
+  const result = GameEngine.applyAction(state, trustedAction, rules);
+  // CORRECTED: the previous `!result.ok || !result.state` check broke
+  // TypeScript's own discriminated-union narrowing (ActionResult's own
+  // "ok: false" branch has no `state` field at all, so mixing a
+  // non-discriminant property check into the OR left `result.error`
+  // unresolvable inside this block — confirmed via an actual `deno
+  // check` run). The "ok: true" branch always carries `state` by the
+  // type's own definition, so checking the discriminant alone is both
+  // correct and sufficient.
+  if (!result.ok) {
     return json({ ok: false, error: result.error ?? "Illegal action." }, 400);
   }
 
