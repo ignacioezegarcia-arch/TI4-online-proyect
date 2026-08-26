@@ -86,6 +86,8 @@ export type GameAction =
       gravityDriveBoostFromSystemId?: SystemId;
       /** TE "Ionian Fuel Refinery" (Tempesta's own legendary planet ability): same "+1 to one specific moves-entry" shape as Gravity Drive above, but exhausts the ability card instead of being a repeatable tech. */
       ionianFuelRefineryBoostFromSystemId?: SystemId;
+      /** Winnu "Imperator" (Breakthrough ability): this player's own choice of which `moves` entry (by its own fromSystemId) gets the +1 granted by activating a system with a legendary planet this same tactical action — see phases/tacticalAction.ts's own moveShips for the full doc comment. */
+      imperatorMoveBonusFromSystemId?: SystemId;
       /** RR "Dominus Orb" (relic): purges the card to bypass the normal reachability/adjacency check entirely for any move whose fromSystemId has this player's own command token. */
       useDominusOrb?: boolean;
       /** Muaat "Stellar Genesis" breakthrough ability: if a war sun's own path this action visits Avernus's system (as its literal origin OR a mid-path hop — properly tracked via canShipReachSystem's own mustPassThroughSystemId parameter, not just a direct-origin check), setting this brings Avernus's token along to the final destination — never into a home system. */
@@ -565,6 +567,14 @@ export type GameAction =
       hitAssignments: { unitType: UnitType }[];
       exhaustPlanetIdsForResources?: PlanetId[];
     } // Clan of Saar's own Breakthrough ability — see rules/saar.ts
+  | { type: "USE_RECLAMATION"; playerId: PlayerId; placePds: boolean; placeSpaceDock: boolean } // Winnu's own faction ability — see rules/winnu.ts
+  | { type: "USE_RECLAIMER_PLACEMENT"; playerId: PlayerId; planetId: PlanetId; placements: ("pds" | "space_dock")[] } // Winnu's own mech — see rules/winnu.ts
+  | { type: "USE_PLAY_ACQUIESCENCE"; playerId: PlayerId; ownCardId: StrategyCardId; winnuCardId: StrategyCardId } // Winnu's own promissory note — see rules/winnu.ts
+  | { type: "USE_PLAY_ACQUIESCENCE_OMEGA"; playerId: PlayerId; strategyCardId: StrategyCardId } // Winnu's own promissory note (Codex) — see rules/winnu.ts
+  | { type: "USE_LAZAX_GATE_FOLDING"; playerId: PlayerId } // Winnu's own faction technology — see rules/winnu.ts
+  | { type: "USE_HEGEMONIC_TRADE_POLICY"; playerId: PlayerId; planetId: PlanetId } // Winnu's own faction technology — see rules/winnu.ts
+  | { type: "USE_BEREKAR_BEREKON"; playerId: PlayerId } // Winnu's own agent — see rules/winnu.ts
+  | { type: "USE_MATHIS_MATHINUS"; playerId: PlayerId; strategyCardId: StrategyCardId; grantedPlayerIds: PlayerId[] } // Winnu's own hero — see rules/winnu.ts
   | { type: "USE_STYMIE"; playerId: PlayerId } // Arborec's own promissory note — see rules/arborec.ts
   | { type: "USE_STYMIE_OMEGA"; playerId: PlayerId; targetPlayerId: PlayerId; targetSystemId: SystemId; commandTokenPool?: "tactic" | "fleet" | "strategy" } // Arborec's own promissory note (Codex) — see rules/arborec.ts
   | { type: "USE_DUHA_MENAIMON_PRODUCTION"; playerId: PlayerId; units: { unitType: UnitType; count: number }[]; exhaustPlanetIdsForResources: PlanetId[]; groundForceTargetPlanetId?: PlanetId } // Arborec's own flagship — see rules/arborec.ts
@@ -719,6 +729,8 @@ export type GameAction =
       specializedCompoundsPlanetId?: PlanetId;
       /** L1Z1X "Inheritance Systems" (faction tech): ignore ALL prerequisites, paying 2 resources separately — see phases/technology.ts's own researchTechnology for the full doc comment. */
       useInheritanceSystemsExhaustPlanetIds?: PlanetId[];
+      /** Nekro Virus "PROPAGATION": which of the 3 command-token pools this player's own 3 free tokens go to, replacing the whole research attempt — see phases/technology.ts's own researchTechnology for the full doc comment. Ignored for every other faction. */
+      nekroCommandTokenDistribution?: { tactic: number; fleet: number; strategy: number };
     } // RR 90
   | {
       type: "RESEARCH_UNIT_UPGRADE";

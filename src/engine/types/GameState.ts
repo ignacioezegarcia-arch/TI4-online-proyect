@@ -66,6 +66,8 @@ export interface PlanetState {
   isSpaceStation?: boolean;
   /** RR "Stellar Converter" (relic): "place the destroyed planet token on that planet" — the planet keeps existing as an entry (preserving its own identity/data) rather than being deleted outright, marked destroyed instead. "A system that contains a planet destroyed by Stellar Converter, and no other planets, is considered to contain no planets" — checked the same way isSpaceStation is checked wherever "does this system have any REAL planets" matters (frontier tokens, objectives, etc.). No units can ever occupy a destroyed planet again; it produces no resources/influence and has no traits/specialties for any purpose. */
   destroyed?: boolean;
+  /** Winnu "Hegemonic Trade Policy" (faction technology): "swap the resource and influence values of 1 planet you control DURING THAT USE of Production" — a scoped, single-production effect: set by rules/winnu.ts's own useHegemonicTradePolicy right before a PRODUCE_UNITS call, and reverted by phases/production.ts's own executeProduction right after that SAME call consumes it (never left toggled between turns). Checked via rules/planetStats.ts's own getEffectivePlanetStats, so it's already reflected in the Production formula itself (confirmed: "changing a planet's resource value affects the Production value of a Space Dock on that planet"). */
+  swappedResourceInfluence?: boolean;
 }
 
 /** RR 77: a system tile's live game state. */
@@ -333,6 +335,16 @@ export interface GameState {
    * consumes/clears).
    */
   pendingScavengerZetaDeploy?: { playerId: PlayerId; planetId: PlanetId }[];
+  /** Winnu "RECLAMATION" (faction ability): queued right after a tactical action gains Mecatol Rex control, resolved by rules/winnu.ts's own useReclamation (USE_RECLAMATION). */
+  pendingReclamationChoice?: { playerId: PlayerId };
+  /** Winnu "Reclaimer" (mech): queued per planet gained while 1+ Reclaimer mechs are present there, resolved by rules/winnu.ts's own useReclaimerPlacement (USE_RECLAIMER_PLACEMENT). */
+  pendingReclaimerChoice?: { playerId: PlayerId; planetId: PlanetId }[];
+  /** Winnu "Acquiescence Ω" (promissory note): the note holder gets a free (no command token) secondary resolution for this one card, THIS one time — set by rules/winnu.ts's own usePlayAcquiescenceOmega, consumed by phases/strategyCardAbilities.ts's own resolveStrategySecondary. */
+  pendingAcquiescenceOmegaFreeSecondary?: { playerId: PlayerId; cardId: StrategyCardId };
+  /** Winnu "Berekar Berekon" (agent): a -2 combined-cost discount for this ONE player's very next PRODUCE_UNITS call — set by rules/winnu.ts's own useBerekarBerekon, consumed by phases/production.ts's own executeProduction. */
+  pendingBerekarBerekonDiscount?: PlayerId;
+  /** Winnu "Mathis Mathinus — Imperial Seal" (hero): grants these specific players permission to resolve this strategy card's own secondary this round, even though it isn't their own assigned card — set by rules/winnu.ts's own useMathisMathinus, consumed by phases/strategyCardAbilities.ts's own resolveStrategySecondary. */
+  pendingMathisMathinusGrant?: { cardId: StrategyCardId; playerIds: PlayerId[] };
   /** Yssaril Tribes "SCHEMING": players who still need to discard 1 action card after a qualifying draw — "no other abilities may resolve until the Yssaril player has discarded" (confirmed at tirules2.com/F_yssaril). See rules/yssaril.ts's own discardSchemingCard. */
   pendingSchemingDiscards?: PlayerId[];
   /** Ghosts of Creuss "Wormhole Generator" (original/base version): players who still need to place/move their mandatory wormhole token at the start of this status phase — see rules/creuss.ts's own useWormholeGenerator. */
@@ -745,6 +757,8 @@ export interface PendingTacticalAction {
    * own moveShips, which applies this BEFORE those.
    */
   mendosaMoveOverride?: { unitType: import("./enums").UnitType; fromSystemId: SystemId; moveValue: number };
+  /** Winnu "Imperator" (Breakthrough ability): "+1 to the move value of 1 of your ships" for THIS tactical action, after activating a system with a legendary planet — same "scoped to this one tactical action" shape as mendosaMoveOverride above, set by rules/winnu.ts's own activateSystemImperatorMoveBonus, consumed by phases/tacticalAction.ts's own moveShips (the actual moves-entry it applies to is this player's own choice, action.imperatorMoveBonusFromSystemId — this field only marks that the +1 is AVAILABLE at all this action). */
+  imperatorMoveBonusSystemId?: SystemId;
   /**
    * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
    * players actively fighting the CURRENT ground combat on
