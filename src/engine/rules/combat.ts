@@ -188,6 +188,20 @@ export function buildSpaceCombatEntries(
       if (!stats || stats.combat == null) continue; // e.g. a transported ground force accidentally in the space stack list — shouldn't happen, but no combat value means no dice
 
       const diceCountPerUnit = stats.combatDiceCount ?? 1;
+      // Winnu "Salai Sai Corian" (flagship, "Scaling Combat Dice"): "this
+      // unit rolls a number of dice equal to the number of your
+      // opponent's non-fighter ships in this system." Confirmed
+      // (yjmrobert.com/tirules/factions/f_winnu): "if the opponent has
+      // only fighters, it rolls no dice." A genuinely dynamic dice count
+      // (not a fixed per-unit multiplier like every other unit in the
+      // game), computed here directly rather than through the normal
+      // combatDiceCount data field (which can't represent "depends on
+      // the opponent's own units" at all — this unit's own data entry
+      // deliberately has combatDiceCount unset for exactly this reason).
+      const salaiSaiScalingDice =
+        stack.unitType === "flagship" && player.factionId === ("winnu" as never)
+          ? (system.spaceUnitsByPlayer[playerIds.find((id) => id !== playerId) ?? ("" as PlayerId)] ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.unitType !== "fighter" && s.count > 0).reduce((sum, s) => sum + s.count, 0)
+          : null;
       // RR "Prophecy of Ixth": the owner's fighters get +1 to their combat
       // roll result — expressed here as -1 to hitOn (mathematically
       // identical, same convention as this file's other die-modifier
@@ -200,9 +214,34 @@ export function buildSpaceCombatEntries(
       const fragileBonus = hasAbility(player, asAbilityId("fragile")) ? -1 : 0;
       // Sardakk N'orr "C'Morran N'orr" (flagship, Fleet Combat Bonus): "+1 to the result of each of your OTHER ships' combat rolls in this system." Same AFB/Bombardment/Space Cannon exclusion as UNRELENTING above. Never applies to the flagship's own roll (only "other" ships).
       const hasCMorranNorrInSystem = stack.unitType !== "flagship" && (system.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.unitType === "flagship" && s.count > 0) && player.factionId === ("sardakk" as never);
-      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus - unrelentingBonus - fragileBonus - (hasCMorranNorrInSystem ? 1 : 0);
+      // Winnu "Rickar Rickani" (commander): "+2 to the result of each of
+      // your unit's combat rolls in the Mecatol Rex system, your home
+      // system, and each system that contains a legendary planet."
+      // Confirmed (yjmrobert.com/tirules/factions/f_winnu): "if a system
+      // meets 2+ of these conditions... only +2, not +4 (or +6)" — a
+      // capped boolean check, never additive.
+      const rickarRickaniEntry = player.leaders.find((l) => l.leaderId === ("winnu_commander" as never));
+      const rickarRickaniUnlocked = rickarRickaniEntry && !rickarRickaniEntry.locked;
+      const rickarRickaniQualifies =
+        !!rickarRickaniUnlocked &&
+        (system.planets.some((p) => rules.planets[p.planetId]?.isMecatolRex) ||
+          rules.homeSystemByFaction[player.factionId] === systemId ||
+          system.planets.some((p) => rules.planets[p.planetId]?.isLegendary));
+      const rickarRickaniBonus = rickarRickaniQualifies ? 2 : 0;
+      // Winnu "Imperator" (Breakthrough ability): "+1 to the results of
+      // each of your unit's combat rolls for each 'Support for the
+      // Throne' in your opponent's play area." Confirmed: "applies even
+      // if it is the Winnu player's OWN Support for the Throne" (no
+      // ownership check, just counts occurrences in the OPPONENT's own
+      // promissoryNotesInPlayArea).
+      const opponentIdForImperator = playerIds.find((id) => id !== playerId);
+      const imperatorBonus =
+        player.factionId === ("winnu" as never) && player.hasBreakthrough && opponentIdForImperator
+          ? (state.players[opponentIdForImperator]?.promissoryNotesInPlayArea ?? []).filter((id) => id === ("support_for_the_throne" as never)).length
+          : 0;
+      const hitOn = (isDefender ? stats.combat - anomalyBonus : stats.combat) - prophecyOfIxthBonus - moraleBoostBonus - fighterPrototypeBonus - unrelentingBonus - fragileBonus - (hasCMorranNorrInSystem ? 1 : 0) - rickarRickaniBonus - imperatorBonus;
       const viscountBonus = viscountUnlennBonus && viscountUnlennBonus.targetPlayerId === playerId && viscountUnlennBonus.unitType === stack.unitType ? 1 : 0;
-      const totalDiceForStack = stack.count * diceCountPerUnit + viscountBonus;
+      const totalDiceForStack = salaiSaiScalingDice != null ? salaiSaiScalingDice : stack.count * diceCountPerUnit + viscountBonus;
       const hylarimBonusHits = stack.unitType === "flagship" && player.factionId === ("jolnar" as never);
 
       // Letnev "Gravleash Maneuvers": the bonus only ever applies to exactly 1 of this player's own dice — split it off into its own entry (diceCount 1) with the boosted hitOn, leaving the rest of the stack's dice at the normal value.
@@ -302,7 +341,26 @@ export function buildGroundCombatEntries(
       const opponentPlayer = opponentId ? state.players[opponentId] : undefined;
       const opponentHasRelicFragments = !!opponentPlayer && Object.values(opponentPlayer.relicFragments).some((n) => n > 0);
       const iconoclastRelicBonus = stack.unitType === "mech" && player.factionId === ("naalu" as never) && !hasCodex(state.mode) && opponentHasRelicFragments ? 2 : 0;
-      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus - unrelentingBonus - fragileBonus - tekklarLegionBonus - iconoclastRelicBonus, unitType: stack.unitType });
+      // Winnu "Rickar Rickani" (commander): same "+2, capped, in Mecatol
+      // Rex/home/legendary-planet systems" bonus as buildSpaceCombatEntries'
+      // own copy above — ground combat is inherently scoped to a single
+      // planet, so checking THIS planet's own isMecatolRex/isLegendary
+      // flags directly is sufficient without needing its containing
+      // system (a home-system check still needs that, found via a
+      // one-off lookup since this function isn't otherwise given one).
+      const rickarRickaniEntry = player.leaders.find((l) => l.leaderId === ("winnu_commander" as never));
+      const rickarRickaniUnlocked = rickarRickaniEntry && !rickarRickaniEntry.locked;
+      const containingSystemId = rickarRickaniUnlocked ? Object.entries(state.systems).find(([, s]) => s.planets.some((p) => p.planetId === planet.planetId))?.[0] : undefined;
+      const rickarRickaniQualifies =
+        !!rickarRickaniUnlocked &&
+        (rules.planets[planet.planetId]?.isMecatolRex === true || rules.planets[planet.planetId]?.isLegendary === true || (containingSystemId && rules.homeSystemByFaction[player.factionId] === containingSystemId));
+      const rickarRickaniBonus = rickarRickaniQualifies ? 2 : 0;
+      // Winnu "Imperator" (Breakthrough ability): same "+1 per Support
+      // for the Throne in the opponent's play area" as
+      // buildSpaceCombatEntries' own copy above.
+      const imperatorBonus =
+        player.factionId === ("winnu" as never) && player.hasBreakthrough ? (opponentPlayer?.promissoryNotesInPlayArea ?? []).filter((id) => id === ("support_for_the_throne" as never)).length : 0;
+      entries.push({ playerId, diceCount: stack.count * (stats.combatDiceCount ?? 1) * diceMultiplier + evelynBonus, hitOn: stats.combat - moraleBoostBonus - unrelentingBonus - fragileBonus - tekklarLegionBonus - iconoclastRelicBonus - rickarRickaniBonus - imperatorBonus, unitType: stack.unitType });
     }
   }
   return entries;
