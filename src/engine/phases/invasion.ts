@@ -27,6 +27,7 @@ import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { hasAbility } from "../rules/abilities";
 import { applyIconoclastOmegaOmegaDeploy } from "../rules/naalu";
 import { applyRelicOnGainEffects } from "../rules/relics";
+import { unlockCommander } from "../rules/leaders";
 
 /**
  * RR 78 STEP 4 — INVASION (RR 44).
@@ -576,7 +577,14 @@ export function useRemoveCustodiansToken(
     nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...system, planets: system.planets.map((p) => (p.planetId === planetId ? { ...p, exhausted: true } : p)) } } };
   }
   const player = nextState.players[action.playerId];
-  const fromTradeGoods = Math.max(0, 6 - influence);
+  // Winnu "BLOOD TIES" (faction ability): "You do not have to spend
+  // influence to remove the custodians token from Mecatol Rex." Confirmed
+  // (yjmrobert.com/tirules/factions/f_winnu): "The Winnu player must
+  // still commit at least one ground force" — only the 6-influence cost
+  // is waived, the ground-force requirement above is completely
+  // unaffected (and already enforced unconditionally either way).
+  const isWinnu = player.factionId === ("winnu" as never);
+  const fromTradeGoods = isWinnu ? 0 : Math.max(0, 6 - influence);
   if (fromTradeGoods > player.tradeGoods) {
     return { ok: false, error: `RR 27.2: not enough to pay 6 influence: ${influence} from exhausted planets + only ${player.tradeGoods} trade goods.` };
   }
@@ -683,16 +691,33 @@ export function startGroundCombat(
   const defenderId = planet.controllerId ?? playersWithGroundForces(planet).find((id) => id !== action.playerId);
   const defenderQualifies = defenderId ? buildSpaceCannonDefenseEntries(state, rules, defenderId, planet, action.playerId).length > 0 : false;
 
+  // Winnu "Rickar Rickani" (commander), 2nd unlock condition: "enter into
+  // a combat in the Mecatol Rex system" — the ground-combat half; see
+  // phases/tacticalAction.ts's own space-combat transition for the other
+  // half, and phases/invasion.ts's own setPlanetController for the
+  // "control Mecatol Rex" condition.
+  let unlockState = state;
+  if (pending.systemId === (rules.mecatolSystemId as SystemId)) {
+    for (const pid of [action.playerId, defenderId].filter((id): id is PlayerId => !!id)) {
+      const p = unlockState.players[pid];
+      if (p?.factionId !== ("winnu" as never)) continue;
+      const commanderEntry = p.leaders.find((l) => l.leaderId === ("winnu_commander" as never));
+      if (commanderEntry?.locked) {
+        unlockState = { ...unlockState, players: { ...unlockState.players, [pid]: unlockCommander(p, "winnu_commander" as never) } };
+      }
+    }
+  }
+
   // RR "Magen Defense Grid": only checked if Space Cannon Defense didn't
   // already claim this window (simplification, flagged — the two aren't
   // offered together in the same call).
   const magenDefenseGridEligibility =
-    defenderQualifies || !defenderId ? null : checkMagenDefenseGridEligibility(state, rules, defenderId, planet, action.playerId, pending.systemId);
+    defenderQualifies || !defenderId ? null : checkMagenDefenseGridEligibility(unlockState, rules, defenderId, planet, action.playerId, pending.systemId);
 
   const participantIds: [PlayerId, PlayerId] | undefined = defenderId ? [action.playerId, defenderId] : undefined;
 
   const resultState: GameState = {
-    ...state,
+    ...unlockState,
     pendingTacticalAction: defenderQualifies
       ? {
           ...pending,
@@ -1588,6 +1613,42 @@ export function setPlanetController(
       ...nextState,
       pendingScavengerZetaDeploy: [...(nextState.pendingScavengerZetaDeploy ?? []), { playerId: controllerId, planetId }],
     };
+  }
+  // Winnu "RECLAMATION" (faction ability): "After you resolve a tactical
+  // action during which you gained control of Mecatol Rex, you may
+  // place 1 PDS and 1 space dock..." — queued here (control just
+  // changed), resolved once the whole tactical action is otherwise done
+  // (RR "Placing the structure will occur after the Production step" —
+  // confirmed, yjmrobert.com/tirules/factions/f_winnu) by rules/winnu.ts's
+  // own useReclamation.
+  if (nextState.players[controllerId]?.factionId === ("winnu" as never) && rules.planets[planetId]?.isMecatolRex) {
+    nextState = { ...nextState, pendingReclamationChoice: { playerId: controllerId } };
+  }
+  // Winnu "Reclaimer" (mech): same trigger, but per-planet, gated on
+  // actually having 1+ Reclaimer mechs present on THIS planet right now
+  // (RR: "the Reclaimer need only be on the planet at the end of the
+  // tactical action the Winnu player gained it, not when they gain
+  // control of it" — this queues on control-gain regardless, and
+  // rules/winnu.ts's own useReclaimerPlacement re-checks the mech count
+  // fresh at resolution time, naturally satisfying that same "end of
+  // the tactical action" timing without needing a second hook here).
+  if (nextState.players[controllerId]?.factionId === ("winnu" as never)) {
+    const updatedPlanet = nextState.systems[systemId].planets.find((p) => p.planetId === planetId);
+    const hasReclaimer = (updatedPlanet?.unitsByPlayer[controllerId] ?? []).some((s) => s.unitType === "mech" && s.count > 0);
+    if (hasReclaimer) {
+      nextState = { ...nextState, pendingReclaimerChoice: [...(nextState.pendingReclaimerChoice ?? []), { playerId: controllerId, planetId }] };
+    }
+  }
+  // Winnu "Rickar Rickani" (commander): "Control Mecatol Rex or enter
+  // into a combat in the Mecatol Rex system" — the "control Mecatol
+  // Rex" half, checked right here. The "enter into a combat there" half
+  // lives at whichever combat-start hook actually applies (see
+  // phases/spaceCombat.ts/invasion.ts's own combat-entry points).
+  if (nextState.players[controllerId]?.factionId === ("winnu" as never) && rules.planets[planetId]?.isMecatolRex) {
+    const commanderEntry = nextState.players[controllerId].leaders.find((l) => l.leaderId === ("winnu_commander" as never));
+    if (commanderEntry?.locked) {
+      nextState = { ...nextState, players: { ...nextState.players, [controllerId]: unlockCommander(nextState.players[controllerId], "winnu_commander" as never) } };
+    }
   }
 
   // RR "Holy Planet of Ixth": gaining/losing control of ITS OWN attached

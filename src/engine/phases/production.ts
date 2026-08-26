@@ -387,6 +387,20 @@ export function executeProduction(
     totalCost = 0;
     usedHarrughGefhara = true;
   }
+  // Winnu "Berekar Berekon" (agent): "When 1 or more of a player's units
+  // use PRODUCTION: you may exhaust this card to reduce the combined
+  // cost of the produced units by 2." Confirmed
+  // (yjmrobert.com/tirules/factions/f_winnu): "Production limits still
+  // apply" — same limitCheckCost/totalCost split as Harrugh Gefhara
+  // above, just a flat -2 (floored at 0) instead of zeroing everything.
+  // Applies to ANY player's own production (not just Winnu's own —
+  // Berekon's card text says "a player's", matching rules/winnu.ts's
+  // own useBerekarBerekon, which targets a caller-chosen beneficiary
+  // distinct from the Winnu player who actually owns/exhausts the card).
+  const usedBerekarBerekon = state.pendingBerekarBerekonDiscount === playerId;
+  if (usedBerekarBerekon) {
+    totalCost = Math.max(0, totalCost - 2);
+  }
   if (player.hasBreakthrough && player.factionId === ("sol" as never)) {
     const combinedCapacity = units.reduce((sum, u) => {
       if (u.count <= 0) return sum;
@@ -622,7 +636,25 @@ export function executeProduction(
         leaders: usedHarrughGefhara ? player2.leaders.filter((l) => l.leaderId !== ("hacan_hero" as never)) : player2.leaders,
       },
     },
+    // Winnu "Berekar Berekon": consumed — a single-use discount for this one PRODUCE_UNITS call.
+    pendingBerekarBerekonDiscount: usedBerekarBerekon ? undefined : state2.pendingBerekarBerekonDiscount,
   };
+
+  // Winnu "Hegemonic Trade Policy" (faction technology): "swap the
+  // resource and influence values of 1 planet you control DURING THAT
+  // USE of Production" — scoped to just this one call, so any planet
+  // this player swapped (via rules/winnu.ts's own useHegemonicTradePolicy,
+  // right before this same PRODUCE_UNITS) is reverted here, right after
+  // this production has actually consumed the swapped values above,
+  // rather than left toggled indefinitely (which would incorrectly also
+  // affect this planet's own voting influence, future production, etc.
+  // until manually reverted).
+  if (nextState.players[playerId].factionId === ("winnu" as never)) {
+    for (const [sysId, sys] of Object.entries(nextState.systems)) {
+      if (!sys.planets.some((p) => p.swappedResourceInfluence && p.controllerId === playerId)) continue;
+      nextState = { ...nextState, systems: { ...nextState.systems, [sysId]: { ...sys, planets: sys.planets.map((p) => (p.swappedResourceInfluence && p.controllerId === playerId ? { ...p, swappedResourceInfluence: false } : p)) } } };
+    }
+  }
 
   // Naalu Collective "M'aban" (commander): "You may produce 1 additional
   // fighter for their cost; these additional units do not count against
