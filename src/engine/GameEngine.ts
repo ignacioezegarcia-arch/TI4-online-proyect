@@ -152,6 +152,7 @@ import { usePromiseOfProtection, usePillage, useSalvageOperations, useAmbush, us
 import { useGiftOfPrescience, useZeuOmega, useZeuOmegaOmega, useNeuroglaive, useTheOracle, useMindsieve, useForesight } from "./rules/naalu";
 import { maybeDestroyBlockadedFloatingFactories, useChaosMapping, useRaghsCall, useMendosa, useRowlSarrig, useGurnoAggero, useDeorbitBarrage, resolveScavengerZetaDeploy } from "./rules/saar";
 import { useReclamation, useReclaimerPlacement, usePlayAcquiescence, usePlayAcquiescenceOmega, useLazaxGateFolding, useHegemonicTradePolicy, useBerekarBerekon, useMathisMathinus } from "./rules/winnu";
+import { useIndoctrination, useDevotion, useImpulseCore, assignImpulseCoreHit, usePlayGreyfireMutagen, usePlayGreyfireMutagenOmega, useBrotherMilor, skipBrotherMilor, useDaneelOfTheTenth, useDaneelOfTheTenthOmega } from "./rules/yin";
 import { useWormholeGenerator, useWormholeGeneratorOmega, useCreussIff, useIcarusDrive, useDimensionalSplicer, useEmissaryTaivra, useSaiSeravus, useRiftwalkerMeian } from "./rules/creuss";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
@@ -411,7 +412,7 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         result = resolveStrategySecondary(state, action, rules);
         break;
       case "RESEARCH_TECHNOLOGY":
-        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId, action.exhaustPlanetIdsForTechSpecialty, action.useAnalyticalIgnoreColor, action.docSucabanRemovedInfantry, action.specializedCompoundsPlanetId, action.useInheritanceSystemsExhaustPlanetIds);
+        result = researchTechnology(state, action.playerId, action.techId, action.cost, action.exhaustPlanetIdsForResources, rules, action.useResearchTeamAttachmentPlanetId, action.exhaustPlanetIdsForTechSpecialty, action.useAnalyticalIgnoreColor, action.docSucabanRemovedInfantry, action.specializedCompoundsPlanetId, action.useInheritanceSystemsExhaustPlanetIds, action.nekroCommandTokenDistribution, action.useBrotherOmarOmegaInfantryPlanetId);
         break;
       case "RESEARCH_UNIT_UPGRADE":
         result = researchUnitUpgrade(
@@ -1006,6 +1007,36 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "USE_MATHIS_MATHINUS":
         result = useMathisMathinus(state, action);
+        break;
+      case "USE_INDOCTRINATION":
+        result = useIndoctrination(state, action, rules);
+        break;
+      case "USE_DEVOTION":
+        result = useDevotion(state, action, rules);
+        break;
+      case "USE_IMPULSE_CORE":
+        result = useImpulseCore(state, action, rules);
+        break;
+      case "ASSIGN_IMPULSE_CORE_HIT":
+        result = assignImpulseCoreHit(state, action, rules);
+        break;
+      case "USE_PLAY_GREYFIRE_MUTAGEN":
+        result = usePlayGreyfireMutagen(state, action);
+        break;
+      case "USE_PLAY_GREYFIRE_MUTAGEN_OMEGA":
+        result = usePlayGreyfireMutagenOmega(state, action);
+        break;
+      case "USE_BROTHER_MILOR":
+        result = useBrotherMilor(state, action, rules);
+        break;
+      case "SKIP_BROTHER_MILOR":
+        result = skipBrotherMilor(state, action, rules);
+        break;
+      case "USE_DANEEL_OF_THE_TENTH":
+        result = useDaneelOfTheTenth(state, action);
+        break;
+      case "USE_DANEEL_OF_THE_TENTH_OMEGA":
+        result = useDaneelOfTheTenthOmega(state, action, rules);
         break;
       case "USE_STYMIE":
         result = useStymie(state, action);
