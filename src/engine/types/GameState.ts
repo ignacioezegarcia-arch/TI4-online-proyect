@@ -772,6 +772,14 @@ export interface PendingTacticalAction {
    * combatants from scratch, so bystanders are never pulled in.
    */
   groundCombatParticipantIds?: [PlayerId, PlayerId];
+  /** Yin Brotherhood "INDOCTRINATION" (faction ability): "limited to once per ground combat" — set to the planetId once used, naturally distinguishing "already used FOR THIS combat" from "a new ground combat has since started on a different planet" without needing an explicit reset. See rules/yin.ts's own useIndoctrination. */
+  usedIndoctrinationForPlanetId?: PlanetId;
+  /** Yin Brotherhood "Impulse Core" (faction technology): "at the start of a space combat" — once per space combat (not per round), tracked here since combatRound alone isn't enough (a player could otherwise try again each round as long as combatRound stayed at 1 somehow). See rules/yin.ts's own useImpulseCore. */
+  usedImpulseCoreThisCombat?: boolean;
+  /** Yin Brotherhood "Impulse Core": queued right after Yin sacrifices a ship, waiting on the OPPONENT (per the confirmed FAQ correction — the opponent chooses, not Yin) to assign which of their own ships takes the hit. See rules/yin.ts's own assignImpulseCoreHit. */
+  pendingImpulseCoreHitAssignment?: { opponentId: PlayerId; systemId: SystemId };
+  /** Yin Brotherhood "Greyfire Mutagen" (promissory note): "The Yin player cannot use faction abilities or faction technology during this tactical action" — confirmed NOT to cover leader/mech/flagship abilities (see rules/yin.ts's own usePlayGreyfireMutagen for the full doc comment on which 4 mechanics this actually blocks). */
+  yinFactionAbilitiesBannedThisAction?: boolean;
   /** RR 44.2: true once the active player has signaled they're done committing ground forces this invasion step (FINISH_INVASION_COMMITS) — after that, no more COMMIT_GROUND_FORCES, and START_GROUND_COMBAT becomes available. */
   invasionCommitsFinished?: boolean;
   /**
@@ -845,6 +853,26 @@ export interface PendingTacticalAction {
    * this is empty too, same "gate before advancing" pattern as pendingHits.
    */
   duraniumArmorPendingPlayers?: PlayerId[];
+  /**
+   * Yin Brotherhood "Brother Milor" (agent): "After a player's destroyer
+   * or cruiser is destroyed: You may exhaust this card; if you do, that
+   * player may place up to 2 fighters from their reinforcements in that
+   * unit's system." CORRECTED (yjmrobert.com/tirules/factions/f_yin):
+   * the Ω version (codex) is genuinely broader — "if all of a player's
+   * UNITS are destroyed" (any unit type, not just destroyer/cruiser),
+   * "may only be used during the action phase" (space OR ground combat,
+   * not space-only), and lets the recipient choose "2 fighters or 2
+   * infantry" — an earlier version of this project treated both
+   * versions identically (matching only the base text). `unitTypeLost`
+   * records what actually triggered this offer (base only ever queues
+   * for destroyer/cruiser; Ω queues for anything); `planetId` present
+   * means this offer came from a GROUND combat (Ω only — base never
+   * queues there at all). Needs to be resolved (accepted or explicitly
+   * skipped) BEFORE the relevant combat's own wrap-up concludes it, same
+   * "blocks wrap-up until resolved" shape as duraniumArmorPendingPlayers
+   * above and crownOfThalnosPendingPlayers below.
+   */
+  pendingBrotherMilorOffers?: { targetPlayerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitTypeLost: import("./enums").UnitType }[];
   /**
    * RR "Magen Defense Grid" (base version, base-mode games only): the
    * defender's own optional choice, at the start of ground combat on a

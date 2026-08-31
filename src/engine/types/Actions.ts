@@ -274,6 +274,8 @@ export type GameAction =
       discardSecretObjectiveId?: string;
       exhaustTechSpecialtyPlanetId?: PlanetId;
       fractureDieRoll?: number;
+      /** Yin Brotherhood "Yin Ascendant": which faction's alliance ability this player's own random pick landed on, only consulted if this player's faction is Yin and this claim is what actually grants their breakthrough — see rules/yin.ts's own grantYinAscendant doc comment. */
+      randomFactionIdForYinAscendant?: string;
     } // TE Thunder's Edge Expedition — see phases/expedition.ts's own claimExpeditionSlice.
   | {
       type: "COMPLETE_THUNDER_EDGE_EXPEDITION";
@@ -282,6 +284,8 @@ export type GameAction =
       infantryPlacingPlayerId?: PlayerId;
       /** Trusted-RNG input for grantBreakthrough's own Fracture-roll, since completing the expedition also grants the breakthrough (via Jupiter Brain, Thunder's Edge's own legendary ability) if the placing player doesn't already have it. */
       fractureDieRoll?: number;
+      /** Yin Brotherhood "Yin Ascendant": same as CLAIM_EXPEDITION_SLICE's own field above — see rules/yin.ts's own grantYinAscendant doc comment. */
+      randomFactionIdForYinAscendant?: string;
     } // TE Thunder's Edge Expedition completion — see phases/expedition.ts's own completeThunderEdgeExpedition.
   | {
       type: "PLACE_INGRESS_TOKENS";
@@ -356,6 +360,12 @@ export type GameAction =
       useMabanBonusFighter?: boolean;
       /** Clan of Saar "Floating Factory": the player's own choice of where ground forces produced this way land — a specific controlled planet in this system, or omitted for the space area (the default) — see phases/production.ts's own executeProduction for the full doc comment. */
       floatingFactoryGroundForceDestinationPlanetId?: PlanetId;
+      /** Yin Brotherhood "Yin Spinner" (faction technology): which controlled planet in this SAME system gets the 1 free infantry — see phases/production.ts's own executeProduction for the full doc comment. */
+      useYinSpinnerDestination?: PlanetId;
+      /** Yin Brotherhood "Yin Spinner Ω" (faction technology): up to 2 destinations (a controlled planet, or the system's own space area if omitting planetId) — see phases/production.ts's own executeProduction for the full doc comment. */
+      useYinSpinnerOmegaDestination?: { planetId?: PlanetId };
+      /** Yin Brotherhood "Brother Omar" (commander, base version): opts into the +1 free infantry bonus this batch — see phases/production.ts's own executeProduction for the full doc comment. */
+      useBrotherOmarBonusInfantry?: boolean;
     }
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 
@@ -507,7 +517,7 @@ export type GameAction =
   | { type: "PLAY_RESCUE"; playerId: PlayerId; fromSystemId: SystemId; unitType: UnitType; gravityRiftDieRoll?: number } // TE — see phases/actionCardEffects.ts's own playRescue
   | { type: "PLAY_LIE_IN_WAIT"; playerId: PlayerId; cardIdFromFirst: string; cardIdFromSecond: string } // TE — see phases/actionCardEffects.ts's own playLieInWait
   | { type: "PLAY_EXCHANGE_PROGRAM"; playerId: PlayerId; otherPlayerId: PlayerId; agreed: boolean; targetPlanetId?: PlanetId } // TE — see phases/actionCardEffects.ts's own playExchangeProgram
-  | { type: "PLAY_BRILLIANCE"; playerId: PlayerId; mode: "ready_planet" | "grant_breakthrough"; planetId?: PlanetId; targetPlayerId?: PlayerId; fractureDieRoll?: number } // TE — see phases/actionCardEffects.ts's own playBrilliance
+  | { type: "PLAY_BRILLIANCE"; playerId: PlayerId; mode: "ready_planet" | "grant_breakthrough"; planetId?: PlanetId; targetPlayerId?: PlayerId; fractureDieRoll?: number; randomFactionIdForYinAscendant?: string } // TE — see phases/actionCardEffects.ts's own playBrilliance
   | { type: "PLAY_MERCENARY_CONTRACT"; playerId: PlayerId; planetId: PlanetId } // TE — see phases/actionCardEffects.ts's own playMercenaryContract
   | { type: "PLAY_PIRATE_CONTRACT"; playerId: PlayerId; systemId: SystemId } // TE — see phases/actionCardEffects.ts's own playPirateContract
   | { type: "PLAY_PIRATE_FLEET"; playerId: PlayerId; systemId: SystemId; exhaustPlanetIdsForResources: PlanetId[] } // TE — see phases/actionCardEffects.ts's own playPirateFleet
@@ -575,6 +585,27 @@ export type GameAction =
   | { type: "USE_HEGEMONIC_TRADE_POLICY"; playerId: PlayerId; planetId: PlanetId } // Winnu's own faction technology — see rules/winnu.ts
   | { type: "USE_BEREKAR_BEREKON"; playerId: PlayerId } // Winnu's own agent — see rules/winnu.ts
   | { type: "USE_MATHIS_MATHINUS"; playerId: PlayerId; strategyCardId: StrategyCardId; grantedPlayerIds: PlayerId[] } // Winnu's own hero — see rules/winnu.ts
+  | { type: "USE_INDOCTRINATION"; playerId: PlayerId; exhaustPlanetIdsForInfluence: PlanetId[]; useMechInstead?: boolean } // Yin Brotherhood's own faction ability (+ Moyin's Ashes' own Deploy) — see rules/yin.ts
+  | {
+      type: "USE_DEVOTION";
+      playerId: PlayerId;
+      sacrificeUnitType: "cruiser" | "destroyer";
+      targetPlayerId: PlayerId;
+      targetUnitType: UnitType;
+      targetIsDamaged?: boolean;
+    } // Yin Brotherhood's own faction ability — see rules/yin.ts
+  | {
+      type: "USE_IMPULSE_CORE";
+      playerId: PlayerId;
+      sacrificeUnitType: "cruiser" | "destroyer";
+    } // Yin Brotherhood's own faction technology — see rules/yin.ts
+  | { type: "ASSIGN_IMPULSE_CORE_HIT"; playerId: PlayerId; targetUnitType: UnitType; targetIsDamaged?: boolean } // Yin Brotherhood's own faction technology (the OPPONENT's own hit-assignment half) — see rules/yin.ts
+  | { type: "USE_PLAY_GREYFIRE_MUTAGEN"; playerId: PlayerId; targetSystemId: SystemId } // Yin Brotherhood's own promissory note — see rules/yin.ts
+  | { type: "USE_PLAY_GREYFIRE_MUTAGEN_OMEGA"; playerId: PlayerId } // Yin Brotherhood's own promissory note (Codex) — see rules/yin.ts
+  | { type: "USE_BROTHER_MILOR"; playerId: PlayerId; unitType: "fighter" | "infantry"; count: 1 | 2 } // Yin Brotherhood's own agent — see rules/yin.ts
+  | { type: "SKIP_BROTHER_MILOR"; playerId: PlayerId } // Yin Brotherhood's own agent — see rules/yin.ts
+  | { type: "USE_DANEEL_OF_THE_TENTH"; playerId: PlayerId; choices: { planetId: PlanetId; choice: "ready" | "double" }[] } // Yin Brotherhood's own hero — see rules/yin.ts
+  | { type: "USE_DANEEL_OF_THE_TENTH_OMEGA"; playerId: PlayerId; destinations: { planetId: PlanetId; count: number }[] } // Yin Brotherhood's own hero (Codex) — see rules/yin.ts
   | { type: "USE_STYMIE"; playerId: PlayerId } // Arborec's own promissory note — see rules/arborec.ts
   | { type: "USE_STYMIE_OMEGA"; playerId: PlayerId; targetPlayerId: PlayerId; targetSystemId: SystemId; commandTokenPool?: "tactic" | "fleet" | "strategy" } // Arborec's own promissory note (Codex) — see rules/arborec.ts
   | { type: "USE_DUHA_MENAIMON_PRODUCTION"; playerId: PlayerId; units: { unitType: UnitType; count: number }[]; exhaustPlanetIdsForResources: PlanetId[]; groundForceTargetPlanetId?: PlanetId } // Arborec's own flagship — see rules/arborec.ts
@@ -731,6 +762,8 @@ export type GameAction =
       useInheritanceSystemsExhaustPlanetIds?: PlanetId[];
       /** Nekro Virus "PROPAGATION": which of the 3 command-token pools this player's own 3 free tokens go to, replacing the whole research attempt — see phases/technology.ts's own researchTechnology for the full doc comment. Ignored for every other faction. */
       nekroCommandTokenDistribution?: { tactic: number; fleet: number; strategy: number };
+      /** Yin Brotherhood "Brother Omar Ω" (commander, codex version): return 1 infantry from this planet to ignore ALL of this technology's prerequisites, for a tech owned by another player's faction — see phases/technology.ts's own researchTechnology for the full doc comment. */
+      useBrotherOmarOmegaInfantryPlanetId?: PlanetId;
     } // RR 90
   | {
       type: "RESEARCH_UNIT_UPGRADE";
@@ -849,6 +882,8 @@ export type GameAction =
         /** RR "Destroy Heretical Works": purge 2 relic fragments of any type/mix — separate from PURGE_RELIC_FRAGMENTS's own 3-for-1 exchange, this doesn't grant a relic. */
         relicFragments?: { cultural?: number; industrial?: number; hazardous?: number; unknown?: number };
       };
+      /** Yin Brotherhood "Yin Ascendant" (Breakthrough ability): which faction's alliance ability this player's own random pick landed on, only consulted for a public objective if this player's faction is Yin — see phases/actionPhase.ts's own scoreObjectiveCore for the full doc comment. */
+      randomFactionIdForYinAscendant?: string;
     } // RR 52/70.1
   | { type: "FINISH_STATUS_PHASE_SCORING"; playerId: PlayerId } // RR 70.1: player signals done scoring (0, 1, or 2 objectives) for this status phase
   | {
