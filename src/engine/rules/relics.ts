@@ -8,6 +8,7 @@ import { exploreFrontier } from "../phases/exploration";
 import { grantBreakthrough } from "./breakthroughs";
 import { setUpFractureOnEntry } from "../phases/theFracture";
 import { applyIconoclastOmegaOmegaDeploy } from "./naalu";
+import { grantYinAscendant } from "./yin";
 
 /**
  * TI4 history note (confirmed by this project's own user): Shard of the
@@ -673,8 +674,10 @@ export function useSilverFlame(state: GameState, action: { type: "USE_SILVER_FLA
  * part (broader than the normal 2-color faction synergy pair) needs its
  * own check wherever prerequisite-synergy gets applied.
  */
-export function applyTheQuantumcoreOnGain(state: GameState, playerId: PlayerId, rules: RuleData, fractureDieRoll?: number): { state: GameState; events: GameEvent[] } {
-  return grantBreakthrough(state, playerId, rules, fractureDieRoll);
+export function applyTheQuantumcoreOnGain(state: GameState, playerId: PlayerId, rules: RuleData, fractureDieRoll?: number, randomFactionIdForYinAscendant?: string): { state: GameState; events: GameEvent[] } {
+  const granted = grantBreakthrough(state, playerId, rules, fractureDieRoll);
+  // Yin Brotherhood "Yin Ascendant": "When you gain this card..." — The Quantumcore's own "gain your breakthrough" is one more path to that same trigger — see rules/yin.ts's own grantYinAscendant doc comment.
+  return { state: grantYinAscendant(granted.state, playerId, rules, randomFactionIdForYinAscendant), events: granted.events };
 }
 
 /** RR "The Quantumcore": true if this player owns it — checked alongside the normal 2-color breakthroughSynergy pair wherever prerequisite-synergy substitution happens, granting ALL 4 tech colors as mutually substitutable instead of just 2. */
@@ -786,7 +789,16 @@ export function applyJrXs455OOnGain(state: GameState, playerId: PlayerId): GameS
  *    choice — queued in pendingBookOfLatviniaChoice instead of resolved
  *    here, consumed by this file's own separate resolveBookOfLatviniaOnGain.
  */
-export function applyRelicOnGainEffects(state: GameState, playerId: PlayerId, relicId: RelicId, rules: RuleData): { state: GameState; events: GameEvent[] } {
+export function applyRelicOnGainEffects(
+  state: GameState,
+  playerId: PlayerId,
+  relicId: RelicId,
+  rules: RuleData,
+  /** Trusted-RNG input for grantBreakthrough's own Fracture-roll, only relevant if `relicId` is The Quantumcore and this is this player's own first breakthrough — matches the SAME "caller supplies it, this project never invents a die result" convention as every other Fracture-roll site. Pre-existing gap: none of this function's own 3 call sites (exploration.ts/directiveEffects.ts/invasion.ts) currently pass one through either, so this is left undefined there too rather than selectively wiring just one of the two params below. */
+  fractureDieRoll?: number,
+  /** Yin Brotherhood "Yin Ascendant": which faction's alliance ability this player's own random pick landed on, only relevant if `relicId` is The Quantumcore and this player is Yin — see rules/yin.ts's own grantYinAscendant doc comment. Same "left undefined at the existing call sites" note as fractureDieRoll above. */
+  randomFactionIdForYinAscendant?: string,
+): { state: GameState; events: GameEvent[] } {
   const events: GameEvent[] = [];
   let nextState = state;
 
@@ -798,7 +810,7 @@ export function applyRelicOnGainEffects(state: GameState, playerId: PlayerId, re
       nextState = applyTheObsidianOnGain(nextState, playerId, drawnId);
     }
   } else if (relicId === ("the_quantumcore" as never)) {
-    const result = applyTheQuantumcoreOnGain(nextState, playerId, rules);
+    const result = applyTheQuantumcoreOnGain(nextState, playerId, rules, fractureDieRoll, randomFactionIdForYinAscendant);
     nextState = result.state;
     events.push(...result.events);
   } else if (relicId === ("jr_xs4_55_0" as never)) {
