@@ -20,6 +20,8 @@ import { maybeReturnTradeConvoys } from "../rules/hacan";
 import { maybeReturnStymie } from "../rules/arborec";
 import { maybeReturnPromiseOfProtection, getMentakCruiserStats } from "../rules/mentak";
 import { canMoveThroughSupernova } from "../rules/muaat";
+import { unlockCommander } from "../rules/leaders";
+import { activateSystemImperatorMoveBonus } from "../rules/winnu";
 import { hasGravityRift, getGravityRiftDestructionCheck } from "../rules/anomalies";
 
 /**
@@ -217,7 +219,7 @@ export function activateSystem(
 
   return {
     ok: true,
-    state: nextState,
+    state: activateSystemImperatorMoveBonus(nextState, action.playerId, action.systemId, rules),
     events: [{ type: "SYSTEM_ACTIVATED", playerId: action.playerId, systemId: action.systemId }],
   };
 }
@@ -246,6 +248,8 @@ export function moveShips(
     gravityDriveBoostFromSystemId?: SystemId;
     /** TE "Ionian Fuel Refinery" (Tempesta's own legendary planet ability): "exhaust this card after you activate a system to apply +1 to the move value of 1 of your ships during this tactical action" — same "identify the one moves-entry by its fromSystemId" shape as Gravity Drive above, but exhausts the legendary ability (once per its own ready cycle) rather than being a repeatable-every-turn tech. */
     ionianFuelRefineryBoostFromSystemId?: SystemId;
+    /** Winnu "Imperator" (Breakthrough ability): this player's own choice of which `moves` entry (by its own fromSystemId) gets the +1 granted by activating a system with a legendary planet this same tactical action — see this function's own doc comment near where it's applied. */
+    imperatorMoveBonusFromSystemId?: SystemId;
     /** Muaat "Stellar Genesis" breakthrough ability: if a war sun's own path this action visits Avernus's system — as its literal origin OR a mid-path hop, see this function's own warSunPassedThroughAvernusSystem tracking (canShipReachSystem's own mustPassThroughSystemId parameter) — setting this brings Avernus's token along to the final destination, never into a home system. */
     relocateAvernusWithWarSun?: boolean;
     /** RR "Dominus Orb" (relic): "Before you move units during a tactical action, you may purge this card to move and transport units that are in systems that contain 1 of your command tokens" — bypasses the normal reachability/adjacency check entirely for any move whose fromSystemId has this player's own command token. Purges the relic (one-time), applies to the WHOLE tactical action's movement, not per-move. */
@@ -289,6 +293,7 @@ export function moveShips(
   }
   let usedGravityDrive = false;
   let usedIonianFuelRefinery = false;
+  let usedImperatorMoveBonus = false;
   // Muaat "Stellar Genesis" breakthrough ability: "after you move 1 of your war suns out of OR THROUGH Avernus's system and into a non-home system, you may move the Avernus token with it" — found once upfront (its system doesn't change mid-loop; the token itself only actually relocates once, after every move this action resolves), then checked per war-sun move below using canShipReachSystem's own mustPassThroughSystemId parameter (properly covers a war sun's move whose PATH crosses Avernus's system, not just one that starts there).
   let avernusSystemId: SystemId | null = null;
   for (const [systemId, system] of Object.entries(state.systems)) {
@@ -375,6 +380,19 @@ export function moveShips(
       effectiveMove += 1;
       usedIonianFuelRefinery = true;
       workingState = exhaustLegendaryAbility(workingState, found.systemId, asPlanetId("tempesta"));
+    }
+    // Winnu "Imperator" (Breakthrough ability): "After you activate a
+    // system that contains a legendary planet, apply +1 to the move
+    // value of 1 of your ships during this tactical action." Same
+    // "+1 to one specific moves-entry, once" shape as Gravity Drive
+    // above — pending.imperatorMoveBonusSystemId is set by
+    // rules/winnu.ts's own activateSystemImperatorMoveBonus right when
+    // THIS tactical action's own activateSystem call qualified, and
+    // action.imperatorMoveBonusFromSystemId is this player's own choice
+    // of WHICH moves-entry (by its origin) gets the +1.
+    if (action.imperatorMoveBonusFromSystemId === move.fromSystemId && !usedImperatorMoveBonus && pending.imperatorMoveBonusSystemId) {
+      effectiveMove += 1;
+      usedImperatorMoveBonus = true;
     }
     // Ghosts of Creuss "SLIPSTREAM" (faction ability): "During your
     // tactical actions, apply +1 to the move value of each of your
@@ -844,6 +862,20 @@ export function moveShips(
   const spaceCannonAlreadyResolved = pending.spaceCannonOffenseResolvedThisAction === true;
   const spaceCannonResponders = spaceCannonAlreadyResolved ? [] : getSpaceCannonOffenseEligiblePlayers(workingState, rules, activeSystemId, player.id);
   const willHaveCombat = playersWithShipsInSystem(workingState, activeSystemId).length > 1;
+
+  // Winnu "Rickar Rickani" (commander), 2nd unlock condition: "enter into
+  // a combat in the Mecatol Rex system" — the "control Mecatol Rex" half
+  // lives in phases/invasion.ts's own setPlanetController instead.
+  if (willHaveCombat && activeSystemId === (rules.mecatolSystemId as SystemId)) {
+    for (const pid of playersWithShipsInSystem(workingState, activeSystemId)) {
+      const p = workingState.players[pid];
+      if (p?.factionId !== ("winnu" as never)) continue;
+      const commanderEntry = p.leaders.find((l) => l.leaderId === ("winnu_commander" as never));
+      if (commanderEntry?.locked) {
+        workingState = { ...workingState, players: { ...workingState.players, [pid]: unlockCommander(p, "winnu_commander" as never) } };
+      }
+    }
+  }
 
   workingState = {
     ...workingState,

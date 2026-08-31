@@ -21,6 +21,7 @@ import { actionPhaseWindowOrder } from "../rules/priorityWindow";
 import { resolveSpaceStationControl } from "../rules/spaceStations";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { maybeDestroyBlockadedFloatingFactories } from "../rules/saar";
+import { hasCodex } from "../rules/gameMode";
 
 /** Called at every point in this file where pendingTacticalAction might have JUST landed on a genuine "a combat round begins now" state (round 1 after Assault Cannon/AFB have both already resolved or never triggered at all, OR round N+1 right after the previous round wrapped up) — opens the RR 1.19 "combat_round_start" priority window (see rules/priorityWindow.ts) for the (exactly 2, per this project's own combat-participant limitation) combatants, active-player-first. A safe no-op if we're not actually at a fresh round start yet (still mid-AFB/Assault-Cannon, or combat already ended and moved to "invasion"), or if a window is somehow already open. */
 /** RR "Salvage": opens a single-participant window for the winner right as space combat concludes — chains into openInvasionStartWindowIfNeeded once closed (GameEngine.ts's own window-close handling), same "after you win" before "at the start of an invasion" ordering RR 1.16 implies. */
@@ -606,6 +607,32 @@ export function assignHits(
     spaceUnitsByPlayer: { ...system.spaceUnitsByPlayer, [action.playerId]: result.stacks },
   };
 
+  // Yin Brotherhood "Van Hauge" (flagship, "Martyrdom"): "When this ship
+  // is destroyed, destroy all ships in this system." Confirmed
+  // (yjmrobert.com/tirules/factions/f_yin): "will not destroy any of the
+  // Saar player's Floating Factories present" (excluded here via
+  // STRUCTURE_TYPES, since a Floating Factory's own unitType is
+  // "space_dock" even though it lives in spaceUnitsByPlayer) and "will
+  // not destroy ground forces in the system" (transported cargo is
+  // untouched too — "each player must then remove ground forces, if
+  // necessary, from the space area to meet capacity limits", which this
+  // project's own existing capacity-overflow machinery already handles
+  // generically whenever a fleet shrinks, so nothing extra is needed
+  // here for that specific follow-up).
+  let martyrdomSystem = updatedSystem;
+  const martyrdomEvents: GameEvent[] = [];
+  if (result.destroyed.get("flagship") && player.factionId === ("yin" as never)) {
+    const updatedSpace: SystemState["spaceUnitsByPlayer"] = {};
+    for (const [pid, stacksHere] of Object.entries(updatedSystem.spaceUnitsByPlayer)) {
+      const destroyedShips = (stacksHere ?? []).filter((s) => SHIP_TYPES.includes(s.unitType) && s.count > 0);
+      for (const s of destroyedShips) {
+        martyrdomEvents.push({ type: "UNITS_DESTROYED", playerId: pid as PlayerId, systemId, unitType: s.unitType, count: s.count });
+      }
+      updatedSpace[pid as PlayerId] = (stacksHere ?? []).filter((s) => !SHIP_TYPES.includes(s.unitType));
+    }
+    martyrdomSystem = { ...updatedSystem, spaceUnitsByPlayer: updatedSpace };
+  }
+
   const remainingPendingHits = { ...pending.pendingHits };
   delete remainingPendingHits[action.playerId];
 
@@ -622,19 +649,45 @@ export function assignHits(
     player.technologies.includes(asTechId("duranium_armor")) &&
     stacks.some((s) => s.damagedCount > 0 && getEffectiveUnitAbilities(state, rules, player.factionId, s.unitType, player.unitUpgrades).includes("sustainDamage"));
 
+  // Yin Brotherhood "Brother Milor" (agent): one offer per qualifying
+  // unit THIS destruction batch destroyed (including Martyrdom's own
+  // destruction, captured above in martyrdomEvents) — see GameState.ts's
+  // own pendingBrotherMilorOffers doc comment for the full base-vs-Ω
+  // distinction. Skipped entirely if no Yin player exists in this game,
+  // or their own Brother Milor is locked/already exhausted.
+  const yinPlayer = Object.values(state.players).find((p) => p.factionId === ("yin" as never));
+  const milorEntry = yinPlayer?.leaders.find((l) => l.leaderId === ("yin_agent" as never));
+  const milorAvailable = !!milorEntry && !milorEntry.locked && !milorEntry.exhausted;
+  const milorIsOmega = hasCodex(state.mode);
+  const newBrotherMilorOffers: NonNullable<GameState["pendingTacticalAction"]>["pendingBrotherMilorOffers"] = [];
+  if (milorAvailable) {
+    // This player's own normal (non-Martyrdom) hit-assignment losses.
+    for (const [unitType, count] of result.destroyed.entries()) {
+      if (!milorIsOmega && unitType !== "destroyer" && unitType !== "cruiser") continue;
+      for (let i = 0; i < count; i++) newBrotherMilorOffers.push({ targetPlayerId: action.playerId, systemId, unitTypeLost: unitType });
+    }
+    // Martyrdom's own destruction, for EVERY player it hit (including the acting player's own OTHER ships, and the opponent's).
+    for (const evt of martyrdomEvents) {
+      if (evt.type !== "UNITS_DESTROYED") continue;
+      if (!milorIsOmega && evt.unitType !== "destroyer" && evt.unitType !== "cruiser") continue;
+      for (let i = 0; i < evt.count; i++) newBrotherMilorOffers.push({ targetPlayerId: evt.playerId, systemId, unitTypeLost: evt.unitType });
+    }
+  }
+
   const duraniumArmorPendingPlayers = eligibleForDuraniumArmor
     ? [...(pending.duraniumArmorPendingPlayers ?? []), action.playerId]
     : pending.duraniumArmorPendingPlayers;
+  const pendingBrotherMilorOffers = [...(pending.pendingBrotherMilorOffers ?? []), ...newBrotherMilorOffers];
 
   let nextState: GameState = {
     ...state,
-    systems: { ...state.systems, [systemId]: updatedSystem },
+    systems: { ...state.systems, [systemId]: martyrdomSystem },
     // RR "Self-Assembly Routines": normally mechs never appear in space
     // combat (they're ground forces), but some factions have abilities
     // that let their mechs participate there too — this stays wired in
     // rather than assuming it can never trigger.
     players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
-    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, duraniumArmorPendingPlayers },
+    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, duraniumArmorPendingPlayers, pendingBrotherMilorOffers: pendingBrotherMilorOffers.length > 0 ? pendingBrotherMilorOffers : undefined },
   };
 
   // TE "Crash Landing": "When your last ship in the active system is
@@ -642,18 +695,23 @@ export function assignHits(
   // in a system actually go from >0 to 0. Only offered if they actually
   // have ground forces sitting in that system's space area (transported
   // units) to place — nothing to react with otherwise.
-  const shipsLeft = (updatedSystem.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0);
-  const groundForcesInSpace = (updatedSystem.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => GROUND_FORCE_TYPES.includes(s.unitType) && s.count > 0);
+  const shipsLeft = (martyrdomSystem.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => s.count > 0);
+  const groundForcesInSpace = (martyrdomSystem.spaceUnitsByPlayer[action.playerId] ?? []).some((s) => GROUND_FORCE_TYPES.includes(s.unitType) && s.count > 0);
   if (!shipsLeft && groundForcesInSpace && !nextState.pendingPriorityWindow) {
     nextState = { ...nextState, pendingPriorityWindow: { kind: "last_ship_destroyed", order: [action.playerId], currentIndex: 0, consecutivePasses: 0 } };
   }
 
-  if (Object.keys(remainingPendingHits).length === 0 && (duraniumArmorPendingPlayers ?? []).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
+  if (
+    Object.keys(remainingPendingHits).length === 0 &&
+    (duraniumArmorPendingPlayers ?? []).length === 0 &&
+    (pending.crownOfThalnosPendingPlayers ?? []).length === 0 &&
+    pendingBrotherMilorOffers.length === 0
+  ) {
     const wrap = wrapUpCombatRound(nextState, rules);
-    return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
+    return { ok: true, state: wrap.state, events: [...events, ...martyrdomEvents, ...wrap.events] };
   }
 
-  return { ok: true, state: nextState, events };
+  return { ok: true, state: nextState, events: [...events, ...martyrdomEvents] };
 }
 
 export function useDuraniumArmor(
@@ -726,7 +784,7 @@ export function skipDuraniumArmor(
 // --- helpers ---------------------------------------------------------------
 
 /** Called once every player owed hits this round has submitted ASSIGN_HITS. Executes any announced retreats, then either ends space combat (advances to "invasion") or starts the next round. */
-function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
+export function wrapUpCombatRound(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingTacticalAction;
   if (!pending) return { state, events: [] };
   const systemId = pending.systemId;

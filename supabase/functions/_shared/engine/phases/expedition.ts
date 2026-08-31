@@ -4,6 +4,7 @@ import { PlayerId, SystemId, PlanetId } from "../types/ids";
 import { ThunderEdgeExpeditionSliceCost } from "../types/enums";
 import { RuleData } from "../types/RuleData";
 import { grantBreakthrough } from "../rules/breakthroughs";
+import { grantYinAscendant } from "../rules/yin";
 
 /**
  * TE Thunder's Edge Expedition (rulebook p.9): 6 distinct costs, each
@@ -38,6 +39,8 @@ export function claimExpeditionSlice(
     exhaustTechSpecialtyPlanetId?: PlanetId;
     /** Trusted-RNG-style input this function itself doesn't need, but grantBreakthrough (called when this is this player's FIRST claim) does, for its own Fracture-roll — see that function's own doc comment. */
     fractureDieRoll?: number;
+    /** Yin Brotherhood "Yin Ascendant": which faction's alliance ability this player's own random pick landed on, only consulted if this player's faction is Yin and this claim is what actually grants their breakthrough — see rules/yin.ts's own grantYinAscendant doc comment. */
+    randomFactionIdForYinAscendant?: string;
   },
   rules: RuleData,
 ): ActionResult {
@@ -128,6 +131,8 @@ export function claimExpeditionSlice(
     const granted = grantBreakthrough(nextState, action.playerId, rules, action.fractureDieRoll);
     nextState = granted.state;
     events.push(...granted.events);
+    // Yin Brotherhood "Yin Ascendant": "When you gain this card..." — see rules/yin.ts's own grantYinAscendant doc comment.
+    nextState = grantYinAscendant(nextState, action.playerId, rules, action.randomFactionIdForYinAscendant);
   }
 
   return { ok: true, state: nextState, events };
@@ -176,7 +181,7 @@ function findPlanetHere(systems: GameState["systems"], planetId: PlanetId): { sy
  */
 export function completeThunderEdgeExpedition(
   state: GameState,
-  action: { type: "COMPLETE_THUNDER_EDGE_EXPEDITION"; playerId: PlayerId; targetSystemId: SystemId; infantryPlacingPlayerId?: PlayerId; fractureDieRoll?: number },
+  action: { type: "COMPLETE_THUNDER_EDGE_EXPEDITION"; playerId: PlayerId; targetSystemId: SystemId; infantryPlacingPlayerId?: PlayerId; fractureDieRoll?: number; randomFactionIdForYinAscendant?: string },
   rules: RuleData,
 ): ActionResult {
   if (state.thunderEdgeExpedition.completed) {
@@ -238,6 +243,7 @@ export function completeThunderEdgeExpedition(
     const granted = grantBreakthrough(nextState, infantryPlacingPlayerId, rules, action.fractureDieRoll);
     nextState = granted.state;
     events.push(...granted.events);
+    nextState = grantYinAscendant(nextState, infantryPlacingPlayerId, rules, action.randomFactionIdForYinAscendant);
   }
 
   return { ok: true, state: nextState, events };

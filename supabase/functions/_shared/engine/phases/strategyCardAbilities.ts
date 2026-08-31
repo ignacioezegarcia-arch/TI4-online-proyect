@@ -42,7 +42,7 @@ function chargeSecondaryToken(player: Player): { ok: true; player: Player } | { 
   return { ok: true, player: { ...player, commandTokens: { ...player.commandTokens, strategy: player.commandTokens.strategy - 1 } } };
 }
 
-function exhaustPlanetsForInfluence(
+export function exhaustPlanetsForInfluence(
   state: GameState,
   playerId: PlayerId,
   planetIds: PlanetId[],
@@ -119,25 +119,39 @@ export function resolveStrategyPrimary(
 ): ActionResult {
   const player = state.players[action.playerId];
   if (!player) return { ok: false, error: "Unknown player." };
+  // Winnu "Mathis Mathinus — Imperial Seal" (hero): "ACTION: Perform the
+  // primary ability of any strategy card" — Winnu themselves don't need
+  // to actually hold that card at all when a matching grant is pending
+  // (set by rules/winnu.ts's own useMathisMathinus, which is only ever
+  // callable by the Winnu player in the first place — matching pendingMathisMathinusGrant's
+  // own cardId here is enough to confirm this specific resolution is the
+  // hero's own use, without a separate flag for "who granted it").
+  const mathisMathinusOwnPrimary = state.pendingMathisMathinusGrant?.cardId === action.cardId && player.factionId === ("winnu" as never);
   // RR 83.3/83.7: a player may only resolve the PRIMARY ability of a
   // strategy card THEY OWN, and only once (it's exhausted right after —
   // see the end of this function). Previously unchecked entirely: any
   // player could resolve any card's primary, any number of times.
   const ownCardEntry = player.strategyCards.find((c) => c.cardId === action.cardId);
-  if (!ownCardEntry) return { ok: false, error: `RR 83.3: this player doesn't hold the "${action.cardId}" strategy card.` };
-  if (ownCardEntry.exhausted) return { ok: false, error: `RR 82.2/71.6: the "${action.cardId}" strategy card has already been used this round.` };
+  if (!mathisMathinusOwnPrimary) {
+    if (!ownCardEntry) return { ok: false, error: `RR 83.3: this player doesn't hold the "${action.cardId}" strategy card.` };
+    if (ownCardEntry.exhausted) return { ok: false, error: `RR 82.2/71.6: the "${action.cardId}" strategy card has already been used this round.` };
+  }
   const p = (action.payload ?? {}) as Record<string, unknown>;
   const result = resolveStrategyPrimaryEffect(state, action, player, p, rules);
   if (!result.ok) return result;
 
-  // RR 82.2/71.6: exhaust the card right after its primary resolves.
+  // RR 82.2/71.6: exhaust the card right after its primary resolves —
+  // only meaningful if this player actually OWNS a copy of it; Mathis
+  // Mathinus's own borrowed use has no card of Winnu's own to exhaust.
   const resolvingPlayer = result.state.players[action.playerId];
   const nextState: GameState = {
     ...result.state,
-    players: {
-      ...result.state.players,
-      [action.playerId]: { ...resolvingPlayer, strategyCards: resolvingPlayer.strategyCards.map((c) => (c.cardId === action.cardId ? { ...c, exhausted: true } : c)) },
-    },
+    players: ownCardEntry
+      ? {
+          ...result.state.players,
+          [action.playerId]: { ...resolvingPlayer, strategyCards: resolvingPlayer.strategyCards.map((c) => (c.cardId === action.cardId ? { ...c, exhausted: true } : c)) },
+        }
+      : result.state.players,
   };
   return { ok: true, state: nextState, events: result.events };
 }
@@ -327,7 +341,22 @@ export function resolveStrategySecondary(
   const player = state.players[action.playerId];
   if (!player) return { ok: false, error: "Unknown player." };
 
-  if (!skipCost) {
+  // Winnu "Mathis Mathinus — Imperial Seal" (hero): grants specific
+  // players permission to resolve THIS card's secondary even though it
+  // isn't their own assigned card (and even if nobody's chosen it this
+  // round at all) — the normal eligibility checks below are bypassed for
+  // exactly this player+card combo, but NOT the normal command-token
+  // cost (confirmed: "a player chosen must still spend a command token
+  // ... except Leadership and potentially Trade").
+  const mathisMathinusGrant = state.pendingMathisMathinusGrant?.cardId === action.cardId && state.pendingMathisMathinusGrant.playerIds.includes(action.playerId);
+  // Winnu "Acquiescence Ω" (promissory note): "you do not have to spend
+  // or place a command token to resolve the secondary ability of that
+  // strategy card" — a single free resolution for exactly this
+  // player+card combo (unlike skipCost/Galactic Crisis Pact, which is
+  // free for EVERYONE on one card).
+  const acquiescenceOmegaFree = state.pendingAcquiescenceOmegaFreeSecondary?.cardId === action.cardId && state.pendingAcquiescenceOmegaFreeSecondary.playerId === action.playerId;
+
+  if (!skipCost && !mathisMathinusGrant) {
     // RR 83.4: a player may only resolve the SECONDARY ability of a
     // strategy card CHOSEN BY ANOTHER PLAYER — never their own — and
     // only once per card per round (RR 82.1's own "may resolve" framing,
@@ -347,14 +376,22 @@ export function resolveStrategySecondary(
   }
 
   const p = (action.payload ?? {}) as Record<string, unknown>;
-  const result = resolveStrategySecondaryEffect(state, action, player, p, rules, skipCost);
+  const result = resolveStrategySecondaryEffect(state, action, player, p, rules, skipCost || acquiescenceOmegaFree);
   if (!result.ok) return result;
-  if (skipCost) return result;
+  // Consume the Mathis Mathinus grant / Acquiescence Ω free-resolution flag, if either applied to this call.
+  let resultState = result.state;
+  if (mathisMathinusGrant) {
+    resultState = { ...resultState, pendingMathisMathinusGrant: { cardId: resultState.pendingMathisMathinusGrant!.cardId, playerIds: resultState.pendingMathisMathinusGrant!.playerIds.filter((id) => id !== action.playerId) } };
+  }
+  if (acquiescenceOmegaFree) {
+    resultState = { ...resultState, pendingAcquiescenceOmegaFreeSecondary: undefined };
+  }
+  if (skipCost) return { ok: true, state: resultState, events: result.events };
 
   const cardId = action.cardId as StrategyCardId;
   const nextState: GameState = {
-    ...result.state,
-    strategyCardSecondariesUsedBy: { ...result.state.strategyCardSecondariesUsedBy, [cardId]: [...(result.state.strategyCardSecondariesUsedBy?.[cardId] ?? []), action.playerId] },
+    ...resultState,
+    strategyCardSecondariesUsedBy: { ...resultState.strategyCardSecondariesUsedBy, [cardId]: [...(resultState.strategyCardSecondariesUsedBy?.[cardId] ?? []), action.playerId] },
   };
   return { ok: true, state: nextState, events: result.events };
 }

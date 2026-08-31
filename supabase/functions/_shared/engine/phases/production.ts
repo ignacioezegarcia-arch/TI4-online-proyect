@@ -56,6 +56,12 @@ export function produceUnits(
     useMabanBonusFighter?: boolean;
     /** Clan of Saar "Floating Factory": the player's own choice of where ground forces produced this way land — a specific controlled planet in this system, or omitted for the space area (the default) — see phases/production.ts's own executeProduction for the full doc comment. */
     floatingFactoryGroundForceDestinationPlanetId?: PlanetId;
+    /** Yin Brotherhood "Yin Spinner" (faction technology): which controlled planet in this SAME system gets the 1 free infantry — see phases/production.ts's own executeProduction for the full doc comment. */
+    useYinSpinnerDestination?: PlanetId;
+    /** Yin Brotherhood "Yin Spinner Ω" (faction technology): up to 2 destinations (a controlled planet, or the system's own space area if omitting planetId) — see phases/production.ts's own executeProduction for the full doc comment. */
+    useYinSpinnerOmegaDestination?: { planetId?: PlanetId };
+    /** Yin Brotherhood "Brother Omar" (commander, base version): opts into the +1 free infantry bonus this batch — see this function's own executeProduction for the full doc comment. */
+    useBrotherOmarBonusInfantry?: boolean;
   },
   rules: RuleData,
 ): ActionResult {
@@ -81,6 +87,9 @@ export function produceUnits(
     action.freelancersSubstituteSourceSystemId,
     action.useMabanBonusFighter,
     action.floatingFactoryGroundForceDestinationPlanetId,
+    action.useYinSpinnerDestination,
+    action.useYinSpinnerOmegaDestination,
+    action.useBrotherOmarBonusInfantry,
   );
 }
 
@@ -141,6 +150,12 @@ export function executeProduction(
    * never needed a choice at all.
    */
   floatingFactoryGroundForceDestinationPlanetId?: PlanetId,
+  /** Yin Brotherhood "Yin Spinner" (faction technology): which controlled planet in this SAME system gets the 1 free infantry — see this function's own doc comment further below on where this actually gets applied. */
+  useYinSpinnerDestination?: PlanetId,
+  /** Yin Brotherhood "Yin Spinner Ω" (faction technology): up to 2 destinations (a controlled planet, or the system's own space area if omitting planetId) for the free infantry this places — see this function's own doc comment further below. */
+  useYinSpinnerOmegaDestination?: { planetId?: PlanetId },
+  /** Yin Brotherhood "Brother Omar" (commander, base version): opts into the +1 free infantry bonus this batch — see this function's own doc comment further below on where this actually gets applied. */
+  useBrotherOmarBonusInfantry?: boolean,
 ): ActionResult {
   const system = state.systems[systemId];
   if (!system) return { ok: false, error: `No system ${systemId}.` };
@@ -387,6 +402,20 @@ export function executeProduction(
     totalCost = 0;
     usedHarrughGefhara = true;
   }
+  // Winnu "Berekar Berekon" (agent): "When 1 or more of a player's units
+  // use PRODUCTION: you may exhaust this card to reduce the combined
+  // cost of the produced units by 2." Confirmed
+  // (yjmrobert.com/tirules/factions/f_winnu): "Production limits still
+  // apply" — same limitCheckCost/totalCost split as Harrugh Gefhara
+  // above, just a flat -2 (floored at 0) instead of zeroing everything.
+  // Applies to ANY player's own production (not just Winnu's own —
+  // Berekon's card text says "a player's", matching rules/winnu.ts's
+  // own useBerekarBerekon, which targets a caller-chosen beneficiary
+  // distinct from the Winnu player who actually owns/exhausts the card).
+  const usedBerekarBerekon = state.pendingBerekarBerekonDiscount === playerId;
+  if (usedBerekarBerekon) {
+    totalCost = Math.max(0, totalCost - 2);
+  }
   if (player.hasBreakthrough && player.factionId === ("sol" as never)) {
     const combinedCapacity = units.reduce((sum, u) => {
       if (u.count <= 0) return sum;
@@ -602,6 +631,7 @@ export function executeProduction(
   // the owner (not just this one specific dock) — if fewer than 2
   // fighters are produced this time, the card is discarded immediately.
   const fightersProduced = resolvedUnits.filter((u) => u.unitType === "fighter").reduce((sum, u) => sum + u.count, 0);
+  const infantryProduced = resolvedUnits.filter((u) => u.unitType === "infantry").reduce((sum, u) => sum + u.count, 0);
   const isProphecyOfIxthOwner = getLawOwner(state2, "prophecy_of_ixth" as AgendaId) === playerId;
   const agendaDeck = isProphecyOfIxthOwner && fightersProduced < 2
     ? { ...state2.agendaDeck, lawsInPlay: state2.agendaDeck.lawsInPlay.filter((l) => l.agendaId !== "prophecy_of_ixth") }
@@ -622,7 +652,25 @@ export function executeProduction(
         leaders: usedHarrughGefhara ? player2.leaders.filter((l) => l.leaderId !== ("hacan_hero" as never)) : player2.leaders,
       },
     },
+    // Winnu "Berekar Berekon": consumed — a single-use discount for this one PRODUCE_UNITS call.
+    pendingBerekarBerekonDiscount: usedBerekarBerekon ? undefined : state2.pendingBerekarBerekonDiscount,
   };
+
+  // Winnu "Hegemonic Trade Policy" (faction technology): "swap the
+  // resource and influence values of 1 planet you control DURING THAT
+  // USE of Production" — scoped to just this one call, so any planet
+  // this player swapped (via rules/winnu.ts's own useHegemonicTradePolicy,
+  // right before this same PRODUCE_UNITS) is reverted here, right after
+  // this production has actually consumed the swapped values above,
+  // rather than left toggled indefinitely (which would incorrectly also
+  // affect this planet's own voting influence, future production, etc.
+  // until manually reverted).
+  if (nextState.players[playerId].factionId === ("winnu" as never)) {
+    for (const [sysId, sys] of Object.entries(nextState.systems)) {
+      if (!sys.planets.some((p) => p.swappedResourceInfluence && p.controllerId === playerId)) continue;
+      nextState = { ...nextState, systems: { ...nextState.systems, [sysId]: { ...sys, planets: sys.planets.map((p) => (p.swappedResourceInfluence && p.controllerId === playerId ? { ...p, swappedResourceInfluence: false } : p)) } } };
+    }
+  }
 
   // Naalu Collective "M'aban" (commander): "You may produce 1 additional
   // fighter for their cost; these additional units do not count against
@@ -645,6 +693,103 @@ export function executeProduction(
       const existing = spaceStacks.find((s) => s.unitType === "fighter");
       const updatedSpaceStacks = existing ? spaceStacks.map((s) => (s.unitType === "fighter" ? { ...s, count: s.count + 1 } : s)) : [...spaceStacks, { unitType: "fighter" as const, count: 1, damagedCount: 0 }];
       nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...finalSystem, spaceUnitsByPlayer: { ...finalSystem.spaceUnitsByPlayer, [playerId]: updatedSpaceStacks } } } };
+    }
+  }
+
+  // Yin Brotherhood "Yin Spinner" (faction technology): "After 1 or more
+  // of your units use PRODUCTION, place 1 infantry from your
+  // reinforcements on a planet you control in that system." Confirmed
+  // (yjmrobert.com/tirules/factions/f_yin): "may be placed on a planet
+  // that does not contain a unit with Production" (i.e. any controlled
+  // planet in the system, not specifically the producing one). "Yin
+  // Spinner Ω" (codex) instead places UP TO 2 infantry TOGETHER, on ANY
+  // controlled planet OR any space area containing this player's own
+  // ships — a materially broader destination choice, plus (per that
+  // same FAQ) a broader TRIGGER ("other effects that produce units
+  // without Production WILL trigger Ω" — only partially covered here,
+  // since this hook only fires from within an actual Production use;
+  // other non-Production unit-generation paths elsewhere in this
+  // project aren't separately wired to also trigger Ω, flagged as a
+  // known simplification given how many such paths exist).
+  //
+  // Yin Brotherhood "Brother Omar" (commander, base version): "You may
+  // produce 1 additional infantry for their cost. These infantry do not
+  // count against your production limit." Confirmed
+  // (yjmrobert.com/tirules/factions/f_yin) — rides along with an actual
+  // infantry production this same batch, same "for THEIR cost, doesn't
+  // count against the limit" shape as Naalu's own M'aban above, just for
+  // infantry instead of fighters, and requiring the CALLER to opt in
+  // (useBrotherOmarBonusInfantry) since it costs 1 resource, unlike
+  // M'aban's own fully-free fighter. CORRECTED: this used to also be
+  // gated behind Greyfire Mutagen's own yinFactionAbilitiesBannedThisAction
+  // flag — but Brother Omar is a COMMANDER, and the confirmed FAQ
+  // explicitly says "leader abilities... are not faction abilities",
+  // meaning Greyfire Mutagen never actually restricts this at all.
+  if (useBrotherOmarBonusInfantry && infantryProduced > 0) {
+    const commanderEntry = nextState.players[playerId].leaders.find((l) => l.leaderId === ("yin_commander" as never));
+    if (commanderEntry && !commanderEntry.locked) {
+      const spend = spendForCost(nextState, playerId, 1, [], rules);
+      if (spend.ok) {
+        nextState = spend.state;
+        const finalSystem = nextState.systems[systemId];
+        const bonusDest = groundForceDestinationPlanet2 ?? (planetId ? finalSystem.planets.find((p) => p.planetId === planetId) : undefined);
+        if (bonusDest) {
+          const stacks = (bonusDest.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+          const existing = stacks.find((s) => s.unitType === "infantry" && !s.upgradeId);
+          if (existing) existing.count += 1;
+          else stacks.push({ unitType: "infantry", count: 1, damagedCount: 0 });
+          const updatedPlanet: PlanetState = { ...bonusDest, unitsByPlayer: { ...bonusDest.unitsByPlayer, [playerId]: stacks } };
+          nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...finalSystem, planets: finalSystem.planets.map((p) => (p.planetId === bonusDest.planetId ? updatedPlanet : p)) } } };
+        } else {
+          const spaceStacks = finalSystem.spaceUnitsByPlayer[playerId] ?? [];
+          const existing = spaceStacks.find((s) => s.unitType === "infantry");
+          const updatedSpaceStacks = existing ? spaceStacks.map((s) => (s.unitType === "infantry" ? { ...s, count: s.count + 1 } : s)) : [...spaceStacks, { unitType: "infantry" as const, count: 1, damagedCount: 0 }];
+          nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...finalSystem, spaceUnitsByPlayer: { ...finalSystem.spaceUnitsByPlayer, [playerId]: updatedSpaceStacks } } } };
+        }
+      }
+    }
+  }
+
+  if (useYinSpinnerDestination && nextState.players[playerId].technologies.includes("yin_spinner" as never) && !nextState.pendingTacticalAction?.yinFactionAbilitiesBannedThisAction) {
+    const destPlanet = nextState.systems[systemId].planets.find((p) => p.planetId === useYinSpinnerDestination && p.controllerId === playerId);
+    if (destPlanet) {
+      const reinforcementsCheck = checkReinforcementsAvailable(nextState, playerId, [{ unitType: "infantry", count: 1 }]);
+      if (reinforcementsCheck.ok) {
+        const stacks = (destPlanet.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+        const existing = stacks.find((s) => s.unitType === "infantry" && !s.upgradeId);
+        if (existing) existing.count += 1;
+        else stacks.push({ unitType: "infantry", count: 1, damagedCount: 0 });
+        const updatedPlanet: PlanetState = { ...destPlanet, unitsByPlayer: { ...destPlanet.unitsByPlayer, [playerId]: stacks } };
+        nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...nextState.systems[systemId], planets: nextState.systems[systemId].planets.map((p) => (p.planetId === destPlanet.planetId ? updatedPlanet : p)) } } };
+      }
+    }
+  }
+  // Yin Brotherhood "Yin Spinner Ω" (faction technology): CORRECTED
+  // (yjmrobert.com/tirules/factions/f_yin) — "the two infantry must be
+  // placed together." An earlier version of this let the caller split
+  // them across up to 2 separate destinations; now takes exactly ONE
+  // destination and places both infantry there.
+  if (useYinSpinnerOmegaDestination !== undefined && nextState.players[playerId].technologies.includes("yin_spinner_omega" as never) && !nextState.pendingTacticalAction?.yinFactionAbilitiesBannedThisAction) {
+    const finalSystem = nextState.systems[systemId];
+    const reinforcementsCheck = checkReinforcementsAvailable(nextState, playerId, [{ unitType: "infantry", count: 2 }]);
+    if (reinforcementsCheck.ok) {
+      if (useYinSpinnerOmegaDestination.planetId) {
+        const destPlanet = finalSystem.planets.find((p) => p.planetId === useYinSpinnerOmegaDestination.planetId && p.controllerId === playerId);
+        if (destPlanet) {
+          const stacks = (destPlanet.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+          const existing = stacks.find((s) => s.unitType === "infantry" && !s.upgradeId);
+          if (existing) existing.count += 2;
+          else stacks.push({ unitType: "infantry", count: 2, damagedCount: 0 });
+          const updatedPlanet: PlanetState = { ...destPlanet, unitsByPlayer: { ...destPlanet.unitsByPlayer, [playerId]: stacks } };
+          nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...finalSystem, planets: finalSystem.planets.map((p) => (p.planetId === destPlanet.planetId ? updatedPlanet : p)) } } };
+        }
+      } else if ((finalSystem.spaceUnitsByPlayer[playerId] ?? []).some((s) => s.count > 0)) {
+        const stacks = (finalSystem.spaceUnitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+        const existing = stacks.find((s) => s.unitType === "infantry" && !s.upgradeId);
+        if (existing) existing.count += 2;
+        else stacks.push({ unitType: "infantry", count: 2, damagedCount: 0 });
+        nextState = { ...nextState, systems: { ...nextState.systems, [systemId]: { ...finalSystem, spaceUnitsByPlayer: { ...finalSystem.spaceUnitsByPlayer, [playerId]: stacks } } } };
+      }
     }
   }
 
