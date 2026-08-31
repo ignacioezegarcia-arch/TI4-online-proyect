@@ -1,6 +1,6 @@
-import { GameState, Player, PlanetState } from "../types/GameState";
+import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult } from "../types/Actions";
-import { PlayerId, TechId, UnitUpgradeId, PlanetId, AgendaId, asTechId, asAbilityId } from "../types/ids";
+import { PlayerId, TechId, UnitUpgradeId, PlanetId, SystemId, AgendaId, asTechId, asAbilityId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { maybeQueueAntiIntellectualRevolutionDestruction, isLawActiveWithOutcome } from "./agendaEffects";
 import { hasQuantumcoreUniversalSynergy, getTriadResourcesAndInfluence } from "../rules/relics";
@@ -43,9 +43,58 @@ export function researchTechnology(
   specializedCompoundsPlanetId?: PlanetId,
   /** L1Z1X "Inheritance Systems" (faction tech, exhaustable): "you may exhaust this card and spend 2 resources when you research a technology; ignore all of that technology's prerequisites." Confirmed (yjmrobert.com/tirules/factions/f_lizix): the 2 resources are paid SEPARATELY from the tech's own cost (never combined into one spendForCost call/one exhausted planet) — the planets listed here are exclusively for THIS 2-resource payment, distinct from exhaustPlanetIdsForResources above. */
   useInheritanceSystemsExhaustPlanetIds?: PlanetId[],
+  /** Nekro Virus "PROPAGATION": which of the 3 command-token pools this player's own 3 free tokens go to — see this function's own early Nekro short-circuit for the full doc comment. Ignored for every other faction. */
+  nekroCommandTokenDistribution?: { tactic: number; fleet: number; strategy: number },
+  /**
+   * Yin Brotherhood "Brother Omar Ω" (commander, codex version): "When
+   * you research a technology owned by another player, you may return 1
+   * of your infantry to reinforcements to ignore its prerequisites."
+   * Confirmed (yjmrobert.com/tirules/factions/f_yin) — the SAME "ignore
+   * ALL prerequisites" shape as L1Z1X's own Inheritance Systems above,
+   * just paid with 1 returned infantry instead of 2 resources. Only
+   * consulted for a tech that's actually owned by another player's
+   * faction (checked against rules.technologies[techId].factionId, if
+   * present) — this doesn't itself grant permission to research a
+   * foreign faction's tech in the first place (that permission has to
+   * come from elsewhere, e.g. an Alliance promissory note), only removes
+   * the prerequisite blocker once that permission already exists.
+   */
+  useBrotherOmarOmegaInfantryPlanetId?: PlanetId,
 ): ActionResult {
   const player = state.players[playerId];
   if (!player) return { ok: false, error: "Unknown player." };
+
+  // Nekro Virus "PROPAGATION" (faction ability): "You cannot research
+  // technology. When you would research a technology, gain 3 command
+  // tokens instead." Confirmed (yjmrobert.com/tirules/factions/f_nekro):
+  // this ONLY intercepts RESEARCH (this function) — abilities that
+  // "gain" a technology (Technological Singularity, Galactic Threat, the
+  // hero) are a completely separate mechanic, unaffected, see
+  // rules/nekro.ts's own gainOrAssimilateTechnology. No cost is paid, no
+  // prerequisites checked, no techId is actually gained — this
+  // completely replaces the whole research attempt with a flat, free
+  // conversion. The caller still supplies SOME techId (kept for action-
+  // shape consistency with every other player's own research calls) but
+  // it's never actually used here. Distribution among the 3 pools is the
+  // player's own choice (RR doesn't specify a fixed pool), validated to
+  // sum to exactly 3.
+  if (player.factionId === ("nekro" as never)) {
+    const dist = nekroCommandTokenDistribution ?? { tactic: 0, fleet: 0, strategy: 3 };
+    if (dist.tactic + dist.fleet + dist.strategy !== 3 || dist.tactic < 0 || dist.fleet < 0 || dist.strategy < 0) {
+      return { ok: false, error: "Nekro Virus \"PROPAGATION\": must distribute exactly 3 command tokens across the 3 pools." };
+    }
+    const updatedPlayer: Player = {
+      ...player,
+      commandTokens: {
+        ...player.commandTokens,
+        tactic: player.commandTokens.tactic + dist.tactic,
+        fleet: player.commandTokens.fleet + dist.fleet,
+        strategy: player.commandTokens.strategy + dist.strategy,
+      },
+    };
+    return { ok: true, state: { ...state, players: { ...state.players, [playerId]: updatedPlayer } }, events: [] };
+  }
+
   if (player.technologies.includes(techId)) {
     return { ok: false, error: `RR 90: this player already owns ${techId}.` };
   }
@@ -123,6 +172,27 @@ export function researchTechnology(
     if (!teamResult.ok) return teamResult;
     workingState = teamResult.state;
     ignoreColors.push(teamResult.color);
+  }
+  if (useBrotherOmarOmegaInfantryPlanetId) {
+    const commanderEntry = player.leaders.find((l) => l.leaderId === ("yin_commander" as never));
+    if (!commanderEntry || commanderEntry.locked) return { ok: false, error: "This player doesn't have an unlocked Brother Omar." };
+    const isForeignFactionTech = Object.entries(rules.factionTechIdsByFaction).some(([factionId, ids]) => factionId !== player.factionId && ids.includes(techId));
+    if (!isForeignFactionTech) return { ok: false, error: "Brother Omar Ω: this technology isn't owned by another player's faction." };
+    let found: { systemId: SystemId; system: SystemState; planet: PlanetState } | null = null;
+    for (const [systemId, system] of Object.entries(workingState.systems)) {
+      const planet = system.planets.find((p) => p.planetId === useBrotherOmarOmegaInfantryPlanetId);
+      if (planet) {
+        found = { systemId: systemId as SystemId, system, planet };
+        break;
+      }
+    }
+    if (!found) return { ok: false, error: `Unknown planet ${useBrotherOmarOmegaInfantryPlanetId}.` };
+    const stack = (found.planet.unitsByPlayer[playerId] ?? []).find((s) => s.unitType === "infantry" && s.count > 0);
+    if (!stack) return { ok: false, error: `This player has no infantry on ${useBrotherOmarOmegaInfantryPlanetId} to return.` };
+    const updatedStacks = (found.planet.unitsByPlayer[playerId] ?? []).map((s) => (s === stack ? { ...s, count: s.count - 1 } : s)).filter((s) => s.count > 0);
+    const updatedPlanet: PlanetState = { ...found.planet, unitsByPlayer: { ...found.planet.unitsByPlayer, [playerId]: updatedStacks } };
+    workingState = { ...workingState, systems: { ...workingState.systems, [found.systemId]: { ...found.system, planets: found.system.planets.map((p) => (p.planetId === useBrotherOmarOmegaInfantryPlanetId ? updatedPlanet : p)) } } };
+    ignoreAllPrerequisites = true;
   }
   for (const planetId of exhaustPlanetIdsForTechSpecialty ?? []) {
     const specialtyResult = exhaustTechSpecialtyPlanet(workingState, playerId, planetId, rules);
@@ -321,7 +391,14 @@ function getOwnedTechColors(state: GameState, playerId: PlayerId, rules: RuleDat
   const player = state.players[playerId];
   const fromTechs = player.technologies.map((id) => rules.technologies[id]?.color).filter((c): c is string => Boolean(c));
   const fromUpgrades = player.unitUpgrades.map((id) => rules.unitUpgradeTechData[id]?.color).filter((c): c is string => Boolean(c));
-  return [...fromTechs, ...fromUpgrades];
+  // Yin Brotherhood "Brother Omar" (commander, base version): "This card
+  // satisfies a green technology prerequisite." Confirmed
+  // (yjmrobert.com/tirules/factions/f_yin) — an always-on passive bonus
+  // once unlocked, functionally identical to owning 1 extra green tech
+  // for prerequisite purposes only (it grants no other benefit here).
+  const brotherOmarEntry = player.leaders.find((l) => l.leaderId === ("yin_commander" as never));
+  const fromBrotherOmar = brotherOmarEntry && !brotherOmarEntry.locked ? ["green"] : [];
+  return [...fromTechs, ...fromUpgrades, ...fromBrotherOmar];
 }
 
 function checkPrerequisitesAgainst(

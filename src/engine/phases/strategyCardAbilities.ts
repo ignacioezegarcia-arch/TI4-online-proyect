@@ -42,7 +42,7 @@ function chargeSecondaryToken(player: Player): { ok: true; player: Player } | { 
   return { ok: true, player: { ...player, commandTokens: { ...player.commandTokens, strategy: player.commandTokens.strategy - 1 } } };
 }
 
-function exhaustPlanetsForInfluence(
+export function exhaustPlanetsForInfluence(
   state: GameState,
   playerId: PlayerId,
   planetIds: PlanetId[],

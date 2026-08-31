@@ -17,6 +17,7 @@ import { checkReinforcementsAvailable, commandTokensAvailableInReinforcements, p
 import { hasThundersEdge } from "../rules/gameMode";
 import { resolveStrategySecondaryEffect, resolveStrategyPrimaryEffect } from "./strategyCardAbilities";
 import { grantBreakthrough } from "../rules/breakthroughs";
+import { grantYinAscendant } from "../rules/yin";
 import { getGravityRiftDestructionCheck } from "../rules/anomalies";
 import { moveAllShips, announceRetreat } from "./spaceCombat";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
@@ -3419,7 +3420,7 @@ export function playExchangeProgram(
  */
 export function playBrilliance(
   state: GameState,
-  action: { type: "PLAY_BRILLIANCE"; playerId: PlayerId; mode: "ready_planet" | "grant_breakthrough"; planetId?: PlanetId; targetPlayerId?: PlayerId; fractureDieRoll?: number },
+  action: { type: "PLAY_BRILLIANCE"; playerId: PlayerId; mode: "ready_planet" | "grant_breakthrough"; planetId?: PlanetId; targetPlayerId?: PlayerId; fractureDieRoll?: number; randomFactionIdForYinAscendant?: string },
   rules: RuleData,
 ): ActionResult {
   const played = playCard(state, action.playerId, "brilliance");
@@ -3440,7 +3441,9 @@ export function playBrilliance(
 
   if (!action.targetPlayerId) return { ok: false, error: 'TE "Brilliance": targetPlayerId is required for grant_breakthrough mode.' };
   const granted = grantBreakthrough(played.state, action.targetPlayerId, rules, action.fractureDieRoll);
-  const nextState = advancePriorityWindowAfterAction(granted.state, action.playerId);
+  // Yin Brotherhood "Yin Ascendant": "When you gain this card..." — see rules/yin.ts's own grantYinAscendant doc comment.
+  const withYinAscendant = grantYinAscendant(granted.state, action.targetPlayerId, rules, action.randomFactionIdForYinAscendant);
+  const nextState = advancePriorityWindowAfterAction(withYinAscendant, action.playerId);
   return { ok: true, state: nextState, events: [{ type: "ACTION_CARD_PLAYED", playerId: action.playerId, cardId: asActionCardId("brilliance") }, ...granted.events] };
 }
 

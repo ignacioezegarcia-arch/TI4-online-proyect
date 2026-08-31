@@ -12,6 +12,7 @@ import { maybeGainCrownOfEmphidiaVictoryPoint } from "../rules/relics";
 import { hasAbility } from "../rules/abilities";
 import { checkReinforcementsAvailable } from "../rules/reinforcements";
 import { maybeUnlockHero, purgeHero } from "../rules/leaders";
+import { grantYinAscendant } from "../rules/yin";
 import { placeRespawnedSpecOps } from "../rules/sol";
 import { maybeReturnGiftOfPrescience } from "../rules/naalu";
 import { applySchemingToDrawCount, drawActionCardsForPlayer } from "../rules/yssaril";
@@ -351,6 +352,8 @@ export function scoreObjective(
       commandTokens?: { tactic?: number; strategy?: number };
       relicFragments?: { cultural?: number; industrial?: number; hazardous?: number; unknown?: number };
     };
+    /** Yin Brotherhood "Yin Ascendant" (Breakthrough ability): which faction's alliance ability this player's own random pick landed on, only consulted for a public objective if this player's faction is Yin — see phases/actionPhase.ts's own scoreObjectiveCore for the full doc comment. */
+    randomFactionIdForYinAscendant?: string;
   },
   rules: RuleData,
 ): ActionResult {
@@ -409,7 +412,7 @@ export function scoreObjective(
     }
   }
 
-  const core = scoreObjectiveCore(state, action.playerId, action.objectiveId, action.spend, rules);
+  const core = scoreObjectiveCore(state, action.playerId, action.objectiveId, action.spend, rules, action.randomFactionIdForYinAscendant);
   if (!core.ok) return core;
 
   let nextState: GameState = core.state;
@@ -453,6 +456,8 @@ export function scoreObjectiveCore(
       }
     | undefined,
   rules: RuleData,
+  /** Yin Brotherhood "Yin Ascendant" (Breakthrough ability): which faction's alliance ability this player's own random pick landed on, if their faction is Yin and this is a public objective — see rules/yin.ts's own grantYinAscendant for the full doc comment. Ignored for every other faction. */
+  randomFactionIdForYinAscendant?: string,
 ): ActionResult {
   const player = state.players[playerId];
   if (!player) return { ok: false, error: "Unknown player." };
@@ -520,6 +525,13 @@ export function scoreObjectiveCore(
     const unlockedPlayer = maybeUnlockHero(nextState.players[playerId], asLeaderId(heroLeaderId));
     nextState = { ...nextState, players: { ...nextState.players, [playerId]: unlockedPlayer } };
   }
+
+  // Yin Brotherhood "Yin Ascendant" (Breakthrough ability): "When you...
+  // score a public objective, gain the alliance ability of a random,
+  // unused faction." See rules/yin.ts's own grantYinAscendant for the
+  // full doc comment — a no-op for every other faction, or for a secret
+  // objective, or if no randomFactionId was supplied this call.
+  nextState = grantYinAscendant(nextState, playerId, rules, objectiveData.kind !== "secret" ? randomFactionIdForYinAscendant : undefined);
 
   // RR 87: first to the target wins outright — doesn't yet handle the tie-break rule for two players crossing in the same status phase (RR 87.3-ish), flagged rather than guessed.
   if (!nextState.winnerId && updatedPlayer.victoryPoints.current >= state.victoryPointTarget) {

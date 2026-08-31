@@ -28,6 +28,7 @@ import { hasAbility } from "../rules/abilities";
 import { applyIconoclastOmegaOmegaDeploy } from "../rules/naalu";
 import { applyRelicOnGainEffects } from "../rules/relics";
 import { unlockCommander } from "../rules/leaders";
+import { hasCodex } from "../rules/gameMode";
 
 /**
  * RR 78 STEP 4 — INVASION (RR 44).
@@ -1249,11 +1250,27 @@ export function assignGroundCombatHits(
   const remainingPendingHits = { ...pending.pendingHits };
   delete remainingPendingHits[action.playerId];
 
+  // Yin Brotherhood "Brother Milor Ω" (agent, codex version only — the
+  // base version never queues from ground combat at all): one offer per
+  // qualifying unit this ground-combat hit assignment destroyed. Same
+  // "blocks wrap-up until resolved" shape as its own space-combat
+  // counterpart in phases/spaceCombat.ts's own assignHits.
+  const yinPlayerForMilor = Object.values(state.players).find((p) => p.factionId === ("yin" as never));
+  const milorEntryForGround = yinPlayerForMilor?.leaders.find((l) => l.leaderId === ("yin_agent" as never));
+  const milorAvailableForGround = !!milorEntryForGround && !milorEntryForGround.locked && !milorEntryForGround.exhausted && hasCodex(state.mode);
+  const newBrotherMilorOffersForGround: NonNullable<GameState["pendingTacticalAction"]>["pendingBrotherMilorOffers"] = [];
+  if (milorAvailableForGround) {
+    for (const [unitType, count] of result.destroyed.entries()) {
+      for (let i = 0; i < count; i++) newBrotherMilorOffersForGround.push({ targetPlayerId: action.playerId, systemId, planetId, unitTypeLost: unitType });
+    }
+  }
+  const pendingBrotherMilorOffersForGround = [...(pending.pendingBrotherMilorOffers ?? []), ...newBrotherMilorOffersForGround];
+
   let nextState: GameState = {
     ...state,
     systems: { ...state.systems, [systemId]: updatedSystem },
     players: { ...state.players, [action.playerId]: applySelfAssemblyRoutinesMechBonus(player, result.destroyed) },
-    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits },
+    pendingTacticalAction: { ...pending, pendingHits: remainingPendingHits, pendingBrotherMilorOffers: pendingBrotherMilorOffersForGround.length > 0 ? pendingBrotherMilorOffersForGround : undefined },
   };
 
   // Sol "Spec Ops II" (RESPAWN): checked for whichever of this player's own infantry were just destroyed here.
@@ -1281,7 +1298,11 @@ export function assignGroundCombatHits(
     }
   }
 
-  if (Object.keys(nextState.pendingTacticalAction!.pendingHits ?? {}).length === 0 && (pending.crownOfThalnosPendingPlayers ?? []).length === 0) {
+  if (
+    Object.keys(nextState.pendingTacticalAction!.pendingHits ?? {}).length === 0 &&
+    (pending.crownOfThalnosPendingPlayers ?? []).length === 0 &&
+    (nextState.pendingTacticalAction!.pendingBrotherMilorOffers ?? []).length === 0
+  ) {
     const wrap = wrapUpGroundCombat(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
@@ -1329,7 +1350,7 @@ function setPlanetExhausted(state: GameState, systemId: SystemId, planetId: Plan
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
 }
 
-function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
+export function wrapUpGroundCombat(state: GameState, rules: RuleData): { state: GameState; events: GameEvent[] } {
   const pending = state.pendingTacticalAction!;
   const systemId = pending.systemId;
   const planetId = pending.currentInvasionPlanetId!;
