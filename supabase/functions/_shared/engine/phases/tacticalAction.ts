@@ -721,7 +721,21 @@ export function moveShips(
     return sum + (shipStats?.capacity ?? 0) * s.count;
   }, 0);
   const totalCargo = activeSystemStacksAfterMove.reduce((sum, s) => (s.unitType === "fighter" || GROUND_FORCE_TYPES.includes(s.unitType) ? sum + s.count : sum), 0);
-  if (totalCargo > totalCapacity) {
+  // The Argent Flight "Aerie Sentinel" (mech, "Capacity Exemption"):
+  // "This unit does not count against capacity if... it is in a space
+  // area with 1 or more of your ships that have capacity values."
+  // Confirmed (tirules2.com/F_argent): "cannot be transported by a ship
+  // WITHOUT a capacity value" — it still needs an actual capacity-having
+  // ship physically present to get here in the first place (already
+  // true structurally, since `totalCapacity > 0` below is exactly that
+  // same condition), it just doesn't ADD to what that capacity has to
+  // cover once it's there.
+  const aerieSentinelExemptCount =
+    player.factionId === ("argent_flight" as never) && totalCapacity > 0
+      ? activeSystemStacksAfterMove.find((s) => s.unitType === "mech" && s.count > 0)?.count ?? 0
+      : 0;
+  const totalCargoAfterExemptions = totalCargo - aerieSentinelExemptCount;
+  if (totalCargoAfterExemptions > totalCapacity) {
     // Naalu Collective "Hybrid Crystal Fighter II" (Half Fleet Count):
     // "Each fighter in excess of your ships' capacity counts as 1/2 of
     // a ship against your fleet pool." Confirmed text
@@ -908,7 +922,7 @@ export function moveShips(
 
 // --- helpers -------------------------------------------------------------
 
-function removeFromSystem(
+export function removeFromSystem(
   state: GameState,
   systemId: SystemId,
   playerId: PlayerId,
@@ -928,7 +942,7 @@ function removeFromSystem(
   return { ...state, systems: { ...state.systems, [systemId]: updatedSystem } };
 }
 
-function addToSystem(
+export function addToSystem(
   state: GameState,
   systemId: SystemId,
   playerId: PlayerId,

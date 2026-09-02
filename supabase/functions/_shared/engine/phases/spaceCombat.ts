@@ -22,6 +22,7 @@ import { resolveSpaceStationControl } from "../rules/spaceStations";
 import { openInvasionStartWindowIfNeeded } from "./invasion";
 import { maybeDestroyBlockadedFloatingFactories } from "../rules/saar";
 import { hasCodex } from "../rules/gameMode";
+import { checkAndApplyEliminations } from "./elimination";
 
 /** Called at every point in this file where pendingTacticalAction might have JUST landed on a genuine "a combat round begins now" state (round 1 after Assault Cannon/AFB have both already resolved or never triggered at all, OR round N+1 right after the previous round wrapped up) — opens the RR 1.19 "combat_round_start" priority window (see rules/priorityWindow.ts) for the (exactly 2, per this project's own combat-participant limitation) combatants, active-player-first. A safe no-op if we're not actually at a fresh round start yet (still mid-AFB/Assault-Cannon, or combat already ended and moved to "invasion"), or if a window is somehow already open. */
 /** RR "Salvage": opens a single-participant window for the winner right as space combat concludes — chains into openInvasionStartWindowIfNeeded once closed (GameEngine.ts's own window-close handling), same "after you win" before "at the start of an invasion" ordering RR 1.16 implies. */
@@ -220,7 +221,7 @@ export function useAssaultCannonDestruction(
 
 export function useAntiFighterBarrage(
   state: GameState,
-  action: { type: "USE_ANTI_FIGHTER_BARRAGE"; playerId: PlayerId; diceRolls: number[] },
+  action: { type: "USE_ANTI_FIGHTER_BARRAGE"; playerId: PlayerId; diceRolls: number[]; useUnitAbilityDieBonusSource?: "ambuscade" | "trrakan_zulok" },
   rules: RuleData,
 ): ActionResult {
   const pending = state.pendingTacticalAction;
@@ -238,7 +239,28 @@ export function useAntiFighterBarrage(
     return { ok: false, error: "RR 67.1: resolve the previous combatant's AFB hits before the next one fires." };
   }
 
-  const entries = buildAntiFighterBarrageEntries(state, rules, action.playerId, pending.systemId);
+  // The Argent Flight "Strike Wing Ambuscade" (promissory note) /
+  // "Trrakan Aun Zulok" (commander): "+1 die to this roll" — see
+  // rules/combat.ts's own buildAntiFighterBarrageEntries doc comment on
+  // its hasUnitAbilityDieBonus parameter for the full ruling. Whoever
+  // FIRES this AFB roll is the one who may use either source (Ambuscade
+  // is a promissory note usable by ANY holder; Trrakan Aun Zulok only
+  // by Argent themselves).
+  let workingState = state;
+  if (action.useUnitAbilityDieBonusSource === "ambuscade") {
+    const firingPlayer = workingState.players[action.playerId];
+    if (!firingPlayer.promissoryNotesInHand.includes("argent_flight_promissory" as never)) {
+      return { ok: false, error: "This player doesn't have Strike Wing Ambuscade in hand." };
+    }
+    workingState = { ...workingState, players: { ...workingState.players, [action.playerId]: { ...firingPlayer, promissoryNotesInHand: firingPlayer.promissoryNotesInHand.filter((id) => id !== ("argent_flight_promissory" as never)) } } };
+  } else if (action.useUnitAbilityDieBonusSource === "trrakan_zulok") {
+    const firingPlayer = workingState.players[action.playerId];
+    if (firingPlayer.factionId !== ("argent_flight" as never)) return { ok: false, error: "Only the Argent Flight has Trrakan Aun Zulok." };
+    const commanderEntry = firingPlayer.leaders.find((l) => l.leaderId === ("argent_flight_commander" as never));
+    if (!commanderEntry || commanderEntry.locked) return { ok: false, error: "This player doesn't have an unlocked Trrakan Aun Zulok." };
+  }
+
+  const entries = buildAntiFighterBarrageEntries(workingState, rules, action.playerId, pending.systemId, !!action.useUnitAbilityDieBonusSource);
   if (entries.length === 0) return { ok: false, error: "This player has no AFB-capable ships." };
 
   let result;
@@ -249,21 +271,94 @@ export function useAntiFighterBarrage(
   }
   const hits = result.hitsScoredByPlayer[action.playerId] ?? 0;
 
-  const combatants = playersWithShipsInSystem(state, pending.systemId);
+  const combatants = playersWithShipsInSystem(workingState, pending.systemId);
   const opponentId = combatants.find((id) => id !== action.playerId) ?? null;
   const remainingAfbPending = afbPending.filter((id) => id !== action.playerId);
+  let workingSystemsForInfantryKill = workingState.systems;
   const events: GameEvent[] = [{ type: "ANTI_FIGHTER_BARRAGE_FIRED", playerId: action.playerId, systemId: pending.systemId, hits }];
 
+  // The Argent Flight "Strike Wing Alpha II" (destroyer upgrade, "Bonus
+  // Infantry Kill"): "When this unit uses ANTI-FIGHTER BARRAGE, each
+  // result of 9 or 10 also destroys 1 of your opponent's infantry in
+  // the space area of the active system." Confirmed
+  // (tirules2.com/F_argent): "infantry are destroyed at the end of the
+  // Roll Dice step" (i.e. right here, in useAntiFighterBarrage itself,
+  // not deferred to assignAntiFighterBarrageHits) — "BEFORE any ship
+  // may use Sustain Damage" and "effects that cancel hits... cannot
+  // prevent [this]" (nothing downstream can undo it, matching Raid
+  // Formation's own equally-immediate resolution right below). "If an
+  // effect rerolls any AFB dice, the new result determines how many
+  // infantry are destroyed" — automatically true here, since this reads
+  // straight from `action.diceRolls` (whatever the caller actually
+  // submitted for this roll, post-reroll or not) rather than a cached
+  // earlier value. Upgrading to Strike Wing Alpha II replaces ALL of
+  // this player's destroyers at once (standard unit-upgrade behavior,
+  // not a mixed fleet), so checking the upgrade alone is enough to know
+  // every one of this player's own AFB dice this call came from Alpha
+  // IIs specifically.
+  if (opponentId && workingState.players[action.playerId]?.unitUpgrades.includes("argent_flight_destroyer_2" as never)) {
+    const infantryKillCount = action.diceRolls.filter((r) => r === 9 || r === 10).length;
+    if (infantryKillCount > 0) {
+      const targetSystem = workingSystemsForInfantryKill[pending.systemId];
+      const targetStacks = (targetSystem.spaceUnitsByPlayer[opponentId] ?? []).map((s) => ({ ...s }));
+      const infantryStack = targetStacks.find((s) => s.unitType === "infantry");
+      if (infantryStack) {
+        const destroyed = Math.min(infantryKillCount, infantryStack.count);
+        infantryStack.count -= destroyed;
+        const updatedStacks = targetStacks.filter((s) => s.count > 0);
+        workingSystemsForInfantryKill = { ...workingSystemsForInfantryKill, [pending.systemId]: { ...targetSystem, spaceUnitsByPlayer: { ...targetSystem.spaceUnitsByPlayer, [opponentId]: updatedStacks } } };
+        events.push({ type: "UNITS_DESTROYED", playerId: opponentId, systemId: pending.systemId, unitType: "infantry", count: destroyed });
+      }
+    }
+  }
+  workingState = { ...workingState, systems: workingSystemsForInfantryKill };
+  // Confirmed: "if the last of a player's ground forces are destroyed by
+  // this ability, and that player meets the other conditions for
+  // elimination, that player is immediately eliminated. All of their
+  // units are removed, and the Argent player wins the combat." Modeled
+  // as a natural CONSEQUENCE rather than bespoke "force combat to end"
+  // code: running the normal elimination check right here (before this
+  // function's own later survivor-count logic) means an eliminated
+  // opponent's units are already all gone by the time this combat's own
+  // conclusion is evaluated, so the existing "Argent is the sole
+  // survivor" path already awards the win correctly with no extra code.
+  const eliminationCheck = checkAndApplyEliminations(workingState, rules);
+  workingState = eliminationCheck.state;
+  events.push(...eliminationCheck.events);
+
+  // The Argent Flight "RAID FORMATION" (faction ability): "For each hit
+  // produced [by AFB] in excess of your opponent's Fighters, choose 1 of
+  // your opponent's ships that has Sustain Damage to become damaged."
+  // Confirmed (tirules2.com/F_argent): "occurs when hits are produced,
+  // NOT after hits are assigned" (computed right here, from the RAW
+  // hits count, before any fighter-hit-assignment happens) and "cancelling
+  // any hits will not prevent [this]" (nothing later in the flow can
+  // undo it, since it's already baked into this same state update).
+  // Queued as a player CHOICE (which ships) rather than resolved
+  // automatically, gating phases/spaceCombat.ts's own
+  // assignAntiFighterBarrageHits until resolved, matching "before
+  // assigning" — see rules/argent.ts's own useRaidFormation.
+  const argentPlayer = workingState.players[action.playerId];
+  let pendingRaidFormationChoice = pending.pendingRaidFormationChoice;
+  if (argentPlayer?.factionId === ("argent_flight" as never) && opponentId) {
+    const opponentFighterCount = (workingState.systems[pending.systemId].spaceUnitsByPlayer[opponentId] ?? []).filter((s) => s.unitType === "fighter").reduce((sum, s) => sum + s.count, 0);
+    const excessHits = Math.max(0, hits - opponentFighterCount);
+    if (excessHits > 0) {
+      pendingRaidFormationChoice = { argentPlayerId: action.playerId, opponentId, systemId: pending.systemId, count: excessHits };
+    }
+  }
+
   let nextState: GameState = {
-    ...state,
+    ...workingState,
     pendingTacticalAction: {
       ...pending,
       afbPendingPlayers: remainingAfbPending,
       pendingHits: hits > 0 && opponentId ? { [opponentId]: hits } : {},
+      pendingRaidFormationChoice,
     },
   };
 
-  if (hits === 0 && remainingAfbPending.length === 0) {
+  if (hits === 0 && remainingAfbPending.length === 0 && !pendingRaidFormationChoice) {
     const wrap = beginCombatRoundsAfterAFB(nextState, rules);
     return { ok: true, state: wrap.state, events: [...events, ...wrap.events] };
   }
@@ -279,6 +374,9 @@ export function assignAntiFighterBarrageHits(
   const pending = state.pendingTacticalAction;
   if (!pending || pending.step !== "spaceCombat") {
     return { ok: false, error: "RR 67.1: not currently in space combat." };
+  }
+  if (pending.pendingRaidFormationChoice) {
+    return { ok: false, error: 'The Argent Flight "RAID FORMATION": resolve that choice before these hits can be assigned.' };
   }
   const hitsOwed = pending.pendingHits?.[action.playerId];
   if (!hitsOwed || hitsOwed <= 0) {
@@ -298,7 +396,7 @@ export function assignAntiFighterBarrageHits(
   // TE NEUTRAL UNITS: same fixed-priority-order reasoning as everywhere else this project computes hit assignments for the neutral pseudo-player.
   const afbAssignments = action.playerId === NEUTRAL_PLAYER_ID ? computeNeutralHitAssignments(stacks, hitsOwed, hasEntropicScar(system.anomalies)) : action.assignments;
 
-  const result = applyHitAssignments(state, stacks, afbAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies);
+  const result = applyHitAssignments(state, stacks, afbAssignments, hitsOwed, player.factionId, player.unitUpgrades, rules, system.anomalies, undefined, undefined, undefined, undefined, waylayActive ? undefined : ["fighter"]);
   if (!result.ok) return { ok: false, error: `RR 67.1: ${result.error}` };
 
   const events: GameEvent[] = [
