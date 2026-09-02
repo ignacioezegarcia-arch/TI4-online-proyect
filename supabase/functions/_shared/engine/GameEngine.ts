@@ -153,6 +153,7 @@ import { useGiftOfPrescience, useZeuOmega, useZeuOmegaOmega, useNeuroglaive, use
 import { maybeDestroyBlockadedFloatingFactories, useChaosMapping, useRaghsCall, useMendosa, useRowlSarrig, useGurnoAggero, useDeorbitBarrage, resolveScavengerZetaDeploy } from "./rules/saar";
 import { useReclamation, useReclaimerPlacement, usePlayAcquiescence, usePlayAcquiescenceOmega, useLazaxGateFolding, useHegemonicTradePolicy, useBerekarBerekon, useMathisMathinus } from "./rules/winnu";
 import { useIndoctrination, useDevotion, useImpulseCore, assignImpulseCoreHit, usePlayGreyfireMutagen, usePlayGreyfireMutagenOmega, useBrotherMilor, skipBrotherMilor, useDaneelOfTheTenth, useDaneelOfTheTenthOmega } from "./rules/yin";
+import { useRaidFormation, useHelixProtocol, usePlaceWingTransferTokens, useWingTransferMove } from "./rules/argent";
 import { useWormholeGenerator, useWormholeGeneratorOmega, useCreussIff, useIcarusDrive, useDimensionalSplicer, useEmissaryTaivra, useSaiSeravus, useRiftwalkerMeian } from "./rules/creuss";
 import { useSpaceCannonOffense, skipSpaceCannonOffense, assignSpaceCannonOffenseHits } from "./phases/spaceCannonOffense";
 import {
@@ -561,6 +562,18 @@ function dispatchAction(state: GameState, action: GameAction, rules: RuleData): 
         break;
       case "ASSIGN_ANTI_FIGHTER_BARRAGE_HITS":
         result = assignAntiFighterBarrageHits(state, action, rules);
+        break;
+      case "USE_RAID_FORMATION":
+        result = useRaidFormation(state, action, rules);
+        break;
+      case "USE_HELIX_PROTOCOL":
+        result = useHelixProtocol(state, action, rules);
+        break;
+      case "USE_PLACE_WING_TRANSFER_TOKENS":
+        result = usePlaceWingTransferTokens(state, action, rules);
+        break;
+      case "USE_WING_TRANSFER_MOVE":
+        result = useWingTransferMove(state, action, rules);
         break;
       case "USE_DURANIUM_ARMOR":
         result = useDuraniumArmor(state, action, rules);
