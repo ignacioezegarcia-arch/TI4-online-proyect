@@ -1,7 +1,7 @@
-import { GameState, PlanetState, SystemState } from "../types/GameState";
+import { GameState, Player, PlanetState, SystemState } from "../types/GameState";
 import { ActionResult, GameEvent } from "../types/Actions";
 import { PlayerId, PlanetId, SystemId, AgendaId, asTechId } from "../types/ids";
-import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES } from "../types/enums";
+import { UnitType, SHIP_TYPES, GROUND_FORCE_TYPES, STRUCTURE_TYPES } from "../types/enums";
 import { RuleData, getUnitStats } from "../types/RuleData";
 import { getMaxNonFighterShips } from "../rules/letnev";
 import { getEffectivePlanetStats } from "../rules/planetStats";
@@ -62,6 +62,8 @@ export function produceUnits(
     useYinSpinnerOmegaDestination?: { planetId?: PlanetId };
     /** Yin Brotherhood "Brother Omar" (commander, base version): opts into the +1 free infantry bonus this batch — see this function's own executeProduction for the full doc comment. */
     useBrotherOmarBonusInfantry?: boolean;
+    /** The Argent Flight "Trilossa Aun Mirik" (agent): where to relocate this batch's just-produced ground forces — see phases/production.ts's own executeProduction for the full doc comment. */
+    useTrilossaAunMirikDestination?: { systemId: SystemId; planetId: PlanetId };
   },
   rules: RuleData,
 ): ActionResult {
@@ -90,6 +92,7 @@ export function produceUnits(
     action.useYinSpinnerDestination,
     action.useYinSpinnerOmegaDestination,
     action.useBrotherOmarBonusInfantry,
+    action.useTrilossaAunMirikDestination,
   );
 }
 
@@ -156,6 +159,8 @@ export function executeProduction(
   useYinSpinnerOmegaDestination?: { planetId?: PlanetId },
   /** Yin Brotherhood "Brother Omar" (commander, base version): opts into the +1 free infantry bonus this batch — see this function's own doc comment further below on where this actually gets applied. */
   useBrotherOmarBonusInfantry?: boolean,
+  /** The Argent Flight "Trilossa Aun Mirik" (agent): where to relocate this batch's just-produced ground forces — see this function's own doc comment further below on where this actually gets applied. */
+  useTrilossaAunMirikDestination?: { systemId: SystemId; planetId: PlanetId },
 ): ActionResult {
   const system = state.systems[systemId];
   if (!system) return { ok: false, error: `No system ${systemId}.` };
@@ -239,6 +244,26 @@ export function executeProduction(
       }
     } else if (explicitValue != null) {
       nonSpaceDockLimit += explicitValue * stack.count;
+    }
+  }
+  // The Argent Flight "Aerie Hololattice" (faction technology): "Each
+  // planet that contains 1 or more of your structures gains the
+  // PRODUCTION 1 ability as if it were a unit." Confirmed
+  // (tirules2.com/F_argent): "the planet with Production 1 is
+  // considered to be on itself for the purposes of producing ground
+  // forces" — i.e. no separate producer unit is needed to place ground
+  // forces there, matching the default "ground forces go on the
+  // specified planetId" placement this function already does elsewhere.
+  // Checked BEFORE the hasAnyProducer error below specifically so this
+  // can flip a planet with ONLY a structure (no other Production-
+  // tagged unit at all) from "no producer" to "has one", not just add
+  // to an already-nonzero pool the way Creuss's own Particle Synthesis
+  // does further below.
+  if (!isFloatingFactoryProduction && planet && player.factionId === ("argent_flight" as never) && player.technologies.includes("aerie_hololattice" as never)) {
+    const hasOwnStructureHere = (planet.unitsByPlayer[playerId] ?? []).some((s) => STRUCTURE_TYPES.includes(s.unitType) && s.count > 0);
+    if (hasOwnStructureHere) {
+      hasAnyProducer = true;
+      nonSpaceDockLimit += 1;
     }
   }
   if (!hasAnyProducer) {
@@ -841,6 +866,59 @@ export function executeProduction(
     const { tactic, fleet, strategy, onBoard } = finalPlayer.commandTokens;
     if (tactic + fleet + strategy + onBoard.length < 16) {
       nextState = { ...nextState, players: { ...nextState.players, [playerId]: { ...finalPlayer, commandTokens: { ...finalPlayer.commandTokens, fleet: finalPlayer.commandTokens.fleet + 1 } } } };
+    }
+  }
+
+  // The Argent Flight "Trilossa Aun Mirik" (agent): "When a player
+  // produces ground forces in a system: you may exhaust this card;
+  // that player may place those units on any planets they control in
+  // that system and any adjacent systems." Confirmed
+  // (tirules2.com/F_argent) — a relocation of exactly the ground forces
+  // THIS batch produced, from wherever they'd normally have landed to
+  // this player's own chosen destination (validated same-system or
+  // adjacent, and controlled by them). Modeled as a post-production
+  // move rather than rewiring the normal destination logic above, same
+  // "add-on relocation" shape as Yin Spinner/Brother Omar's own bonus
+  // infantry placement elsewhere in this function.
+  if (useTrilossaAunMirikDestination) {
+    const groundForcesProduced = resolvedUnits.filter((u) => GROUND_FORCE_TYPES.includes(u.unitType));
+    if (groundForcesProduced.length > 0) {
+      const argentPlayer = Object.values(nextState.players).find((p) => p.factionId === ("argent_flight" as never));
+      const agentEntry = argentPlayer?.leaders.find((l) => l.leaderId === ("argent_flight_agent" as never));
+      if (argentPlayer && agentEntry && !agentEntry.locked && !agentEntry.exhausted) {
+        const destSystem = nextState.systems[useTrilossaAunMirikDestination.systemId];
+        const isAdjacentOrSame = useTrilossaAunMirikDestination.systemId === systemId || getAdjacentSystems(nextState, systemId, rules).includes(useTrilossaAunMirikDestination.systemId);
+        const destPlanet = destSystem?.planets.find((p) => p.planetId === useTrilossaAunMirikDestination.planetId);
+        if (isAdjacentOrSame && destPlanet && destPlanet.controllerId === playerId) {
+          const sourceSystem = nextState.systems[systemId];
+          const sourcePlanet = sourceSystem.planets.find((p) => p.planetId === (groundForceDestinationPlanet2?.planetId ?? planetId));
+          if (sourcePlanet) {
+            let sourceStacks = (sourcePlanet.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+            let destStacks = (destPlanet.unitsByPlayer[playerId] ?? []).map((s) => ({ ...s }));
+            for (const { unitType, count } of groundForcesProduced) {
+              const src = sourceStacks.find((s) => s.unitType === unitType && !s.upgradeId);
+              if (src) src.count = Math.max(0, src.count - count);
+              const dst = destStacks.find((s) => s.unitType === unitType && !s.upgradeId);
+              if (dst) dst.count += count;
+              else destStacks.push({ unitType, count, damagedCount: 0 });
+            }
+            sourceStacks = sourceStacks.filter((s) => s.count > 0);
+            destStacks = destStacks.filter((s) => s.count > 0);
+            const updatedSourcePlanet: PlanetState = { ...sourcePlanet, unitsByPlayer: { ...sourcePlanet.unitsByPlayer, [playerId]: sourceStacks } };
+            const updatedDestPlanet: PlanetState = { ...destPlanet, unitsByPlayer: { ...destPlanet.unitsByPlayer, [playerId]: destStacks } };
+            const updatedArgent: Player = { ...argentPlayer, leaders: argentPlayer.leaders.map((l) => (l.leaderId === ("argent_flight_agent" as never) ? { ...l, exhausted: true } : l)) };
+            nextState = {
+              ...nextState,
+              systems: {
+                ...nextState.systems,
+                [systemId]: { ...sourceSystem, planets: sourceSystem.planets.map((p) => (p.planetId === updatedSourcePlanet.planetId ? updatedSourcePlanet : p)) },
+                [useTrilossaAunMirikDestination.systemId]: { ...destSystem, planets: destSystem.planets.map((p) => (p.planetId === updatedDestPlanet.planetId ? updatedDestPlanet : p)) },
+              },
+              players: { ...nextState.players, [argentPlayer.id]: updatedArgent },
+            };
+          }
+        }
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import { PlayerId, AgendaId, PlanetId, asTechId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
 import { startNewRound } from "./actionPhase";
 import { getElderQanojVoteBonus } from "../rules/xxcha";
+import { applyZealVotingOrder, computeZealBonusVotes } from "../rules/argent";
 import { getTriadResourcesAndInfluence } from "../rules/relics";
 import { hasCodex, hasThundersEdge } from "../rules/gameMode";
 import { applyAgendaResolutionSideEffects, isLawActiveWithOutcome, maybeQueueSecretObjectiveLimit } from "./agendaEffects";
@@ -113,7 +114,7 @@ export function revealAgenda(state: GameState, rules: RuleData): ActionResult {
   const eligibleSeatOrder = state.seatOrder.filter((id) => !state.players[id]?.eliminated && !bannedFromVoting.includes(id));
   // RR 8.2.ii: voting starts to the left of the speaker, ends with the speaker.
   const rotated = [...state.seatOrder.slice(speakerIndex + 1), ...state.seatOrder.slice(0, speakerIndex + 1)];
-  const votingOrder = rotated.filter((id) => eligibleSeatOrder.includes(id));
+  const votingOrder = applyZealVotingOrder(rotated.filter((id) => eligibleSeatOrder.includes(id)), state.players);
 
   const pendingAgendaVote: PendingAgendaVote = { agendaId, votingOrder, nextVoterIndex: 0, votesByOutcome: {} };
   // RR 1.20 / FAQ: even a player who CAN'T vote (Political Censure, Public
@@ -234,6 +235,12 @@ export function castVotes(
   }
   // Xxcha "Elder Qanoj" (commander, passive): "each planet you exhaust to cast votes provides 1 additional vote" — confirmed even a 0-influence planet counts.
   votes += getElderQanojVoteBonus(state, action.playerId, action.exhaustPlanetIds.length);
+  // The Argent Flight "ZEAL" (faction ability): "When you cast at least
+  // 1 vote, cast 1 additional vote for each player in the game
+  // including you" — computed from the votes accrued so far (BEFORE any
+  // OTHER bonus below this line), matching the confirmed "if the Argent
+  // player casts zero votes, they cannot cast additional votes" check.
+  votes += computeZealBonusVotes(state, action.playerId, votes);
 
   let nextState: GameState = state;
   for (const planetId of action.exhaustPlanetIds) {
@@ -550,7 +557,7 @@ export function finalizeAgendaResolution(
       const speakerIndex = nextState.seatOrder.indexOf(speakerId);
       const eligibleSeatOrder = nextState.seatOrder.filter((id) => !nextState.players[id]?.eliminated && !(nextState.agendaPhaseBannedFromVoting ?? []).includes(id));
       const rotated = [...nextState.seatOrder.slice(speakerIndex + 1), ...nextState.seatOrder.slice(0, speakerIndex + 1)];
-      const votingOrder = rotated.filter((id) => eligibleSeatOrder.includes(id));
+      const votingOrder = applyZealVotingOrder(rotated.filter((id) => eligibleSeatOrder.includes(id)), nextState.players);
       nextState = {
         ...nextState,
         agendaPhaseAgendasResolved: Math.max(0, (nextState.agendaPhaseAgendasResolved ?? 0) - 1),
