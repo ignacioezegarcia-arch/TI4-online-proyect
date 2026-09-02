@@ -14,11 +14,6 @@
     "spaceDock": 1,
     "pds": 1
   },
-  "startingTechnologies": {
-    "rules": "Choose any 1 technology that has no prerequisites.",
-    "count": 1,
-    "restriction": "no_prerequisites"
-  },
   "factionAbilities": [
     {
       "id": "blood_ties",
@@ -75,7 +70,7 @@
       "name": "Salai Sai Corian",
       "cost": 8,
       "combat": 7,
-      "combatDiceCount": "variable",
+      "combatDiceCount": null,
       "move": 1,
       "capacity": 3,
       "abilities": [
@@ -139,5 +134,16 @@
       "unlock": "Have 3 Scored Objectives.",
       "ability": "IMPERIAL SEAL — ACTION: Perform the primary ability of any strategy card. Then, choose any number of other players. Those players may perform the secondary ability of that strategy card. Then, purge this card."
     }
+  },
+  "startingTechnologies": [],
+  "startingTechnologyChoice": {
+    "count": 1,
+    "options": [
+      "neural_motivator",
+      "plasma_scoring",
+      "antimass_deflectors",
+      "sarween_tools"
+    ],
+    "_note": "CORREGIDO: el dato original tenía esto bajo la clave equivocada (startingTechnologies en vez de startingTechnologyChoice) y con forma equivocada ({rules, count, restriction} en vez de {count, options}), lo cual rompía createGame() por completo para esta facción (fixed.map is not a function). La regla real es \"Choose any 1 technology that has no prerequisites\" — options acá lista solo las 4 del juego base (Neural Motivator, Plasma Scoring, Antimass Deflectors, Sarween Tools). LIMITACIÓN CONOCIDA: si la partida usa PoK, también deberían ser válidas Psychoarchaeology/AI Development Algorithm/Dark Energy Tap/Scanlink Drone Network (también sin prerequisitos) pero no están listadas acá — este archivo no tiene forma de saber el modo de la partida al cargarse."
   }
 }
