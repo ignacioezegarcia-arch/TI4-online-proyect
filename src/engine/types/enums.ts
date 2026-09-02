@@ -103,7 +103,8 @@ export type UnitAbility =
   | "spaceCannon"
   | "sustainDamage"
   | "directHitImmunity"
-  | "respawn";
+  | "respawn"
+  | "spaceCannonImmunity";
 
 /** RR 72.5: the eight base strategy cards plus their RR-defined initiative numbers.
  *  Kept as a const map (not just a union) because initiative order is a rule, not a UI concern. */

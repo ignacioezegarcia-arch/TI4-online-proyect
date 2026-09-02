@@ -174,6 +174,8 @@ export type GameAction =
       playerId: PlayerId;
       /** Same trusted-RNG convention as everywhere else. Mandatory (not skippable) for any combatant with an AFB-capable ship — RR 67.1. */
       diceRolls: number[];
+      /** The Argent Flight "Strike Wing Ambuscade" (promissory note) / "Trrakan Aun Zulok" (commander): "+1 die to this roll" — see rules/combat.ts's own buildAntiFighterBarrageEntries for the full doc comment. diceRolls above must already include this extra die when set. */
+      useUnitAbilityDieBonusSource?: "ambuscade" | "trrakan_zulok";
     }
   | {
       type: "ASSIGN_ANTI_FIGHTER_BARRAGE_HITS";
@@ -181,6 +183,17 @@ export type GameAction =
       /** Same destroy/flip shape as ASSIGN_HITS, but every unitType here MUST be "fighter" — AFB can't hit anything else. RR 67.1/76. */
       assignments: { unitType: UnitType; outcome: "destroy" | "flip" }[];
     }
+  | { type: "USE_RAID_FORMATION"; playerId: PlayerId; targetUnitTypes: UnitType[] } // The Argent Flight's own faction ability — see rules/argent.ts
+  | {
+      type: "USE_HELIX_PROTOCOL";
+      playerId: PlayerId;
+      moves: { fromSystemId: SystemId; toSystemId: SystemId; unitType: UnitType; count: number }[];
+      transportedGroundForces?: { fromSystemId: SystemId; toSystemId: SystemId; unitType: "infantry" | "mech"; count: number }[];
+      transportedFighters?: { fromSystemId: SystemId; toSystemId: SystemId; count: number }[];
+      gravityRiftDieRolls?: { fromSystemId: SystemId; unitType: UnitType; rolls: number[] }[];
+    } // The Argent Flight's own hero — see rules/argent.ts
+  | { type: "USE_PLACE_WING_TRANSFER_TOKENS"; playerId: PlayerId; targetSystemIds: SystemId[] } // The Argent Flight's own Breakthrough ability — see rules/argent.ts
+  | { type: "USE_WING_TRANSFER_MOVE"; playerId: PlayerId; fromSystemId: SystemId; toSystemId: SystemId; unitType: UnitType; count: number } // The Argent Flight's own Breakthrough ability — see rules/argent.ts
   | {
       type: "RESOLVE_COMBAT_ROUND";
       playerId: PlayerId;
@@ -366,6 +379,8 @@ export type GameAction =
       useYinSpinnerOmegaDestination?: { planetId?: PlanetId };
       /** Yin Brotherhood "Brother Omar" (commander, base version): opts into the +1 free infantry bonus this batch — see phases/production.ts's own executeProduction for the full doc comment. */
       useBrotherOmarBonusInfantry?: boolean;
+      /** The Argent Flight "Trilossa Aun Mirik" (agent): where to relocate this batch's just-produced ground forces — see phases/production.ts's own executeProduction for the full doc comment. */
+      useTrilossaAunMirikDestination?: { systemId: SystemId; planetId: PlanetId };
     }
   | { type: "FINISH_TACTICAL_ACTION"; playerId: PlayerId } // RR 78: ends the tactical action (only legal once step reaches "production"), advancing the turn to the next player — nothing cleared pendingTacticalAction before this existed, so no one could ever PASS again after their first tactical action.
 

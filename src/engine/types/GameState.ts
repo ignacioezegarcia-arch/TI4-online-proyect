@@ -835,6 +835,8 @@ export interface PendingTacticalAction {
    * fired or because nobody ever qualified).
    */
   afbPendingPlayers?: PlayerId[];
+  /** The Argent Flight "RAID FORMATION" (faction ability): "for each hit produced in excess of your opponent's Fighters, choose 1 of your opponent's ships that has Sustain Damage to become damaged" — a genuine player choice (which ships), queued right when AFB hits are produced (before fighter-hit-assignment), blocking phases/spaceCombat.ts's own assignAntiFighterBarrageHits until resolved. See rules/argent.ts's own useRaidFormation. */
+  pendingRaidFormationChoice?: { argentPlayerId: PlayerId; opponentId: PlayerId; systemId: SystemId; count: number };
   /**
    * RR 44 Space Cannon Defense: the defender's own optional choice, before
    * ground combat starts, to fire their planet's PDS at the attacker's
