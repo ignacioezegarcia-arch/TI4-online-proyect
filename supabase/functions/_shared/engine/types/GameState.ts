@@ -66,6 +66,8 @@ export interface PlanetState {
   isSpaceStation?: boolean;
   /** RR "Stellar Converter" (relic): "place the destroyed planet token on that planet" — the planet keeps existing as an entry (preserving its own identity/data) rather than being deleted outright, marked destroyed instead. "A system that contains a planet destroyed by Stellar Converter, and no other planets, is considered to contain no planets" — checked the same way isSpaceStation is checked wherever "does this system have any REAL planets" matters (frontier tokens, objectives, etc.). No units can ever occupy a destroyed planet again; it produces no resources/influence and has no traits/specialties for any purpose. */
   destroyed?: boolean;
+  /** Winnu "Hegemonic Trade Policy" (faction technology): "swap the resource and influence values of 1 planet you control DURING THAT USE of Production" — a scoped, single-production effect: set by rules/winnu.ts's own useHegemonicTradePolicy right before a PRODUCE_UNITS call, and reverted by phases/production.ts's own executeProduction right after that SAME call consumes it (never left toggled between turns). Checked via rules/planetStats.ts's own getEffectivePlanetStats, so it's already reflected in the Production formula itself (confirmed: "changing a planet's resource value affects the Production value of a Space Dock on that planet"). */
+  swappedResourceInfluence?: boolean;
 }
 
 /** RR 77: a system tile's live game state. */
@@ -333,6 +335,16 @@ export interface GameState {
    * consumes/clears).
    */
   pendingScavengerZetaDeploy?: { playerId: PlayerId; planetId: PlanetId }[];
+  /** Winnu "RECLAMATION" (faction ability): queued right after a tactical action gains Mecatol Rex control, resolved by rules/winnu.ts's own useReclamation (USE_RECLAMATION). */
+  pendingReclamationChoice?: { playerId: PlayerId };
+  /** Winnu "Reclaimer" (mech): queued per planet gained while 1+ Reclaimer mechs are present there, resolved by rules/winnu.ts's own useReclaimerPlacement (USE_RECLAIMER_PLACEMENT). */
+  pendingReclaimerChoice?: { playerId: PlayerId; planetId: PlanetId }[];
+  /** Winnu "Acquiescence Ω" (promissory note): the note holder gets a free (no command token) secondary resolution for this one card, THIS one time — set by rules/winnu.ts's own usePlayAcquiescenceOmega, consumed by phases/strategyCardAbilities.ts's own resolveStrategySecondary. */
+  pendingAcquiescenceOmegaFreeSecondary?: { playerId: PlayerId; cardId: StrategyCardId };
+  /** Winnu "Berekar Berekon" (agent): a -2 combined-cost discount for this ONE player's very next PRODUCE_UNITS call — set by rules/winnu.ts's own useBerekarBerekon, consumed by phases/production.ts's own executeProduction. */
+  pendingBerekarBerekonDiscount?: PlayerId;
+  /** Winnu "Mathis Mathinus — Imperial Seal" (hero): grants these specific players permission to resolve this strategy card's own secondary this round, even though it isn't their own assigned card — set by rules/winnu.ts's own useMathisMathinus, consumed by phases/strategyCardAbilities.ts's own resolveStrategySecondary. */
+  pendingMathisMathinusGrant?: { cardId: StrategyCardId; playerIds: PlayerId[] };
   /** Yssaril Tribes "SCHEMING": players who still need to discard 1 action card after a qualifying draw — "no other abilities may resolve until the Yssaril player has discarded" (confirmed at tirules2.com/F_yssaril). See rules/yssaril.ts's own discardSchemingCard. */
   pendingSchemingDiscards?: PlayerId[];
   /** Ghosts of Creuss "Wormhole Generator" (original/base version): players who still need to place/move their mandatory wormhole token at the start of this status phase — see rules/creuss.ts's own useWormholeGenerator. */
@@ -745,6 +757,8 @@ export interface PendingTacticalAction {
    * own moveShips, which applies this BEFORE those.
    */
   mendosaMoveOverride?: { unitType: import("./enums").UnitType; fromSystemId: SystemId; moveValue: number };
+  /** Winnu "Imperator" (Breakthrough ability): "+1 to the move value of 1 of your ships" for THIS tactical action, after activating a system with a legendary planet — same "scoped to this one tactical action" shape as mendosaMoveOverride above, set by rules/winnu.ts's own activateSystemImperatorMoveBonus, consumed by phases/tacticalAction.ts's own moveShips (the actual moves-entry it applies to is this player's own choice, action.imperatorMoveBonusFromSystemId — this field only marks that the +1 is AVAILABLE at all this action). */
+  imperatorMoveBonusSystemId?: SystemId;
   /**
    * TE COEXIST (yjmrobert.com/tirules/rules/r_coexistence): the exact 2
    * players actively fighting the CURRENT ground combat on
@@ -758,6 +772,14 @@ export interface PendingTacticalAction {
    * combatants from scratch, so bystanders are never pulled in.
    */
   groundCombatParticipantIds?: [PlayerId, PlayerId];
+  /** Yin Brotherhood "INDOCTRINATION" (faction ability): "limited to once per ground combat" — set to the planetId once used, naturally distinguishing "already used FOR THIS combat" from "a new ground combat has since started on a different planet" without needing an explicit reset. See rules/yin.ts's own useIndoctrination. */
+  usedIndoctrinationForPlanetId?: PlanetId;
+  /** Yin Brotherhood "Impulse Core" (faction technology): "at the start of a space combat" — once per space combat (not per round), tracked here since combatRound alone isn't enough (a player could otherwise try again each round as long as combatRound stayed at 1 somehow). See rules/yin.ts's own useImpulseCore. */
+  usedImpulseCoreThisCombat?: boolean;
+  /** Yin Brotherhood "Impulse Core": queued right after Yin sacrifices a ship, waiting on the OPPONENT (per the confirmed FAQ correction — the opponent chooses, not Yin) to assign which of their own ships takes the hit. See rules/yin.ts's own assignImpulseCoreHit. */
+  pendingImpulseCoreHitAssignment?: { opponentId: PlayerId; systemId: SystemId };
+  /** Yin Brotherhood "Greyfire Mutagen" (promissory note): "The Yin player cannot use faction abilities or faction technology during this tactical action" — confirmed NOT to cover leader/mech/flagship abilities (see rules/yin.ts's own usePlayGreyfireMutagen for the full doc comment on which 4 mechanics this actually blocks). */
+  yinFactionAbilitiesBannedThisAction?: boolean;
   /** RR 44.2: true once the active player has signaled they're done committing ground forces this invasion step (FINISH_INVASION_COMMITS) — after that, no more COMMIT_GROUND_FORCES, and START_GROUND_COMBAT becomes available. */
   invasionCommitsFinished?: boolean;
   /**
@@ -813,6 +835,8 @@ export interface PendingTacticalAction {
    * fired or because nobody ever qualified).
    */
   afbPendingPlayers?: PlayerId[];
+  /** The Argent Flight "RAID FORMATION" (faction ability): "for each hit produced in excess of your opponent's Fighters, choose 1 of your opponent's ships that has Sustain Damage to become damaged" — a genuine player choice (which ships), queued right when AFB hits are produced (before fighter-hit-assignment), blocking phases/spaceCombat.ts's own assignAntiFighterBarrageHits until resolved. See rules/argent.ts's own useRaidFormation. */
+  pendingRaidFormationChoice?: { argentPlayerId: PlayerId; opponentId: PlayerId; systemId: SystemId; count: number };
   /**
    * RR 44 Space Cannon Defense: the defender's own optional choice, before
    * ground combat starts, to fire their planet's PDS at the attacker's
@@ -831,6 +855,26 @@ export interface PendingTacticalAction {
    * this is empty too, same "gate before advancing" pattern as pendingHits.
    */
   duraniumArmorPendingPlayers?: PlayerId[];
+  /**
+   * Yin Brotherhood "Brother Milor" (agent): "After a player's destroyer
+   * or cruiser is destroyed: You may exhaust this card; if you do, that
+   * player may place up to 2 fighters from their reinforcements in that
+   * unit's system." CORRECTED (yjmrobert.com/tirules/factions/f_yin):
+   * the Ω version (codex) is genuinely broader — "if all of a player's
+   * UNITS are destroyed" (any unit type, not just destroyer/cruiser),
+   * "may only be used during the action phase" (space OR ground combat,
+   * not space-only), and lets the recipient choose "2 fighters or 2
+   * infantry" — an earlier version of this project treated both
+   * versions identically (matching only the base text). `unitTypeLost`
+   * records what actually triggered this offer (base only ever queues
+   * for destroyer/cruiser; Ω queues for anything); `planetId` present
+   * means this offer came from a GROUND combat (Ω only — base never
+   * queues there at all). Needs to be resolved (accepted or explicitly
+   * skipped) BEFORE the relevant combat's own wrap-up concludes it, same
+   * "blocks wrap-up until resolved" shape as duraniumArmorPendingPlayers
+   * above and crownOfThalnosPendingPlayers below.
+   */
+  pendingBrotherMilorOffers?: { targetPlayerId: PlayerId; systemId: SystemId; planetId?: PlanetId; unitTypeLost: import("./enums").UnitType }[];
   /**
    * RR "Magen Defense Grid" (base version, base-mode games only): the
    * defender's own optional choice, at the start of ground combat on a
