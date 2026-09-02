@@ -58,5 +58,17 @@ export function getEffectivePlanetStats(
     influence += 1;
   }
 
+  // Winnu "Hegemonic Trade Policy" (faction technology): "swap the
+  // resource and influence values of 1 planet you control" — applied
+  // here, to the fully-modified effective values (not just the printed
+  // base), so it composes naturally with every other bonus above.
+  // Confirmed (yjmrobert.com/tirules/factions/f_winnu): "changing a
+  // planet's resource value will affect the Production value of a Space
+  // Dock on that planet" — true for free here since production.ts's own
+  // productionResourceBonus formula already reads through this same
+  // function rather than the raw data.
+  if (planet.swappedResourceInfluence) {
+    return { resources: influence, influence: resources, techSpecialties };
+  }
   return { resources, influence, techSpecialties };
 }

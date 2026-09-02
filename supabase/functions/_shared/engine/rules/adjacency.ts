@@ -1,6 +1,7 @@
 import { GameState } from "../types/GameState";
 import { SystemId, asSystemId, AgendaId, PlayerId } from "../types/ids";
 import { RuleData } from "../types/RuleData";
+import { WormholeType } from "../types/enums";
 import { isLawActiveWithOutcome } from "../phases/agendaEffects";
 
 /**
@@ -35,7 +36,35 @@ export function getAdjacentSystems(
 ): SystemId[] {
   const physical = state.boardAdjacency[systemId] ?? [];
   const thisSystem = state.systems[systemId];
-  const bySystemWormholes = thisSystem?.wormholes ?? [];
+  let bySystemWormholes = thisSystem?.wormholes ?? [];
+
+  // Winnu "Lazax Gate Folding" (faction technology): "During your
+  // tactical actions, if you do not control Mecatol Rex, treat its
+  // system as if it contains both an alpha and beta wormhole." Confirmed
+  // (yjmrobert.com/tirules/factions/f_winnu): "may cause the Mecatol Rex
+  // system to be adjacent to other systems containing an alpha or beta
+  // wormhole for ALL PLAYERS during the Winnu player's tactical
+  // actions" and "the Winnu player may become neighbors with other
+  // players via Lazax Gate Folding" — i.e. this genuinely changes what
+  // Mecatol Rex's system's own wormhole list IS during Winnu's own
+  // tactical action, not just what Winnu personally perceives, so it's
+  // injected here unconditionally (not gated to forPlayerId === Winnu)
+  // whenever the condition holds, same as any other system-wide wormhole
+  // source above/below. NOT specifically handled: the narrower Deep
+  // Space Cannon / retreat-through-Mecatol interactions this same
+  // effect also enables for OTHER players (flagged in rules/winnu.ts's
+  // own useLazaxGateFolding doc comment) — this only covers the
+  // adjacency computation itself.
+  if (rules?.mecatolSystemId === systemId) {
+    const winnuPlayer = Object.values(state.players).find((p) => p.factionId === ("winnu" as never));
+    const mecatolPlanet = thisSystem?.planets.find((p) => rules?.planets[p.planetId]?.isMecatolRex);
+    const winnuControlsMecatol = mecatolPlanet?.controllerId === winnuPlayer?.id;
+    const winnuHasTech = !!winnuPlayer?.technologies.includes("lazax_gate_folding" as never);
+    const isWinnusOwnTacticalAction = state.pendingTacticalAction?.playerId === winnuPlayer?.id;
+    if (winnuPlayer && winnuHasTech && !winnuControlsMecatol && isWinnusOwnTacticalAction) {
+      bySystemWormholes = [...bySystemWormholes, "alpha" as WormholeType, "beta" as WormholeType];
+    }
+  }
 
   let wormholeLinked: SystemId[] = [];
   if (bySystemWormholes.length > 0) {
