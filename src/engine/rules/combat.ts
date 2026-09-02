@@ -590,6 +590,22 @@ export function applyHitAssignments(
   mustPreferNonFighterTargets = false,
   /** Mentak Coalition "Fourth Moon" (flagship, Suppress Sustain) / "Moll Terminus" (mech, Suppress Ground Sustain): "Other players' [ships in this system | ground forces on this planet] cannot use SUSTAIN DAMAGE." Confirmed (yjmrobert.com/tirules/factions/f_mentak): Moll Terminus's own suppression ALSO applies to Space Cannon Defense specifically (a mech committed to a planet with both a Moll Terminus and a Mentak PDS cannot use Sustain Damage to cancel Space Cannon hits there either) — since this flag just blocks the "flip" outcome generically for whichever hit-assignment context calls this function, that carries over automatically to every call site (ground combat AND Space Cannon Defense) without extra plumbing. True when the OWNER of these `stacks` (being hit) is NOT Mentak, and Mentak has the relevant unit (Fourth Moon for ships, Moll Terminus for ground forces) present — computed by the caller. */
   sustainDamageSuppressed = false,
+  /**
+   * CORRECTED (found via testing The Argent Flight's own Raid Formation,
+   * which happens to create exactly this scenario): "excess hits beyond
+   * total units are simply lost" used to check ALL of the target's
+   * remaining units, regardless of whether this specific hit source can
+   * even legally target them — Anti-Fighter Barrage can ONLY ever hit
+   * fighters (RR 67.1), so a defender with 0 fighters left but other,
+   * untouchable ships still present would incorrectly be told "you still
+   * have units left, assign more hits" even though nothing legal
+   * remains to assign to. When provided, ONLY unit types in this list
+   * count toward "is there still something left to soak hits" — every
+   * OTHER call site (plain ASSIGN_HITS, Bombardment, Space Cannon) can
+   * legally target anything, so they simply omit this and keep counting
+   * every unit type, unchanged.
+   */
+  validTargetUnitTypes?: import("../types/enums").UnitType[],
 ): ApplyHitAssignmentsResult {
   const updated = stacks.map((s) => ({ ...s }));
   const unitsLeft = updated.reduce((sum, s) => sum + s.count, 0);
@@ -658,7 +674,7 @@ export function applyHitAssignments(
   }
 
   // Any hits still owed after every submitted assignment is only legal if there are truly no units left to soak them up (RR 67.6: excess hits beyond total units are simply lost) — otherwise the player under-submitted assignments.
-  const unitsStillLeft = updated.reduce((sum, s) => sum + s.count, 0);
+  const unitsStillLeft = updated.reduce((sum, s) => (!validTargetUnitTypes || validTargetUnitTypes.includes(s.unitType) ? sum + s.count : sum), 0);
   if (hitsRemaining > 0 && unitsStillLeft > 0) {
     return { ok: false, error: `${hitsRemaining} hit(s) still owed after these assignments, with ${unitsStillLeft} unit(s) still left to assign them to.` };
   }
@@ -818,6 +834,24 @@ export function buildSpaceCannonOffenseEntries(
   targetPlayerId: PlayerId,
   plasmaScoringUnitType?: UnitType,
 ): CombatUnitEntry[] {
+  // The Argent Flight "Quetzecoatl" (flagship, "Space Cannon Immunity"):
+  // "Other players cannot use SPACE CANNON against your ships in this
+  // system." Confirmed (tirules2.com/F_argent): "a player may still use
+  // Space Cannon against the Argent player's GROUND FORCES during the
+  // Space Cannon Defense step of an invasion" — so this ONLY blocks
+  // Space Cannon OFFENSE (this function specifically), never the
+  // separate buildSpaceCannonDefenseEntries below, even though both
+  // share the same underlying spaceCannonEntriesForPlayer helper.
+  // "Your ships" (not just Quetzecoatl itself) — its presence protects
+  // the WHOLE fleet in the system, so this returns no targets at all
+  // rather than exempting just the flagship.
+  const targetSystem = state.systems[targetSystemId];
+  const hasQuetzecoatlHere = (targetSystem?.spaceUnitsByPlayer[targetPlayerId] ?? []).some((s) => {
+    if (s.count <= 0) return false;
+    const stats = getUnitStats(rules, state.players[targetPlayerId]?.factionId, s.unitType, state.players[targetPlayerId]?.unitUpgrades);
+    return stats?.abilities.includes("spaceCannonImmunity") ?? false;
+  });
+  if (hasQuetzecoatlHere) return [];
   return spaceCannonEntriesForPlayer(state, rules, firingPlayerId, targetSystemId, targetPlayerId, plasmaScoringUnitType);
 }
 
@@ -843,6 +877,23 @@ export function buildAntiFighterBarrageEntries(
   rules: RuleData,
   firingPlayerId: PlayerId,
   systemId: SystemId,
+  /**
+   * The Argent Flight "RAID FORMATION"... no wait, this is actually for
+   * "Strike Wing Ambuscade" (promissory note) / "Trrakan Aun Zulok"
+   * (commander): "When 1 or more of your units make a roll for a unit
+   * ability: choose 1 of those units to roll 1 additional die." Both
+   * grant the EXACT same bonus (+1 die to this roll) — the only
+   * difference is the source's own cost (Ambuscade is consumed and
+   * returned to Argent after use; Trrakan Aun Zulok has no cost at all,
+   * matching commander abilities generally being repeatable/passive
+   * once unlocked, unlike an agent's own exhaust-to-use). Since this
+   * project's own dice-count model is an AGGREGATE per firing player
+   * (not tracked per individual unit), "choose 1 of those units" is
+   * modeled as a flat +1 to the whole roll rather than needing to know
+   * WHICH specific unit — functionally identical for the overwhelming
+   * majority of cases (a player firing AFB with only 1 unit type).
+   */
+  hasUnitAbilityDieBonus?: boolean,
 ): CombatUnitEntry[] {
   const system = state.systems[systemId];
   if (!system) return [];
@@ -876,13 +927,14 @@ export function buildAntiFighterBarrageEntries(
     hitOn = afb.value;
   }
 
-  // RR "Metali Void Armaments" (relic): "During the Anti-Fighter Barrage step of space combat, you may resolve ANTI-FIGHTER BARRAGE 6 (X3) against your opponent's units" — a virtual AFB source, independent of what unit types this player actually has present. Confirmed ruling: "has no effect when the Argent player resolves their Raid Formation faction ability" (that specific faction ability isn't implemented in this project yet, so nothing to exclude in practice — flagged for whenever it is).
+  // RR "Metali Void Armaments" (relic): "During the Anti-Fighter Barrage step of space combat, you may resolve ANTI-FIGHTER BARRAGE 6 (X3) against your opponent's units" — a virtual AFB source, independent of what unit types this player actually has present. Confirmed ruling: "has no effect when the Argent player resolves their Raid Formation faction ability" — since Raid Formation triggers off the RAW hits produced by AFB (computed in phases/spaceCombat.ts's own useAntiFighterBarrage, right where this entry's own diceCount/hitOn get consumed), a virtual source like this one still correctly feeds into that same computation with no special-casing needed here.
   if (diceCount === 0 && player?.relics.includes("metali_void_armaments" as never)) {
     diceCount = 3;
     hitOn = 6;
   }
 
   if (diceCount === 0 || hitOn === null) return [];
+  if (hasUnitAbilityDieBonus) diceCount += 1;
   // RR FAQ (tirules2.com/C_action_cards): "Morale Boost has no effect on anti-fighter barrage rolls" — despite being playable at the very same "start of combat"/"start of combat round 1" window that precedes AFB (see this project's own reasoning trail on that point, now corrected here), the bonus itself only applies to the round's own NORMAL combat rolls, not to AFB specifically. Earlier version of this file wrongly extended it to AFB; reverted per this more specific ruling.
   return [{ playerId: firingPlayerId, diceCount, hitOn }];
 }

@@ -1,6 +1,7 @@
 import { GameState } from "../types/GameState";
 import { RuleData } from "../types/RuleData";
 import { PlayerId, SystemId, AgendaId } from "../types/ids";
+import { STRUCTURE_TYPES } from "../types/enums";
 import { getAdjacentSystems } from "./adjacency";
 import { canShipEnterTile, canShipPassThroughTile, hasGravityRift, hasNebula } from "./anomalies";
 import { playersWithShipsInSystem } from "./combat";
@@ -175,6 +176,24 @@ export function canShipReachSystem(
         const blockedByEnemyFleet =
           !techs.ignoreEnemyFleets && playersWithShipsInSystem(state, neighborId).some((p) => p !== playerId);
         if (blockedByEnemyFleet) continue;
+        // The Argent Flight "Aerie Hololattice" (faction technology):
+        // "Other players cannot move ships through systems that contain
+        // your structures." Confirmed (tirules2.com/F_argent): "a player
+        // with Light/Wave Deflector cannot move through... if the Argent
+        // player owns Aerie Hololattice" — i.e. this block is NOT
+        // bypassed by ignoreEnemyFleets (Light/Wave Deflector's own
+        // effect), unlike the ordinary enemy-fleet block right above.
+        // Only blocks MID-PATH (this same neighbor-loop branch, never
+        // the isDestination branch above) — same "can still move INTO
+        // it as your final destination" shape as ordinary enemy-fleet
+        // blocking already has, since attacking/invading a system with
+        // the structures themselves must remain possible.
+        const neighborSystem = state.systems[neighborId];
+        const blockedByAerieHololattice = Object.entries(state.players).some(([pid, p]) => {
+          if (pid === playerId || p.factionId !== ("argent_flight" as never) || !p.technologies.includes("aerie_hololattice" as never)) return false;
+          return neighborSystem?.planets.some((planet) => (planet.unitsByPlayer[pid as PlayerId] ?? []).some((s) => STRUCTURE_TYPES.includes(s.unitType) && s.count > 0));
+        });
+        if (blockedByAerieHololattice) continue;
 
         const entersNewRift = hasGravityRift(neighborAnomalies) && !techs.ignoreAllAnomalyEffects && !current.riftSystemsTouched.has(neighborId);
         const riftCount = current.riftCount + (entersNewRift ? 1 : 0);

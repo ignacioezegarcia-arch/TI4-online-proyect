@@ -24,6 +24,8 @@ export const ABILITY_NAME_TO_ENUM: Record<string, UnitAbility> = {
   // y conectados — el dato nunca llegaba a `stats.abilities` porque esta
   // tabla no tenía la entrada.
   Respawn: "respawn",
+  // The Argent Flight "Quetzecoatl" (flagship): "Other players cannot use SPACE CANNON against your ships in this system." Confirmed (tirules2.com/F_argent): does NOT extend to ground forces during the SEPARATE Space Cannon Defense step of an invasion — this ability name maps to a distinct enum from plain "Space Cannon" specifically so the two can be checked independently at their own call sites (rules/combat.ts's own buildSpaceCannonOffenseEntries), rather than accidentally conflating "has Space Cannon" with "is immune to it".
+  "Space Cannon Immunity": "spaceCannonImmunity",
 };
 
 export interface RawUnitEntry {
